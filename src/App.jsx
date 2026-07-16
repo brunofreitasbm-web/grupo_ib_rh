@@ -3568,6 +3568,53 @@ export default function App() {
     return `${transportText} e ${stipendText}`;
   };
 
+  const getPaeActivities = (intern) => {
+    const activitiesList = [
+      { title: "Acompanhamento de Atendimentos Clínicos", desc: "Observação assistida e auxílio na preparação de salas e materiais de psicoterapia sob supervisão direta do responsável técnico." },
+      { title: "Discussão e Análise de Casos", desc: "Participação ativa em reuniões clínicas e grupos de estudos dedicados ao desenvolvimento de condutas terapêuticas." },
+      { title: "Organização de Prontuários", desc: "Apoio no preenchimento físico e controle digital de prontuários, fichas de acompanhamento, relatórios e termos de responsabilidade do paciente." },
+      { title: "Planejamento Pedagógico e de Suporte", desc: "Elaboração de roteiros, materiais lúdicos e dinâmicas auxiliares para sessões de terapia infantil e em grupo." },
+      { title: "Suporte Operacional e Administrativo", desc: "Apoio nas rotinas diárias das unidades da Porto Terapia, com foco em gestão de agenda de psicólogos e fluxos internos de pacientes." },
+      { title: "Triagem e Acolhimento Inicial", desc: "Auxílio na condução das entrevistas de triagem inicial e acolhimento de novos pacientes sob a orientação de um supervisor técnico." },
+      { title: "Elaboração de Relatórios de Evolução", desc: "Apoio na redação e sistematização de relatórios parciais sobre a evolução dos pacientes atendidos na clínica." },
+      { title: "Aplicação de Testes Psicológicos", desc: "Auxílio e observação supervisionada na aplicação, correção e interpretação de instrumentos de avaliação psicológica autorizados." },
+      { title: "Pesquisa Bibliográfica sobre Casos Clínicos", desc: "Levantamento de literatura científica e artigos acadêmicos relevantes para fundamentar as estratégias de intervenção clínica adotadas." },
+      { title: "Grupos de Apoio e Oficinas Terapêuticas", desc: "Participação no planejamento, co-facilitação e condução de oficinas terapêuticas e grupos de apoio promovidos pela clínica." },
+      { title: "Observação de Psicoterapia Individual", desc: "Acompanhamento presencial ou via espelho unidirecional de sessões individuais conduzidas por psicólogos seniores da instituição." },
+      { title: "Acompanhamento Terapêutico (AT)", desc: "Apoio e intervenções em contexto extra-clínico ou domiciliar com foco na socialização e autonomia de pacientes específicos." },
+      { title: "Orientação e Suporte a Familiares", desc: "Participação sob supervisão direta nas reuniões de orientação familiar, esclarecendo dúvidas sobre o processo terapêutico." },
+      { title: "Estudo de Abordagens Psicoterapêuticas", desc: "Leitura dirigida e discussão semanal de textos e livros sobre a abordagem teórica predominante no serviço de psicologia." },
+      { title: "Desenvolvimento de Campanhas de Saúde Mental", desc: "Criação de conteúdo educativo e cartilhas informativas para sensibilização sobre saúde mental e bem-estar na comunidade." },
+      { title: "Análise de Fatores de Risco e Proteção", desc: "Identificação e catalogação de aspectos psicossociais relevantes que impactam o prognóstico de pacientes triados." },
+      { title: "Participação em Supervisões Clínicas", desc: "Discussão sistemática com o psicólogo orientador sobre o andamento e desafios das atividades de estágio realizadas." },
+      { title: "Registro de Frequência e Indicadores", desc: "Tabulação de dados de absenteísmo, adesão ao tratamento e satisfação dos pacientes para melhoria contínua dos serviços." },
+      { title: "Estudo de Ética e Prática Profissional", desc: "Análise crítica do Código de Ética Profissional do Psicólogo aplicada aos dilemas cotidianos vivenciados na clínica." },
+      { title: "Mediação de Conflitos e Comunicação", desc: "Apoio em dinâmicas de comunicação não-violenta e mediação inicial de tensões na sala de espera ou recepção." }
+    ];
+
+    if (!intern) {
+      return activitiesList.slice(0, 5);
+    }
+
+    // Gera uma semente simples baseada no id, nome e data de início (semestre) do estagiário
+    const seedString = (intern.id || '') + (intern.name || '') + (intern.startDate || '');
+    let hash = 5381;
+    for (let i = 0; i < seedString.length; i++) {
+      hash = ((hash << 5) + hash) + seedString.charCodeAt(i);
+    }
+    hash = Math.abs(hash);
+
+    const shuffled = [...activitiesList];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = (hash + i) % (i + 1);
+      const temp = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = temp;
+    }
+
+    return shuffled.slice(0, 5);
+  };
+
   const getDocumentHtml = (type, intern = null) => {
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
@@ -3777,11 +3824,9 @@ export default function App() {
           <h3 style="font-size: 12px; font-weight: 700; margin-top: 20px; margin-bottom: 10px; color: #111827; border-bottom: 1px solid #d1d5db; padding-bottom: 3px;">ATIVIDADES PREVISTAS</h3>
           
           <ul style="padding-left: 20px; margin-bottom: 30px;">
-            <li style="margin-bottom: 8px; text-align: justify;"><strong>Acompanhamento de Atendimentos Clínicos:</strong> Observação assistida e auxílio na preparação de salas e materiais de psicoterapia sob supervisão direta do responsável técnico.</li>
-            <li style="margin-bottom: 8px; text-align: justify;"><strong>Discussão e Análise de Casos:</strong> Participação ativa em reuniões clínicas e grupos de estudos dedicados ao desenvolvimento de condutas terapêuticas.</li>
-            <li style="margin-bottom: 8px; text-align: justify;"><strong>Organização de Prontuários:</strong> Apoio no preenchimento físico e controle digital de prontuários, fichas de acompanhamento, relatórios e termos de responsabilidade do paciente.</li>
-            <li style="margin-bottom: 8px; text-align: justify;"><strong>Planejamento Pedagógico e de Suporte:</strong> Elaboração de roteiros, materiais lúdicos e dinâmicas auxiliares para sessões de terapia infantil e em grupo.</li>
-            <li style="margin-bottom: 8px; text-align: justify;"><strong>Suporte Operacional e Administrativo:</strong> Apoio nas rotinas diárias das unidades da Porto Terapia, com foco em gestão de agenda de psicólogos e fluxos internos de pacientes.</li>
+            ${getPaeActivities(intern).map(act => `
+              <li style="margin-bottom: 8px; text-align: justify;"><strong>${act.title}:</strong> ${act.desc}</li>
+            `).join('')}
           </ul>
 
           <table style="width: 100%; border-collapse: collapse; margin-top: 50px; text-align: center; font-size: 10px;">
