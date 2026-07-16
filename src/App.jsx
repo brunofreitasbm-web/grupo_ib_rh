@@ -390,7 +390,7 @@ export default function App() {
     startDate: '', endDate: '', photo: '', cpf: '', email: '',
     rg: '', phone: '', address: '', bankName: '', bankAgency: '',
     bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
-    emergencyPhone: '', allowance: 0, supervisorName: 'Barbara Batista'
+    emergencyPhone: '', allowance: 0, supervisorName: ''
   });
   const [cadastroCpfRgFile, setCadastroCpfRgFile] = useState(null);
   const [cadastroMatriculaFile, setCadastroMatriculaFile] = useState(null);
@@ -425,7 +425,7 @@ export default function App() {
     emergencyRelationship: 'Pais',
     emergencyPhone: '',
     allowance: 0,
-    supervisorName: 'Barbara Batista',
+    supervisorName: '',
   });
 
   // Configuração das unidades
@@ -1274,8 +1274,7 @@ export default function App() {
         !form.phone.trim() || !form.course.trim() || !form.institution.trim() || !form.address.trim() || 
         !form.unitId || !form.shift || !form.startDate || !form.endDate || 
         !form.bankName.trim() || !form.bankAgency.trim() || !form.bankAccount.trim() || !form.pixKey.trim() || 
-        !form.emergencyName.trim() || !form.emergencyRelationship || !form.emergencyPhone.trim() || 
-        !form.supervisorName.trim()) {
+        !form.emergencyName.trim() || !form.emergencyRelationship || !form.emergencyPhone.trim()) {
       alert("Todos os campos do Cadastro de Estagiário são obrigatórios!");
       return;
     }
@@ -2443,8 +2442,7 @@ export default function App() {
           !cadastroForm.phone.trim() || !cadastroForm.course.trim() || !cadastroForm.institution.trim() || !cadastroForm.address.trim() || 
           !cadastroForm.unitId || !cadastroForm.shift || !cadastroForm.startDate || !cadastroForm.endDate || 
           !cadastroForm.bankName.trim() || !cadastroForm.bankAgency.trim() || !cadastroForm.bankAccount.trim() || !cadastroForm.pixKey.trim() || 
-          !cadastroForm.emergencyName.trim() || !cadastroForm.emergencyRelationship || !cadastroForm.emergencyPhone.trim() || 
-          !cadastroForm.supervisorName.trim()) {
+          !cadastroForm.emergencyName.trim() || !cadastroForm.emergencyRelationship || !cadastroForm.emergencyPhone.trim()) {
         alert("Todos os campos do Cadastro de Estagiário são obrigatórios!");
         return;
       }
@@ -2743,9 +2741,9 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Profissional Supervisor *</label>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Profissional Supervisor</label>
                   <input
-                    required placeholder="Profissional Supervisor *"
+                    placeholder="Profissional Supervisor"
                     value={cadastroForm.supervisorName}
                     onChange={(e) => setCadastroForm({ ...cadastroForm, supervisorName: e.target.value })}
                     className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
@@ -3168,7 +3166,7 @@ export default function App() {
               className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
             />
             <input
-              required placeholder="Profissional Supervisor *"
+              placeholder="Profissional Supervisor"
               value={form.supervisorName}
               onChange={(e) => setForm({ ...form, supervisorName: e.target.value })}
               className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
@@ -3562,7 +3560,7 @@ export default function App() {
           <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 8px; border-radius: 6px; margin-bottom: 12px; font-size: 9.5px;">
             <p style="margin: 0 0 4px 0;"><strong>1) Período de vigência deste Instrumento:</strong> De <strong>${startFormatted}</strong> a <strong>${endFormatted}</strong>, podendo ser rescindido unilateralmente por qualquer das partes, a qualquer momento, sem ônus, multas ou aviso-prévio, mediante formalização do respectivo Termo de Rescisão;</p>
             <p style="margin: 0 0 4px 0;"><strong>2) Jornada:</strong> <strong>${hoursCount} horas diárias</strong> (${shiftName});</p>
-            <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>${intern?.supervisorName || 'Barbara Batista'}</strong>;</p>
+            <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>${intern?.supervisorName || '________________________'}</strong>;</p>
             <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, uma Bolsa-estágio mensal no valor de <strong>R$ ${intern?.allowance ? Number(intern.allowance).toFixed(2).replace('.', ',') : '800,00'}</strong> (bolsa estágio) e <strong>R$ 200,00</strong> (auxílio-transporte, não se aplicando ao benefício o desconto previsto na CLT).</p>
           </div>
 
@@ -3681,7 +3679,7 @@ export default function App() {
             <tr>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
-                  <strong>Supervisora de Estágio: ${intern?.supervisorName || 'Barbara Batista'}</strong><br>Porto Terapia
+                  <strong>Supervisora de Estágio: ${intern?.supervisorName || '________________________'}</strong><br>Porto Terapia
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
