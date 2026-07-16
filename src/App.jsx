@@ -1833,7 +1833,8 @@ export default function App() {
       return (
         <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
-            <div className="bg-blue-600 p-6 text-white text-center relative">
+            <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
+              <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-16 w-auto mb-2 rounded-lg shadow-sm" />
               <h1 className="text-2xl font-bold mb-1">Porto Terapia</h1>
               <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios</p>
               <div className="mt-4 text-3xl font-light tracking-wider flex items-center justify-center gap-2">
@@ -1980,6 +1981,9 @@ export default function App() {
             </div>
           </div>
           <p className="mt-8 text-xs text-gray-500">Módulo de Estágio • Lei nº 11.788/2008</p>
+          <p className="mt-3 text-[10px] text-gray-400 text-center max-w-xs leading-relaxed select-none">
+            Como alternativa para sua conveniência, é opcional e autorizado o uso de seu aparelho celular pessoal, sem qualquer obrigatoriedade
+          </p>
         </div>
       );
     }
@@ -2056,7 +2060,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
-          <div className="bg-blue-600 p-5 text-white text-center relative">
+          <div className="bg-blue-600 p-5 text-white text-center relative flex flex-col items-center justify-center">
             <button
               onClick={handleLogout}
               className="absolute top-4 right-4 p-1.5 bg-blue-700 hover:bg-blue-800 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all shadow-sm"
@@ -2064,6 +2068,7 @@ export default function App() {
             >
               <LogOut size={12} /> Desconectar
             </button>
+            <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-12 w-auto mb-2 rounded-lg shadow-sm" />
             <h1 className="text-xl font-bold mb-0.5">
               {isUnitLogin ? `Quiosque: ${loggedInIntern.name}` : `Olá, ${loggedInIntern.name}!`}
             </h1>
@@ -3464,9 +3469,10 @@ export default function App() {
   const getDocumentHtml = (type, intern = null) => {
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
+        <img src="/logo.jpg" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="Logo Porto Terapia" />
         <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px;">PORTO TERAPIA</h1>
         <p style="margin: 4px 0 0; font-size: 10px; text-transform: uppercase; color: #4b5563; font-weight: 600; letter-spacing: 2px;">Clínica de Psicologia e Desenvolvimento Humano</p>
-        <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">CNPJ 45.678.901/0001-23 • contato@portoterapia.com • Belém - PA</p>
+        <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">Belém - PA</p>
       </div>
     `;
 
@@ -3580,6 +3586,7 @@ export default function App() {
             <p style="margin: 0 0 5px 0;"><strong>Cláusula 7ª</strong> - O horário do estágio não deverá, em hipótese alguma, prejudicar a frequência do(a) Aluno(a) às aulas e provas do curso no qual está matriculado(a).</p>
             
             <p style="margin: 0 0 5px 0;"><strong>Cláusula 8ª</strong> - A assiduidade do(a) Estagiário(a) será demonstrada pela marcação de entrada e saída em cartão de ponto ou qualquer outra modalidade de controle adotada pela Parte Concedente.</p>
+            <p style="margin: 0 0 5px 15px;">8.1 - O ESTAGIÁRIO declara estar ciente de que a CLÍNICA disponibiliza dispositivo físico em suas dependências para o registro diário de frequência. Fica facultado ao ESTAGIÁRIO, por mera liberalidade e conveniência própria, a utilização de seu dispositivo móvel pessoal para efetuar o referido registro, não constituindo tal ato qualquer exigência da parte concedente ou ônus para o estudante.</p>
             
             <p style="margin: 0 0 5px 0;"><strong>Cláusula 9ª</strong> - Em decorrência do presente Termo de Compromisso de Estágio celebra-se neste ato, entre a EMPRESA e a Instituição de Ensino, o(a) qual o(a) aluno(a) é matriculado(a).</p>
             
@@ -3847,6 +3854,7 @@ export default function App() {
     printWindow.document.write(`
       <html>
         <head>
+          <base href="${window.location.origin}/" />
           <title>${type.toUpperCase()} - Porto Terapia</title>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
           <style>
@@ -6020,9 +6028,12 @@ export default function App() {
     <div className="min-h-screen bg-gray-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 font-serif">Painel da Supervisão</h1>
-            <p className="text-gray-600 text-xs">Porto Terapia Estágios • Controle Integrado</p>
+          <div className="flex items-center gap-3">
+            <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-12 w-auto rounded-lg shadow-sm" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 font-serif">Painel da Supervisão</h1>
+              <p className="text-gray-600 text-xs">Porto Terapia Estágios • Controle Integrado</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <select
