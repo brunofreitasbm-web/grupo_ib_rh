@@ -60,6 +60,50 @@ const fileToBase64 = (file) => {
   });
 };
 
+const compressImage = (file, maxWidth = 300, maxHeight = 400, quality = 0.7) => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      // Se não for imagem, apenas converte para base64 diretamente (ex: PDFs)
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+      return;
+    }
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
+
 const generateUsername = (fullName) => {
   const clean = fullName.trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -583,7 +627,8 @@ export default function App() {
       query = query.eq('intern_id', user.id);
     }
     
-    const { data, error } = await query.order('timestamp', { ascending: false });
+    // Limitar para os últimos 200 registros para evitar sobrecarga
+    const { data, error } = await query.order('timestamp', { ascending: false }).limit(200);
     if (error) {
       console.error('Erro ao buscar registros:', error);
     } else {
@@ -610,9 +655,10 @@ export default function App() {
     if (!user) return;
     const role = user.user_metadata?.role;
     if (role !== 'supervisor' && role !== 'intern_unit') return;
+    // Otimização: Selecionar campos leves, excluindo a coluna de documentos com arquivos Base64 grandes
     const { data, error } = await supabase
       .from('interns')
-      .select('*')
+      .select('id, name, course, institution, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, photo, supervisor_name, registration_status, documents')
       .order('name', { ascending: true });
     if (error) {
       console.error('Erro ao buscar estagiários:', error);
@@ -1492,6 +1538,30 @@ export default function App() {
     }
   };
 
+  const handleViewDocumentContent = async (internId, docKey, fallbackContent = null, fallbackName = '', docLabel = '') => {
+    if (fallbackContent) {
+      setViewDocBase64(fallbackContent);
+      setViewDocName(fallbackName);
+      setViewDocType(docLabel);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('document_contents')
+        .select('content')
+        .eq('intern_id', internId)
+        .eq('doc_key', docKey)
+        .single();
+      if (error || !data) throw new Error('Não foi possível obter o conteúdo do documento no banco.');
+      setViewDocBase64(data.content);
+      setViewDocName(fallbackName || `${docKey}.pdf`);
+      setViewDocType(docLabel || 'Documento');
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
   // --- FUNÇÕES DE DOCUMENTOS ADMISSAO & MÉTRICAS DE RH ---
   const handleUploadDocument = async (e) => {
     e.preventDefault();
@@ -1506,7 +1576,6 @@ export default function App() {
       return;
     }
 
-    // Limite de 2MB para evitar estouro de limite do documento do Firestore
     if (file.size > 2 * 1024 * 1024) {
       alert('O arquivo excede o tamanho máximo de 2MB. Compacte-o ou selecione um arquivo menor.');
       return;
@@ -1516,21 +1585,34 @@ export default function App() {
     try {
       const base64 = await fileToBase64(file);
       const currentDocs = intern.documents || {};
+      
+      // Omitir o conteúdo Base64 grande nos metadados armazenados em interns.documents
       const updatedDocs = {
         ...currentDocs,
         [uploadDocType]: {
           name: file.name,
           size: (file.size / 1024).toFixed(1) + ' KB',
-          uploadedAt: new Date().toISOString(),
-          content: base64
+          uploadedAt: new Date().toISOString()
         }
       };
 
+      // 1. Atualizar metadados na tabela interns
       const { error } = await supabase
         .from('interns')
         .update({ documents: updatedDocs })
         .eq('id', intern.id);
       if (error) throw error;
+
+      // 2. Gravar o conteúdo pesado em Base64 na tabela document_contents
+      const { error: contentError } = await supabase
+        .from('document_contents')
+        .upsert({
+          intern_id: intern.id,
+          doc_key: uploadDocType,
+          content: base64
+        });
+      if (contentError) throw contentError;
+
       if (fileInput) fileInput.value = '';
       alert('Documento anexado com sucesso!');
     } catch (err) {
@@ -1552,11 +1634,21 @@ export default function App() {
       const currentDocs = { ...intern.documents };
       delete currentDocs[docKey];
 
+      // 1. Atualizar metadados na tabela interns
       const { error } = await supabase
         .from('interns')
         .update({ documents: currentDocs })
         .eq('id', intern.id);
       if (error) throw error;
+
+      // 2. Remover do document_contents
+      const { error: contentError } = await supabase
+        .from('document_contents')
+        .delete()
+        .eq('intern_id', intern.id)
+        .eq('doc_key', docKey);
+      if (contentError) throw contentError;
+
       alert('Documento removido com sucesso!');
     } catch (err) {
       console.error("Erro ao deletar documento:", err);
@@ -1602,7 +1694,7 @@ export default function App() {
         };
       }
 
-      // 1. Create a record in `records`
+      // 1. Criar registro em records
       const newRecord = {
         internId: intern.id,
         internName: intern.name,
@@ -1633,13 +1725,16 @@ export default function App() {
 
       const recordId = insertedData?.[0]?.id || Math.random().toString(36).substring(2, 9);
 
-      // 2. Save document in interns table under occurrence archive key
+      // 2. Salvar metadados do documento na tabela interns, omitindo o conteúdo pesado
       if (justDoc) {
+        const justDocMetadata = { ...justDoc };
+        delete justDocMetadata.content;
+
         const currentDocs = intern.documents || {};
         const updatedDocs = {
           ...currentDocs,
           [`ocorrencia_${recordId}`]: {
-            ...justDoc,
+            ...justDocMetadata,
             occurrenceId: recordId,
             period: `${ocorrenciaStartDate} a ${ocorrenciaEndDate}`,
             daysAway: Number(ocorrenciaDays) || 0,
@@ -1653,6 +1748,16 @@ export default function App() {
           .eq('id', intern.id);
 
         if (updateError) throw updateError;
+
+        // Salvar conteúdo no document_contents
+        const { error: contentError } = await supabase
+          .from('document_contents')
+          .upsert({
+            intern_id: intern.id,
+            doc_key: `ocorrencia_${recordId}`,
+            content: justDoc.content
+          });
+        if (contentError) throw contentError;
       }
 
       alert('Ocorrência registrada com sucesso!');
@@ -1691,6 +1796,13 @@ export default function App() {
           .eq('id', intern.id);
 
         if (updateError) throw updateError;
+
+        // Remover de document_contents
+        await supabase
+          .from('document_contents')
+          .delete()
+          .eq('intern_id', intern.id)
+          .eq('doc_key', `ocorrencia_${recordId}`);
       }
 
       alert('Ocorrência removida com sucesso!');
@@ -1988,71 +2100,7 @@ export default function App() {
       );
     }
 
-    // Caso seja o primeiro acesso (senha "0000"), exige alteração
-    if (loggedInIntern.isFirstLogin) {
-      return (
-        <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden relative">
-            <div className="bg-amber-600 p-6 text-white text-center">
-              <h2 className="text-xl font-bold mb-1 flex items-center justify-center gap-1.5">
-                <Lock size={20} /> Alterar Senha Inicial
-              </h2>
-              <p className="text-amber-100 text-xs leading-normal">
-                Por segurança, altere sua senha inicial de acesso (0000) antes de continuar.
-              </p>
-            </div>
 
-            <div className="p-6">
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Nova Senha</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="Mínimo 4 caracteres"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Confirmar Nova Senha</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="Repita a nova senha"
-                    value={confirmNewPassword}
-                    onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
-                  />
-                </div>
-
-                {passwordChangeError && (
-                  <p className="text-red-500 text-xs text-center font-semibold animate-fade-in">{passwordChangeError}</p>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    className="flex-grow bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors text-xs text-center shadow-sm"
-                  >
-                    Gravar Senha
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="px-4 py-2.5 rounded-lg border border-gray-300 text-xs text-gray-600 hover:bg-gray-100 transition-colors font-medium"
-                  >
-                    Voltar
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      );
-    }
 
     const isUnitLogin = loggedInIntern.role === 'intern_unit';
 
@@ -2648,7 +2696,7 @@ export default function App() {
                         const file = e.target.files?.[0];
                         if (file) {
                           try {
-                            const base64 = await fileToBase64(file);
+                            const base64 = await compressImage(file, 250, 333, 0.7);
                             setCadastroForm({ ...cadastroForm, photo: base64 });
                           } catch (err) {
                             console.error("Erro ao converter foto:", err);
@@ -3097,7 +3145,7 @@ export default function App() {
                       const file = e.target.files?.[0];
                       if (file) {
                         try {
-                          const base64 = await fileToBase64(file);
+                          const base64 = await compressImage(file, 250, 333, 0.7);
                           setForm({ ...form, photo: base64 });
                         } catch (err) {
                           console.error("Erro ao converter foto:", err);
@@ -3372,11 +3420,6 @@ export default function App() {
                     <p className="text-[10px] text-gray-400">
                       Supervisor: <strong className="text-slate-600">{intern.supervisorName || 'Não atribuído'}</strong>
                     </p>
-                    {intern.username && (
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">
-                        Usuário: {intern.username} • Senha: {intern.isFirstLogin ? '0000 (Padrão)' : 'Alterada'}
-                      </p>
-                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -3387,15 +3430,6 @@ export default function App() {
                       title="Aprovar e Validar Cadastro"
                     >
                       <Check size={16} />
-                    </button>
-                  )}
-                  {intern.username && (
-                    <button
-                      onClick={() => handleResetPassword(intern)}
-                      className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                      title="Resetar Senha para 0000"
-                    >
-                      <Lock size={16} />
                     </button>
                   )}
                   <button onClick={() => handleEditIntern(intern)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
@@ -3650,31 +3684,6 @@ export default function App() {
       { title: "Estudo de Abordagens Psicanalíticas com Crianças", desc: "Leitura orientada sobre a constituição do sujeito na infância segundo autores clássicos." },
       { title: "Práticas de Autoavaliação de Competências Clínicas Infantis", desc: "Roteiro reflexivo de autoanálise sobre postura e manejo com a criança durante o estágio." },
       { title: "Observação de Avaliações Clínicas Interdisciplinares", desc: "Estudo de casos avaliados em conjunto por neurologistas infantis, psicólogos e psicopedagogos." }
-    ];
-
-    if (!intern) {
-      return activitiesList.slice(0, 5);
-    }
-
-    // Gera uma semente simples baseada no id, nome e data de início (semestre) do estagiário
-    const seedString = (intern.id || '') + (intern.name || '') + (intern.startDate || '');
-    let hash = 5381;
-    for (let i = 0; i < seedString.length; i++) {
-      hash = ((hash << 5) + hash) + seedString.charCodeAt(i);
-    }
-    hash = Math.abs(hash);
-
-    const shuffled = [...activitiesList];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = (hash + i) % (i + 1);
-      const temp = shuffled[i];
-      shuffled[i] = shuffled[j];
-      shuffled[j] = temp;
-    }
-
-    return shuffled.slice(0, 5);
-  };: "Elaboração de relatórios sobre o próprio desempenho do estagiário para discussão em supervisão individual." },
-      { title: "Observação de Dinâmicas de Ludoterapia", desc: "Estudo das interações pelo brincar em consultório de psicologia infantil sob supervisão de profissional." }
     ];
 
     if (!intern) {
@@ -4523,11 +4532,7 @@ export default function App() {
                               <div className="flex justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setViewDocBase64(fileInfo.content);
-                                    setViewDocName(fileInfo.name);
-                                    setViewDocType(doc.label);
-                                  }}
+                                  onClick={() => handleViewDocumentContent(selectedAdmissionalIntern, doc.key, null, fileInfo.name, doc.label)}
                                   className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded"
                                   title="Visualizar documento"
                                 >
@@ -4667,16 +4672,27 @@ export default function App() {
           [semestralReportPeriod]: {
             name: file.name,
             size: (file.size / 1024).toFixed(1) + ' KB',
-            uploadedAt: new Date().toISOString(),
-            content: base64
+            uploadedAt: new Date().toISOString()
           }
         };
 
+        // 1. Atualizar metadados na tabela interns
         const { error } = await supabase
           .from('interns')
           .update({ semestral_reports: updatedReports })
           .eq('id', selectedInternData.id);
         if (error) throw error;
+
+        // 2. Gravar o conteúdo pesado em Base64 no document_contents
+        const { error: contentError } = await supabase
+          .from('document_contents')
+          .upsert({
+            intern_id: selectedInternData.id,
+            doc_key: `semestral_report_${semestralReportPeriod}`,
+            content: base64
+          });
+        if (contentError) throw contentError;
+
         if (fileInput) fileInput.value = '';
         alert(`Relatório Semestral do ${semestralReportPeriod}º período anexado com sucesso!`);
       } catch (err) {
@@ -4696,11 +4712,20 @@ export default function App() {
         const updatedReports = { ...semestralReports };
         delete updatedReports[period];
 
+        // 1. Atualizar metadados na tabela interns
         const { error } = await supabase
           .from('interns')
           .update({ semestral_reports: updatedReports })
           .eq('id', selectedInternData.id);
         if (error) throw error;
+
+        // 2. Remover de document_contents
+        await supabase
+          .from('document_contents')
+          .delete()
+          .eq('intern_id', selectedInternData.id)
+          .eq('doc_key', `semestral_report_${period}`);
+
         alert('Relatório removido com sucesso!');
       } catch (err) {
         console.error("Erro ao deletar relatório semestral:", err);
@@ -4854,11 +4879,7 @@ export default function App() {
                               <div className="flex gap-1.5 shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setViewDocBase64(rep.content);
-                                    setViewDocName(rep.name);
-                                    setViewDocType(`Relatório Semestral ${period}º Sem.`);
-                                  }}
+                                  onClick={() => handleViewDocumentContent(selectedInternData.id, `semestral_report_${period}`, null, rep.name, `Relatório Semestral ${period}º Sem.`)}
                                   className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded"
                                   title="Visualizar PDF"
                                 >
@@ -5640,11 +5661,7 @@ export default function App() {
                         <span>Anexado em {new Date(doc.uploadedAt).toLocaleDateString('pt-BR')}</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            setViewDocBase64(doc.content);
-                            setViewDocName(doc.name);
-                            setViewDocType('Comprovante Arquivado');
-                          }}
+                          onClick={() => handleViewDocumentContent(doc.internId, doc.key, null, doc.name, 'Comprovante Arquivado')}
                           className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 border-none bg-transparent cursor-pointer"
                         >
                           <Eye size={10} /> Visualizar

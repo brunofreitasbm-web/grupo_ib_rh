@@ -23,9 +23,9 @@ CREATE TABLE public.units (
     created_at timestamp with time zone DEFAULT now()
 );
 
--- 3. TABELA DE ESTAGIÁRIOS (Vinculada com auth.users)
+-- 3. TABELA DE ESTAGIÁRIOS (Sem vínculo obrigatório com auth.users)
 CREATE TABLE public.interns (
-    id uuid NOT NULL PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL,
     course text,
     institution text,
@@ -284,6 +284,14 @@ INSERT INTO auth.identities (
 -- =========================================================================
 
 -- Função 1: Criar novo estagiário (cria conta em auth.users e na tabela interns)
+-- Remover versões anteriores (sobrecarregadas) da função para evitar o erro "Could not choose the best candidate function" no PostgREST
+DROP FUNCTION IF EXISTS public.create_intern_user(
+  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric
+);
+DROP FUNCTION IF EXISTS public.create_intern_user(
+  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb
+);
+
 CREATE OR REPLACE FUNCTION public.create_intern_user(
   p_email text,
   p_password text,
@@ -313,70 +321,12 @@ CREATE OR REPLACE FUNCTION public.create_intern_user(
   p_documents jsonb DEFAULT '{}'::jsonb
 ) RETURNS uuid AS $$
 DECLARE
-  new_user_id uuid;
+  new_intern_id uuid;
 BEGIN
-  -- Inserir no auth.users
-  INSERT INTO auth.users (
-    id,
-    instance_id,
-    email,
-    encrypted_password,
-    email_confirmed_at,
-    raw_app_meta_data,
-    raw_user_meta_data,
-    aud,
-    role,
-    created_at,
-    updated_at,
-    confirmation_token,
-    recovery_token,
-    email_change_token_new,
-    email_change,
-    is_sso_user,
-    is_anonymous
-  ) VALUES (
-    gen_random_uuid(),
-    '00000000-0000-0000-0000-000000000000',
-    p_email,
-    crypt(p_password, gen_salt('bf')),
-    now(),
-    '{"provider": "email", "providers": ["email"]}'::jsonb,
-    jsonb_build_object('name', p_name, 'role', 'intern'),
-    'authenticated',
-    'authenticated',
-    now(),
-    now(),
-    '',
-    '',
-    '',
-    '',
-    false,
-    false
-  )
-  RETURNING id INTO new_user_id;
+  -- Gerar novo UUID aleatório para o estagiário
+  new_intern_id := gen_random_uuid();
 
-  -- Inserir no auth.identities para permitir o login do estagiário
-  INSERT INTO auth.identities (
-    id,
-    user_id,
-    identity_data,
-    provider,
-    provider_id,
-    last_sign_in_at,
-    created_at,
-    updated_at
-  ) VALUES (
-    gen_random_uuid(),
-    new_user_id,
-    jsonb_build_object('sub', new_user_id, 'email', p_email),
-    'email',
-    new_user_id::text,
-    now(),
-    now(),
-    now()
-  );
-
-  -- Inserir no public.interns
+  -- Inserir diretamente no public.interns sem criar registro no auth.users
   INSERT INTO public.interns (
     id,
     name,
@@ -410,7 +360,7 @@ BEGIN
     semestral_reports,
     contract_termination
   ) VALUES (
-    new_user_id,
+    new_intern_id,
     p_name,
     p_course,
     p_institution,
@@ -420,8 +370,8 @@ BEGIN
     true,
     p_start_date,
     p_end_date,
-    split_part(p_email, '@', 1),
-    true,
+    COALESCE(split_part(p_email, '@', 1), 'estagiario_' || substring(md5(random()::text) from 1 for 6)),
+    false,
     p_documents,
     p_photo,
     p_cpf,
@@ -443,7 +393,7 @@ BEGIN
     '{}'::jsonb
   );
 
-  RETURN new_user_id;
+  RETURN new_intern_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -555,4 +505,55 @@ CREATE POLICY "Permitir inserção de pontos para supervisor, próprio estagiár
 
 CREATE POLICY "Permitir modificação/exclusão de pontos apenas para supervisor" 
     ON public.records FOR ALL 
+    USING ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor');
+
+-- =========================================================================
+-- TABELA ADICIONAL DE DOCUMENTOS PARA OTIMIZAÇÃO DE PERFORMANCE
+-- =========================================================================
+
+-- 4.b TABELA DE CONTEÚDO DOS DOCUMENTOS (Armazenamento separado do conteúdo em Base64 para otimização de performance)
+CREATE TABLE IF NOT EXISTS public.document_contents (
+    intern_id uuid REFERENCES public.interns(id) ON DELETE CASCADE,
+    doc_key text NOT NULL,
+    content text NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    PRIMARY KEY (intern_id, doc_key)
+);
+
+-- Habilitar RLS na tabela document_contents
+ALTER TABLE public.document_contents ENABLE ROW LEVEL SECURITY;
+
+-- Políticas para document_contents
+CREATE POLICY "Permitir leitura de conteúdo de documento para supervisor, próprio estagiário ou login de unidade" 
+    ON public.document_contents FOR SELECT 
+    USING (
+        (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor' 
+        OR auth.uid() = intern_id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND EXISTS (
+                SELECT 1 FROM public.interns i
+                WHERE i.id = intern_id 
+                AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id')
+            )
+        )
+    );
+
+CREATE POLICY "Permitir inserção de conteúdo de documento para supervisor, próprio estagiário ou login de unidade" 
+    ON public.document_contents FOR INSERT 
+    WITH CHECK (
+        (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor' 
+        OR auth.uid() = intern_id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND EXISTS (
+                SELECT 1 FROM public.interns i
+                WHERE i.id = intern_id 
+                AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id')
+            )
+        )
+    );
+
+CREATE POLICY "Permitir modificação/exclusão de conteúdo de documento apenas para supervisor" 
+    ON public.document_contents FOR ALL 
     USING ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor');
