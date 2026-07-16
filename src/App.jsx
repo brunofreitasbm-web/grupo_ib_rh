@@ -658,7 +658,7 @@ export default function App() {
     // Otimização: Selecionar campos leves, excluindo a coluna de documentos com arquivos Base64 grandes
     const { data, error } = await supabase
       .from('interns')
-      .select('id, name, course, institution, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, photo, supervisor_name, registration_status, documents')
+      .select('*')
       .order('name', { ascending: true });
     if (error) {
       console.error('Erro ao buscar estagiários:', error);
