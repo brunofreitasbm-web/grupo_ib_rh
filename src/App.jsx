@@ -4,7 +4,7 @@ import {
   LogIn, LogOut, ShieldAlert, Sparkles, Loader2, Bot,
   Download, Lock, AlertTriangle, X, MapPin, Navigation,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
-  Camera, Video, Check, Eye, Trash, Upload, Printer
+  Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen
 } from 'lucide-react';
 
 // Supabase Client Integration
@@ -104,6 +104,8 @@ const mapInternFromDb = (i) => ({
   emergencyRelationship: i.emergency_relationship || 'Pais',
   emergencyPhone: i.emergency_phone || '',
   allowance: Number(i.allowance) || 0,
+  supervisorName: i.supervisor_name || '',
+  registrationStatus: i.registration_status || 'validated',
   semestralReports: i.semestral_reports || {},
   contractTermination: i.contract_termination || {},
 });
@@ -137,6 +139,8 @@ const mapInternToDb = (i) => ({
   emergency_relationship: i.emergencyRelationship || 'Pais',
   emergency_phone: i.emergencyPhone || '',
   allowance: Number(i.allowance) || 0,
+  supervisor_name: i.supervisorName || '',
+  registration_status: i.registrationStatus || 'validated',
   semestral_reports: i.semestralReports || {},
   contract_termination: i.contractTermination || {},
 });
@@ -245,10 +249,34 @@ function startOfWeek(date = new Date()) {
   return d;
 }
 
+const validateCPF = (cpf) => {
+  const clean = cpf.replace(/[^\d]/g, '');
+  if (clean.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(clean)) return false;
+  
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += parseInt(clean.charAt(i)) * (10 - i);
+  }
+  let rev = 11 - (sum % 11);
+  if (rev === 10 || rev === 11) rev = 0;
+  if (rev !== parseInt(clean.charAt(9))) return false;
+  
+  sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += parseInt(clean.charAt(i)) * (11 - i);
+  }
+  rev = 11 - (sum % 11);
+  if (rev === 10 || rev === 11) rev = 0;
+  if (rev !== parseInt(clean.charAt(10))) return false;
+  
+  return true;
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('kiosk'); // 'kiosk' | 'admin'
-  const [activeAdminTab, setActiveAdminTab] = useState('frequencia');
+  const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
   const [records, setRecords] = useState([]);
   const [interns, setInterns] = useState([]);
   const [units, setUnits] = useState(UNITS_DEFAULT);
@@ -295,6 +323,9 @@ export default function App() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsRadarError, setGpsRadarError] = useState('');
 
+  // Filtro por unidade (histórico + exportação)
+  const [filterUnit, setFilterUnit] = useState('all');
+
   // Fluxo Admissional (Upload de Documentos)
   const [selectedAdmissionalIntern, setSelectedAdmissionalIntern] = useState('');
   const [uploadDocType, setUploadDocType] = useState('tce');
@@ -306,22 +337,65 @@ export default function App() {
   // Visualização de foto de ponto histórico
   const [selectedRecordPhoto, setSelectedRecordPhoto] = useState(null);
 
-  // Estados dos novos módulos (Acompanhamento, Financeiro, Impressão, Finalização)
+  // Estados dos novos módulos (Acompanhamento, Financeiro, Impressão, Encerramento de Vínculo)
   const [selectedActivityIntern, setSelectedActivityIntern] = useState('');
   const [activityReportDate, setActivityReportDate] = useState('');
   const [activityRecessDays, setActivityRecessDays] = useState(0);
+  const [activitySupervisorName, setActivitySupervisorName] = useState('');
   const [uploadingSemestralReport, setUploadingSemestralReport] = useState(false);
   const [semestralReportPeriod, setSemestralReportPeriod] = useState('1');
 
   const [selectedPrintIntern, setSelectedPrintIntern] = useState('');
 
   const [filterFinanceMonth, setFilterFinanceMonth] = useState(new Date().toISOString().substring(0, 7));
-  const [filterFinanceUnit, setFilterFinanceUnit] = useState('all');
 
   const [selectedTerminationIntern, setSelectedTerminationIntern] = useState('');
   const [terminationMotive, setTerminationMotive] = useState('Desligamento (conforme Lei)');
   const [terminationDate, setTerminationDate] = useState(new Date().toISOString().split('T')[0]);
   const [uploadingTerminationLetter, setUploadingTerminationLetter] = useState(false);
+
+  // Estados para Aba de Ocorrências (Supervisor)
+  const [selectedOcorrenciaIntern, setSelectedOcorrenciaIntern] = useState('');
+  const [ocorrenciaStartDate, setOcorrenciaStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [ocorrenciaEndDate, setOcorrenciaEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [ocorrenciaType, setOcorrenciaType] = useState('atestado');
+  const [ocorrenciaDays, setOcorrenciaDays] = useState(1);
+  const [ocorrenciaDesc, setOcorrenciaDesc] = useState('');
+  const [ocorrenciaLoading, setOcorrenciaLoading] = useState(false);
+  const [ocorrenciaFilterIntern, setOcorrenciaFilterIntern] = useState('all');
+
+  useEffect(() => {
+    if (ocorrenciaStartDate && ocorrenciaEndDate) {
+      const start = new Date(ocorrenciaStartDate);
+      const end = new Date(ocorrenciaEndDate);
+      const diffTime = end - start;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      setOcorrenciaDays(isNaN(diffDays) || diffDays < 0 ? 1 : diffDays);
+    }
+  }, [ocorrenciaStartDate, ocorrenciaEndDate]);
+
+  useEffect(() => {
+    setOcorrenciaFilterIntern('all');
+    setSelectedOcorrenciaIntern('');
+    setSelectedPrintIntern('');
+    setSelectedTerminationIntern('');
+    setSelectedAdmissionalIntern('');
+    setSelectedActivityIntern('');
+  }, [filterUnit]);
+
+  // Cadastro obrigatório (do zero)
+  const [cadastroForm, setCadastroForm] = useState({
+    name: '', course: '', institution: '', shift: 'Manhã',
+    dailyHours: 6, unitId: UNITS_DEFAULT[0].id, active: true,
+    startDate: '', endDate: '', photo: '', cpf: '', email: '',
+    rg: '', phone: '', address: '', bankName: '', bankAgency: '',
+    bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
+    emergencyPhone: '', allowance: 0, supervisorName: 'Barbara Batista'
+  });
+  const [cadastroCpfRgFile, setCadastroCpfRgFile] = useState(null);
+  const [cadastroMatriculaFile, setCadastroMatriculaFile] = useState(null);
+  const [isSubmittingCadastro, setIsSubmittingCadastro] = useState(false);
+  const [cadastroSuccess, setCadastroSuccess] = useState(false);
 
   // IA (Gemini) e Alertas
   const [isImproving, setIsImproving] = useState(false);
@@ -351,6 +425,7 @@ export default function App() {
     emergencyRelationship: 'Pais',
     emergencyPhone: '',
     allowance: 0,
+    supervisorName: 'Barbara Batista',
   });
 
   // Configuração das unidades
@@ -360,9 +435,6 @@ export default function App() {
   // Modais de templates e minuta
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [viewingMinutaIntern, setViewingMinutaIntern] = useState(null);
-
-  // Filtro por unidade (histórico + exportação)
-  const [filterUnit, setFilterUnit] = useState('all');
 
   // Relógio
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -480,9 +552,11 @@ export default function App() {
     if (intern) {
       setActivityReportDate(intern.lastReportDate || '');
       setActivityRecessDays(Number(intern.recessDaysTaken) || 0);
+      setActivitySupervisorName(intern.supervisorName || '');
     } else {
       setActivityReportDate('');
       setActivityRecessDays(0);
+      setActivitySupervisorName('');
     }
   }, [selectedActivityIntern, interns]);
 
@@ -497,6 +571,7 @@ export default function App() {
       setTerminationDate(new Date().toISOString().split('T')[0]);
     }
   }, [selectedTerminationIntern, interns]);
+
 
   // 2. Registros de frequência
   const fetchRecords = useCallback(async () => {
@@ -805,9 +880,17 @@ export default function App() {
     todayStart.setHours(0, 0, 0, 0);
     const weekStart = startOfWeek();
 
+    // Filtra estagiários por unidade primeiro
+    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
+    const filteredInternNames = new Set(filteredInterns.map(i => i.name));
+
     // Agrupa por estagiário + dia
     const daily = {};
     records.forEach((r) => {
+      // Se estiver filtrando, apenas processa registros de estagiários daquela unidade
+      const matchesUnit = filterUnit === 'all' || r.geo?.unitId === filterUnit || filteredInternNames.has(r.internName);
+      if (!matchesUnit) return;
+
       const d = new Date(r.timestamp);
       const dateKey = d.toLocaleDateString('pt-BR');
       const key = `${r.internName}|${dateKey}`;
@@ -841,26 +924,35 @@ export default function App() {
       if (dayStart >= weekStart) per[g.name].week += hrs;
     });
 
-    // Monta a partir da lista de estagiários (inclui quem tem 0h)
-    const rows = interns.map((i) => ({
+    // Monta a partir da lista de estagiários filtrados (inclui quem tem 0h)
+    const rows = filteredInterns.map((i) => ({
       name: i.name,
       today: per[i.name]?.today || 0,
       week: per[i.name]?.week || 0,
     }));
-    // Inclui nomes que aparecem em registros mas não estão mais cadastrados
-    Object.keys(per).forEach((name) => {
-      if (!rows.find((r) => r.name === name)) {
-        rows.push({ name, today: per[name].today, week: per[name].week, removed: true });
-      }
-    });
+    
+    // Se filterUnit === 'all', incluir nomes que aparecem em registros mas não estão mais cadastrados
+    if (filterUnit === 'all') {
+      Object.keys(per).forEach((name) => {
+        if (!rows.find((r) => r.name === name)) {
+          rows.push({ name, today: per[name].today, week: per[name].week, removed: true });
+        }
+      });
+    }
     rows.sort((a, b) => b.week - a.week);
     return rows;
-  }, [records, interns]);
+  }, [records, interns, filterUnit]);
 
   // Alertas de carga horária diária (> 6h)
   useEffect(() => {
     const grouped = {};
+    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
+    const filteredInternNames = new Set(filteredInterns.map(i => i.name));
+
     records.forEach((r) => {
+      // Filtra por unidade se selecionada
+      if (filterUnit !== 'all' && !filteredInternNames.has(r.internName)) return;
+
       const d = new Date(r.timestamp);
       const dateKey = d.toLocaleDateString('pt-BR');
       const key = `${r.internName}|${dateKey}`;
@@ -890,7 +982,7 @@ export default function App() {
       }
     });
     setHoursAlerts(alerts);
-  }, [records]);
+  }, [records, interns, filterUnit]);
 
   // ---- Gemini ----
   const fetchWithRetry = async (url, options, retries = 5) => {
@@ -913,7 +1005,7 @@ export default function App() {
     setIsImproving(true);
     try {
       const prompt = `Você é um assistente de RH de uma clínica. Reescreva a seguinte justificativa de ponto de um estagiário para que fique mais formal, clara e concisa (máximo 2 frases). Mantenha o motivo original. Texto original: "${justification}"`;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const result = await fetchWithRetry(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -929,18 +1021,18 @@ export default function App() {
   };
 
   const handleAnalyzeRecords = async () => {
-    if (records.length === 0) return;
+    if (filteredRecords.length === 0) return;
     if (!apiKey) { setAiSummary('Recurso de IA não configurado (defina VITE_GEMINI_API_KEY no arquivo .env).'); return; }
     setIsAnalyzing(true);
     try {
       const recordsText = JSON.stringify(
-        records.slice(0, 50).map((r) => ({
+        filteredRecords.slice(0, 50).map((r) => ({
           nome: r.internName, acao: r.action, dataHora: r.timestamp,
           unidade: r.geo?.unitName, justificativa: r.justification,
         }))
       );
       const prompt = `Analise os seguintes registros de ponto de estagiários de uma clínica (2 unidades). Faça um breve resumo gerencial destacando padrões, anomalias ou justificativas notáveis. Seja conciso e profissional. Registros: ${recordsText}`;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const result = await fetchWithRetry(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1123,7 +1215,7 @@ export default function App() {
     setEditingId(null);
     setForm({
       name: '', course: '', institution: '', shift: 'Manhã', dailyHours: 6,
-      unitId: units[0]?.id || '', active: true,
+      unitId: (filterUnit !== 'all' ? filterUnit : (units[0]?.id || '')), active: true,
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 2 anos
       photo: '',
@@ -1140,6 +1232,7 @@ export default function App() {
       emergencyRelationship: 'Pais',
       emergencyPhone: '',
       allowance: 0,
+      supervisorName: '',
     });
   };
 
@@ -1169,12 +1262,36 @@ export default function App() {
       emergencyRelationship: intern.emergencyRelationship || 'Pais',
       emergencyPhone: intern.emergencyPhone || '',
       allowance: Number(intern.allowance) || 0,
+      supervisorName: intern.supervisorName || '',
     });
   };
 
   const handleSaveIntern = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    
+    // Validar se todos os campos estão preenchidos
+    if (!form.name.trim() || !form.cpf.trim() || !form.email.trim() || !form.rg.trim() || 
+        !form.phone.trim() || !form.course.trim() || !form.institution.trim() || !form.address.trim() || 
+        !form.unitId || !form.shift || !form.startDate || !form.endDate || 
+        !form.bankName.trim() || !form.bankAgency.trim() || !form.bankAccount.trim() || !form.pixKey.trim() || 
+        !form.emergencyName.trim() || !form.emergencyRelationship || !form.emergencyPhone.trim() || 
+        !form.supervisorName.trim()) {
+      alert("Todos os campos do Cadastro de Estagiário são obrigatórios!");
+      return;
+    }
+
+    // Foto obrigatória
+    if (!form.photo) {
+      alert("Por favor, adicione uma foto de cadastro (3x4).");
+      return;
+    }
+
+    // Validar CPF
+    if (!validateCPF(form.cpf)) {
+      alert("Por favor, insira um CPF válido.");
+      return;
+    }
+
     const payload = {
       name: form.name.trim(),
       course: form.course.trim(),
@@ -1199,6 +1316,7 @@ export default function App() {
       emergencyRelationship: form.emergencyRelationship,
       emergencyPhone: form.emergencyPhone.trim(),
       allowance: Number(form.allowance) || 0,
+      supervisorName: form.supervisorName.trim(),
     };
     try {
       if (editingId) {
@@ -1214,7 +1332,7 @@ export default function App() {
         if (error) throw error;
       } else {
         const email = payload.email || `${generateUsername(payload.name)}@portoterapia.com`;
-        const { error } = await supabase.rpc('create_intern_user', {
+        let createResult = await supabase.rpc('create_intern_user', {
           p_email: email,
           p_password: '0000',
           p_name: payload.name,
@@ -1237,9 +1355,48 @@ export default function App() {
           p_emergency_name: payload.emergencyName || null,
           p_emergency_relationship: payload.emergencyRelationship || 'Pais',
           p_emergency_phone: payload.emergencyPhone || null,
-          p_allowance: Number(payload.allowance) || 0
+          p_allowance: Number(payload.allowance) || 0,
+          p_supervisor_name: payload.supervisorName || null
         });
-        if (error) throw error;
+
+        if (createResult.error) {
+          console.warn("Tentando fallback de criação sem parâmetro de supervisor...", createResult.error);
+          const fallbackResult = await supabase.rpc('create_intern_user', {
+            p_email: email,
+            p_password: '0000',
+            p_name: payload.name,
+            p_course: payload.course,
+            p_institution: payload.institution,
+            p_shift: payload.shift,
+            p_daily_hours: payload.dailyHours,
+            p_unit_id: payload.unitId,
+            p_start_date: payload.startDate,
+            p_end_date: payload.endDate,
+            p_photo: payload.photo || null,
+            p_cpf: payload.cpf || null,
+            p_rg: payload.rg || null,
+            p_phone: payload.phone || null,
+            p_address: payload.address || null,
+            p_bank_name: payload.bankName || null,
+            p_bank_agency: payload.bankAgency || null,
+            p_bank_account: payload.bankAccount || null,
+            p_pix_key: payload.pixKey || null,
+            p_emergency_name: payload.emergencyName || null,
+            p_emergency_relationship: payload.emergencyRelationship || 'Pais',
+            p_emergency_phone: payload.emergencyPhone || null,
+            p_allowance: Number(payload.allowance) || 0
+          });
+          if (fallbackResult.error) throw fallbackResult.error;
+          const newId = fallbackResult.data;
+          if (newId) {
+            await supabase.from('interns').update({ supervisor_name: payload.supervisorName }).eq('id', newId);
+          }
+        } else {
+          const newId = createResult.data;
+          if (newId) {
+            await supabase.from('interns').update({ supervisor_name: payload.supervisorName }).eq('id', newId);
+          }
+        }
       }
       resetForm();
     } catch (error) {
@@ -1263,6 +1420,23 @@ export default function App() {
     } catch (error) {
       console.error('Erro ao excluir estagiário:', error);
       alert('Erro ao excluir estagiário.');
+    }
+  };
+
+  const handleApproveRegistration = async (internId) => {
+    const ok = window.confirm("Deseja realmente aprovar e validar o recadastro deste estagiário?");
+    if (!ok) return;
+    try {
+      const { error } = await supabase
+        .from('interns')
+        .update({ registration_status: 'validated' })
+        .eq('id', internId);
+      if (error) throw error;
+      alert("Cadastro validado com sucesso!");
+      fetchInterns();
+    } catch (err) {
+      console.error("Erro ao aprovar cadastro:", err);
+      alert("Erro ao validar cadastro: " + err.message);
     }
   };
 
@@ -1388,6 +1562,144 @@ export default function App() {
     } catch (err) {
       console.error("Erro ao deletar documento:", err);
       alert('Erro ao excluir documento.');
+    }
+  };
+
+  const handleSaveOcorrencia = async (e) => {
+    e.preventDefault();
+    if (!selectedOcorrenciaIntern) {
+      alert('Selecione um estagiário.');
+      return;
+    }
+    const intern = interns.find(i => i.id === selectedOcorrenciaIntern);
+    if (!intern) {
+      alert('Estagiário não encontrado.');
+      return;
+    }
+    if (!ocorrenciaDesc.trim()) {
+      alert('Justificativa/Descrição é obrigatória.');
+      return;
+    }
+
+    const docInput = document.getElementById('ocorrencia-file-input');
+    const justFile = docInput?.files?.[0];
+    let justDoc = null;
+
+    setOcorrenciaLoading(true);
+    try {
+      if (justFile) {
+        if (justFile.size > 2 * 1024 * 1024) {
+          alert('O arquivo de comprovante excede o limite de 2MB.');
+          setOcorrenciaLoading(false);
+          return;
+        }
+        const base64 = await fileToBase64(justFile);
+        justDoc = {
+          name: justFile.name,
+          size: (justFile.size / 1024).toFixed(1) + ' KB',
+          type: ocorrenciaType,
+          content: base64,
+          uploadedAt: new Date().toISOString()
+        };
+      }
+
+      // 1. Create a record in `records`
+      const newRecord = {
+        internId: intern.id,
+        internName: intern.name,
+        action: 'ocorrencia',
+        justification: ocorrenciaDesc,
+        timestamp: new Date(ocorrenciaStartDate + 'T12:00:00').toISOString(),
+        photo: null,
+        isManual: true,
+        justificationDoc: justDoc,
+        daysAway: Number(ocorrenciaDays) || 0,
+        geo: {
+          lat: 0,
+          lng: 0,
+          accuracy: 0,
+          distanceKm: 0,
+          distanceM: 0,
+          unitId: intern.unitId || '',
+          unitName: 'Lançado pela Gestão'
+        }
+      };
+
+      const { data: insertedData, error: insertError } = await supabase
+        .from('records')
+        .insert([mapRecordToDb(newRecord)])
+        .select();
+
+      if (insertError) throw insertError;
+
+      const recordId = insertedData?.[0]?.id || Math.random().toString(36).substring(2, 9);
+
+      // 2. Save document in interns table under occurrence archive key
+      if (justDoc) {
+        const currentDocs = intern.documents || {};
+        const updatedDocs = {
+          ...currentDocs,
+          [`ocorrencia_${recordId}`]: {
+            ...justDoc,
+            occurrenceId: recordId,
+            period: `${ocorrenciaStartDate} a ${ocorrenciaEndDate}`,
+            daysAway: Number(ocorrenciaDays) || 0,
+            desc: ocorrenciaDesc
+          }
+        };
+
+        const { error: updateError } = await supabase
+          .from('interns')
+          .update({ documents: updatedDocs })
+          .eq('id', intern.id);
+
+        if (updateError) throw updateError;
+      }
+
+      alert('Ocorrência registrada com sucesso!');
+      setOcorrenciaDesc('');
+      if (docInput) docInput.value = '';
+      fetchRecords();
+      fetchInterns();
+    } catch (err) {
+      console.error('Erro ao salvar ocorrência:', err);
+      alert('Erro ao registrar ocorrência.');
+    } finally {
+      setOcorrenciaLoading(false);
+    }
+  };
+
+  const handleDeleteOcorrencia = async (recordId, internId) => {
+    const ok = window.confirm('Deseja realmente remover esta ocorrência?');
+    if (!ok) return;
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('records')
+        .delete()
+        .eq('id', recordId);
+
+      if (deleteError) throw deleteError;
+
+      const intern = interns.find(i => i.id === internId);
+      if (intern && intern.documents && intern.documents[`ocorrencia_${recordId}`]) {
+        const currentDocs = { ...intern.documents };
+        delete currentDocs[`ocorrencia_${recordId}`];
+
+        const { error: updateError } = await supabase
+          .from('interns')
+          .update({ documents: currentDocs })
+          .eq('id', intern.id);
+
+        if (updateError) throw updateError;
+      }
+
+      alert('Ocorrência removida com sucesso!');
+      fetchRecords();
+      fetchInterns();
+    } catch (err) {
+      console.error('Erro ao deletar ocorrência:', err);
+      alert('Erro ao excluir ocorrência.');
     }
   };
 
@@ -1582,6 +1894,38 @@ export default function App() {
                         <h4 className="font-bold text-gray-800 text-sm">Estagiários - Generalíssimo</h4>
                         <p className="text-[10px] text-gray-500">Ponto para estagiários nesta unidade</p>
                       </div>
+                    </button>
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-4 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentView('recadastro');
+                        setCadastroCpfRgFile(null);
+                        setCadastroMatriculaFile(null);
+                        setCadastroSuccess(false);
+                        setCadastroForm({
+                          name: '', course: '', institution: '', shift: 'Manhã',
+                          dailyHours: 6, unitId: units[0]?.id || '', active: true,
+                          startDate: '', endDate: '', photo: '', cpf: '', email: '',
+                          rg: '', phone: '', address: '', bankName: '', bankAgency: '',
+                          bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
+                          emergencyPhone: '', allowance: 0, supervisorName: ''
+                        });
+                      }}
+                      className="w-full p-4 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/30 hover:bg-blue-50 hover:border-blue-500 transition-all flex items-center justify-between text-left group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
+                          <Sparkles size={20} className="animate-pulse text-blue-600" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-blue-800 text-sm">⚠️ Cadastro Obrigatório</h4>
+                          <p className="text-[10px] text-blue-600/80">Faça o seu cadastro inicial obrigatório de estagiário</p>
+                        </div>
+                      </div>
+                      <span className="text-blue-500 font-bold text-xs bg-white border border-blue-200 py-1 px-2.5 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
                     </button>
                   </div>
                 </div>
@@ -2090,51 +2434,219 @@ export default function App() {
     );
   };
 
-  // ============================================================
-  // PAINEL: Gestão de estagiários
-  // ============================================================
-  const renderManageSection = () => (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <Users size={20} /> Gestão de Estagiários
-        </h2>
-        <button onClick={() => setShowManage((s) => !s)} className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-          {showManage ? 'Recolher' : 'Gerenciar'}
-        </button>
-      </div>
+  const renderRecadastroSection = () => {
+    const handleSaveCadastro = async (e) => {
+      e.preventDefault();
+      
+      // Validar se todos os campos estão preenchidos
+      if (!cadastroForm.name.trim() || !cadastroForm.cpf.trim() || !cadastroForm.email.trim() || !cadastroForm.rg.trim() || 
+          !cadastroForm.phone.trim() || !cadastroForm.course.trim() || !cadastroForm.institution.trim() || !cadastroForm.address.trim() || 
+          !cadastroForm.unitId || !cadastroForm.shift || !cadastroForm.startDate || !cadastroForm.endDate || 
+          !cadastroForm.bankName.trim() || !cadastroForm.bankAgency.trim() || !cadastroForm.bankAccount.trim() || !cadastroForm.pixKey.trim() || 
+          !cadastroForm.emergencyName.trim() || !cadastroForm.emergencyRelationship || !cadastroForm.emergencyPhone.trim() || 
+          !cadastroForm.supervisorName.trim()) {
+        alert("Todos os campos do Cadastro de Estagiário são obrigatórios!");
+        return;
+      }
 
-      {showManage && (
-        <div className="p-4 space-y-6">
-          <form onSubmit={handleSaveIntern} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-            <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-              {editingId ? <><Pencil size={16} /> Editar estagiário</> : <><Plus size={16} /> Novo estagiário</>}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="md:col-span-2 bg-white border border-gray-200 rounded-xl p-3 flex flex-col sm:flex-row gap-4 items-center">
+      // Foto obrigatória
+      if (!cadastroForm.photo) {
+        alert("Por favor, adicione uma foto de cadastro (3x4).");
+        return;
+      }
+
+      // CPF/RG e comprovante de matrícula obrigatórios
+      if (!cadastroCpfRgFile) {
+        alert("Por favor, envie o documento de identidade (CPF/RG) em anexo.");
+        return;
+      }
+      if (!cadastroMatriculaFile) {
+        alert("Por favor, envie o comprovante de matrícula em anexo.");
+        return;
+      }
+
+      // Validar CPF
+      if (!validateCPF(cadastroForm.cpf)) {
+        alert("Por favor, insira um CPF válido.");
+        return;
+      }
+
+      setIsSubmittingCadastro(true);
+      try {
+        const email = cadastroForm.email.trim();
+        const username = generateUsername(cadastroForm.name.trim());
+        const finalEmail = email || `${username}@portoterapia.com`;
+
+        // 1. Preparar os documentos admissionais
+        const updatedDocs = {};
+        if (cadastroCpfRgFile) {
+          updatedDocs['documentos'] = {
+            name: cadastroCpfRgFile.name,
+            size: cadastroCpfRgFile.size,
+            uploadedAt: new Date().toISOString(),
+            content: cadastroCpfRgFile.content
+          };
+        }
+        if (cadastroMatriculaFile) {
+          updatedDocs['matricula'] = {
+            name: cadastroMatriculaFile.name,
+            size: cadastroMatriculaFile.size,
+            uploadedAt: new Date().toISOString(),
+            content: cadastroMatriculaFile.content
+          };
+        }
+
+        // 2. Criar o usuário via RPC
+        const createResult = await supabase.rpc('create_intern_user', {
+          p_email: finalEmail,
+          p_password: '0000',
+          p_name: cadastroForm.name.trim(),
+          p_course: cadastroForm.course.trim(),
+          p_institution: cadastroForm.institution.trim(),
+          p_shift: cadastroForm.shift,
+          p_daily_hours: Math.min(Math.max(Number(cadastroForm.dailyHours) || 6, 1), 8),
+          p_unit_id: cadastroForm.unitId,
+          p_start_date: cadastroForm.startDate,
+          p_end_date: cadastroForm.endDate,
+          p_photo: cadastroForm.photo || null,
+          p_cpf: cadastroForm.cpf.trim() || null,
+          p_rg: cadastroForm.rg.trim() || null,
+          p_phone: cadastroForm.phone.trim() || null,
+          p_address: cadastroForm.address.trim() || null,
+          p_bank_name: cadastroForm.bankName.trim() || null,
+          p_bank_agency: cadastroForm.bankAgency.trim() || null,
+          p_bank_account: cadastroForm.bankAccount.trim() || null,
+          p_pix_key: cadastroForm.pixKey.trim() || null,
+          p_emergency_name: cadastroForm.emergencyName.trim() || null,
+          p_emergency_relationship: cadastroForm.emergencyRelationship || 'Pais',
+          p_emergency_phone: cadastroForm.emergencyPhone.trim() || null,
+          p_allowance: Number(cadastroForm.allowance) || 0,
+          p_supervisor_name: cadastroForm.supervisorName.trim() || null,
+          p_registration_status: 'pending_validation',
+          p_documents: updatedDocs
+        });
+
+        let newId = null;
+        if (createResult.error) {
+          console.warn("Tentando fallback de criação sem novos parâmetros...", createResult.error);
+          const fallbackResult = await supabase.rpc('create_intern_user', {
+            p_email: finalEmail,
+            p_password: '0000',
+            p_name: cadastroForm.name.trim(),
+            p_course: cadastroForm.course.trim(),
+            p_institution: cadastroForm.institution.trim(),
+            p_shift: cadastroForm.shift,
+            p_daily_hours: Math.min(Math.max(Number(cadastroForm.dailyHours) || 6, 1), 8),
+            p_unit_id: cadastroForm.unitId,
+            p_start_date: cadastroForm.startDate,
+            p_end_date: cadastroForm.endDate,
+            p_photo: cadastroForm.photo || null,
+            p_cpf: cadastroForm.cpf.trim() || null,
+            p_rg: cadastroForm.rg.trim() || null,
+            p_phone: cadastroForm.phone.trim() || null,
+            p_address: cadastroForm.address.trim() || null,
+            p_bank_name: cadastroForm.bankName.trim() || null,
+            p_bank_agency: cadastroForm.bankAgency.trim() || null,
+            p_bank_account: cadastroForm.bankAccount.trim() || null,
+            p_pix_key: cadastroForm.pixKey.trim() || null,
+            p_emergency_name: cadastroForm.emergencyName.trim() || null,
+            p_emergency_relationship: cadastroForm.emergencyRelationship || 'Pais',
+            p_emergency_phone: cadastroForm.emergencyPhone.trim() || null,
+            p_allowance: Number(cadastroForm.allowance) || 0
+          });
+          if (fallbackResult.error) throw fallbackResult.error;
+          newId = fallbackResult.data;
+          
+          // No fallback antigo, precisamos forçar o update dos documentos (tentativa)
+          await supabase
+            .from('interns')
+            .update({
+              registration_status: 'pending_validation',
+              documents: updatedDocs,
+              supervisor_name: cadastroForm.supervisorName.trim()
+            })
+            .eq('id', newId);
+        } else {
+          newId = createResult.data;
+        }
+
+        if (!newId) {
+          throw new Error("Não foi possível obter o ID do novo estagiário.");
+        }
+
+        setCadastroSuccess(true);
+        fetchInterns();
+      } catch (err) {
+        console.error("Erro ao realizar cadastro:", err);
+        alert("Erro ao enviar cadastro: " + (err.message || err));
+      } finally {
+        setIsSubmittingCadastro(false);
+      }
+    };
+
+    if (cadastroSuccess) {
+      return (
+        <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center space-y-4 border border-slate-100 animate-fade-in">
+            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle size={36} />
+            </div>
+            <h2 className="text-xl font-bold text-gray-800">Confirmação de Dados</h2>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Seu cadastro foi enviado com sucesso! Suas informações foram cadastradas no banco de dados e serão validadas pela Supervisão de RH da Clínica.
+            </p>
+            <div className="pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView('kiosk');
+                  setCadastroSuccess(false);
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors shadow-md text-xs"
+              >
+                Voltar para Tela Inicial
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-blue-50 flex flex-col items-center p-4 py-8">
+        <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
+          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-700 p-6 text-white text-center">
+            <h1 className="text-xl font-bold mb-1">Cadastro Obrigatório de Estagiários</h1>
+            <p className="text-blue-100 text-xs">Insira todas as suas informações e anexe seus documentos para o RH</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <form onSubmit={handleSaveCadastro} className="space-y-6 animate-fade-in">
+              {/* DADOS CADASTRO PHOTO */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-center shadow-inner">
                 <div className="w-16 h-20 bg-gray-100 rounded border border-gray-300 overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
-                  {form.photo ? (
-                    <img src={form.photo} alt="Foto 3x4" className="w-full h-full object-cover" />
+                  {cadastroForm.photo ? (
+                    <img src={cadastroForm.photo} alt="Foto 3x4" className="w-full h-full object-cover" />
                   ) : (
                     <div className="text-center p-1 text-[8px] text-gray-400 font-bold uppercase tracking-wider">
-                      Foto 3x4
+                      Foto 3x4 *
                     </div>
                   )}
                 </div>
                 <div className="flex-1 w-full space-y-2 text-center sm:text-left">
-                  <label className="block text-xs font-bold text-gray-700">Foto de Cadastro (Formato 3x4)</label>
+                  <label className="block text-xs font-bold text-gray-700">Foto de Cadastro (Formato 3x4) *</label>
                   <div className="flex flex-wrap justify-center sm:justify-start gap-2">
                     <input
                       type="file"
                       accept="image/*"
-                      id="intern-photo-input"
+                      id="cadastro-photo-input"
                       className="hidden"
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
                           try {
                             const base64 = await fileToBase64(file);
-                            setForm({ ...form, photo: base64 });
+                            setCadastroForm({ ...cadastroForm, photo: base64 });
                           } catch (err) {
                             console.error("Erro ao converter foto:", err);
                             alert("Erro ao processar foto.");
@@ -2144,15 +2656,15 @@ export default function App() {
                     />
                     <button
                       type="button"
-                      onClick={() => document.getElementById('intern-photo-input').click()}
+                      onClick={() => document.getElementById('cadastro-photo-input').click()}
                       className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs px-3 py-1.5 rounded-lg font-semibold border border-blue-200 transition-colors"
                     >
-                      <Upload size={13} /> Escolher Foto 3x4
+                      <Upload size={13} /> Escolher Foto 3x4 *
                     </button>
-                    {form.photo && (
+                    {cadastroForm.photo && (
                       <button
                         type="button"
-                        onClick={() => setForm({ ...form, photo: '' })}
+                        onClick={() => setCadastroForm({ ...cadastroForm, photo: '' })}
                         className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs px-3 py-1.5 rounded-lg font-semibold border border-red-200 transition-colors"
                       >
                         <Trash size={13} /> Remover
@@ -2162,257 +2674,739 @@ export default function App() {
                   <p className="text-[10px] text-gray-400">Insira a imagem no formato 3x4 inicial de cadastro para comparação biométrica.</p>
                 </div>
               </div>
-              <input
-                required placeholder="Nome completo *"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                placeholder="CPF"
-                value={form.cpf}
-                onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                type="email"
-                placeholder="E-mail *"
-                required
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                placeholder="RG"
-                value={form.rg}
-                onChange={(e) => setForm({ ...form, rg: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                placeholder="Telefone"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                placeholder="Curso"
-                value={form.course}
-                onChange={(e) => setForm({ ...form, course: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                placeholder="Instituição de ensino"
-                value={form.institution}
-                onChange={(e) => setForm({ ...form, institution: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                placeholder="Endereço completo"
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 md:col-span-2"
-              />
-              <div>
-                <label className="text-xs text-gray-500">Unidade padrão</label>
-                <select
-                  value={form.unitId}
-                  onChange={(e) => setForm({ ...form, unitId: e.target.value })}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                >
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Turno</label>
-                <select
-                  value={form.shift}
-                  onChange={(e) => setForm({ ...form, shift: e.target.value })}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                >
-                  <option>Manhã</option>
-                  <option>Tarde</option>
-                  <option>Noite</option>
-                  <option>Integral</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Carga horária diária (máx. 6h - Lei 11.788)</label>
-                <input
-                  type="number" min={1} max={8}
-                  value={form.dailyHours}
-                  onChange={(e) => setForm({ ...form, dailyHours: e.target.value })}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Data de Início do Contrato</label>
-                <input
-                  type="date"
-                  value={form.startDate}
-                  onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Data de Fim do Contrato</label>
-                <input
-                  type="date"
-                  value={form.endDate}
-                  onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Bolsa/Auxílio Firmado (R$)</label>
-                <input
-                  type="number" step="0.01" min="0"
-                  placeholder="Bolsa/Auxílio"
-                  value={form.allowance}
-                  onChange={(e) => setForm({ ...form, allowance: e.target.value })}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
 
-              {/* DADOS BANCÁRIOS SUBSECTION */}
-              <div className="md:col-span-2 border-t border-gray-200 pt-3">
-                <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Dados Bancários</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              {/* FORM GRID */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Nome completo *</label>
                   <input
-                    placeholder="Banco"
-                    value={form.bankName}
-                    onChange={(e) => setForm({ ...form, bankName: e.target.value })}
-                    className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    placeholder="Agência"
-                    value={form.bankAgency}
-                    onChange={(e) => setForm({ ...form, bankAgency: e.target.value })}
-                    className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    placeholder="Conta Corrente"
-                    value={form.bankAccount}
-                    onChange={(e) => setForm({ ...form, bankAccount: e.target.value })}
-                    className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    placeholder="Chave PIX (CPF)"
-                    value={form.pixKey}
-                    onChange={(e) => setForm({ ...form, pixKey: e.target.value })}
-                    className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                    required placeholder="Nome completo *"
+                    value={cadastroForm.name}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, name: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
                   />
                 </div>
-              </div>
-
-              {/* CONTATO DE EMERGÊNCIA SUBSECTION */}
-              <div className="md:col-span-2 border-t border-gray-200 pt-3">
-                <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Contato de Emergência</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">CPF *</label>
                   <input
-                    placeholder="Nome do Contato"
-                    value={form.emergencyName}
-                    onChange={(e) => setForm({ ...form, emergencyName: e.target.value })}
-                    className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                  <div>
-                    <select
-                      value={form.emergencyRelationship}
-                      onChange={(e) => setForm({ ...form, emergencyRelationship: e.target.value })}
-                      className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="Pais">Pais</option>
-                      <option value="Cônjuge">Cônjuge</option>
-                      <option value="Irmão(ã)">Irmão(ã)</option>
-                      <option value="Outro">Outro</option>
-                    </select>
-                  </div>
-                  <input
-                    placeholder="Telefone de Emergência"
-                    value={form.emergencyPhone}
-                    onChange={(e) => setForm({ ...form, emergencyPhone: e.target.value })}
-                    className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                    required placeholder="CPF *"
+                    value={cadastroForm.cpf}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, cpf: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
                   />
                 </div>
-              </div>
-              <label className="flex items-center gap-2 text-sm text-gray-700 self-end md:col-span-2 py-1">
-                <input
-                  type="checkbox"
-                  checked={form.active}
-                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
-                  className="w-4 h-4"
-                />
-                Estagiário ativo (aparece na tela de registro)
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium">
-                <Save size={16} /> {editingId ? 'Salvar alterações' : 'Cadastrar'}
-              </button>
-              {editingId && (
-                <button type="button" onClick={resetForm} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100">
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">E-mail *</label>
+                  <input
+                    type="email"
+                    placeholder="E-mail *"
+                    required
+                    value={cadastroForm.email}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, email: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">RG *</label>
+                  <input
+                    required placeholder="RG *"
+                    value={cadastroForm.rg}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, rg: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Telefone *</label>
+                  <input
+                    required placeholder="Telefone *"
+                    value={cadastroForm.phone}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Curso *</label>
+                  <input
+                    required placeholder="Curso *"
+                    value={cadastroForm.course}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, course: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Instituição de ensino *</label>
+                  <input
+                    required placeholder="Instituição de ensino *"
+                    value={cadastroForm.institution}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, institution: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Profissional Supervisor *</label>
+                  <input
+                    required placeholder="Profissional Supervisor *"
+                    value={cadastroForm.supervisorName}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, supervisorName: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Endereço completo *</label>
+                  <input
+                    required placeholder="Endereço completo *"
+                    value={cadastroForm.address}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, address: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Unidade padrão *</label>
+                  <select
+                    required
+                    value={cadastroForm.unitId}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, unitId: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  >
+                    {units.map((u) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Turno *</label>
+                  <select
+                    required
+                    value={cadastroForm.shift}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, shift: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  >
+                    <option>Manhã</option>
+                    <option>Tarde</option>
+                    <option>Noite</option>
+                    <option>Integral</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Carga horária diária * (máx. 6h - Lei 11.788)</label>
+                  <input
+                    required
+                    type="number" min={1} max={8}
+                    value={cadastroForm.dailyHours}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, dailyHours: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Data de Início do Contrato *</label>
+                  <input
+                    required
+                    type="date"
+                    value={cadastroForm.startDate}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, startDate: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Data de Fim do Contrato *</label>
+                  <input
+                    required
+                    type="date"
+                    value={cadastroForm.endDate}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, endDate: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Bolsa/Auxílio Firmado (R$) *</label>
+                  <input
+                    required
+                    type="number" step="0.01" min="0"
+                    placeholder="Bolsa/Auxílio *"
+                    value={cadastroForm.allowance}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, allowance: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
 
-          <div className="divide-y divide-gray-100">
-            {interns.length === 0 ? (
-              <p className="text-center text-gray-500 py-6">Nenhum estagiário cadastrado ainda.</p>
-            ) : (
-              interns.map((intern) => (
-                <div key={intern.id} className="flex items-center justify-between py-3 gap-3">
-                  <div className="min-w-0 flex items-center gap-3">
-                    <div className="w-10 h-14 bg-gray-100 rounded border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-sm">
-                      {intern.photo ? (
-                        <img src={intern.photo} alt={intern.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <User size={18} className="text-gray-300" />
-                      )}
+                {/* DADOS BANCÁRIOS SUBSECTION */}
+                <div className="md:col-span-2 border-t border-gray-200 pt-3">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Dados Bancários *</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Banco *</label>
+                      <input
+                        required
+                        placeholder="Banco *"
+                        value={cadastroForm.bankName}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, bankName: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-800 truncate flex items-center gap-2">
-                        {intern.name}
-                        {intern.active === false && (
-                          <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">Inativo</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {[intern.course, intern.institution, unitName(intern.unitId), intern.shift, `${intern.dailyHours || 6}h/dia`]
-                          .filter(Boolean).join(' • ')}
-                      </p>
-                      {intern.username && (
-                        <p className="text-[10px] text-gray-400 font-mono mt-0.5">
-                          Usuário: {intern.username} • Senha: {intern.isFirstLogin ? '0000 (Padrão)' : 'Alterada'}
-                        </p>
-                      )}
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Agência *</label>
+                      <input
+                        required
+                        placeholder="Agência *"
+                        value={cadastroForm.bankAgency}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, bankAgency: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Conta Corrente *</label>
+                      <input
+                        required
+                        placeholder="Conta Corrente *"
+                        value={cadastroForm.bankAccount}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, bankAccount: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Chave PIX (CPF) *</label>
+                      <input
+                        required
+                        placeholder="Chave PIX (CPF) *"
+                        value={cadastroForm.pixKey}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, pixKey: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {intern.username && (
-                      <button
-                        onClick={() => handleResetPassword(intern)}
-                        className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg"
-                        title="Resetar Senha para 0000"
+                </div>
+
+                {/* CONTATO DE EMERGÊNCIA SUBSECTION */}
+                <div className="md:col-span-2 border-t border-gray-200 pt-3">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Contato de Emergência *</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Nome do Contato *</label>
+                      <input
+                        required
+                        placeholder="Nome do Contato *"
+                        value={cadastroForm.emergencyName}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, emergencyName: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Parentesco *</label>
+                      <select
+                        required
+                        value={cadastroForm.emergencyRelationship}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, emergencyRelationship: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
                       >
-                        <Lock size={16} />
-                      </button>
-                    )}
-                    <button onClick={() => handleEditIntern(intern)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Editar">
-                      <Pencil size={16} />
-                    </button>
-                    <button onClick={() => handleDeleteIntern(intern)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Excluir">
-                      <Trash2 size={16} />
-                    </button>
+                        <option value="Pais">Pais</option>
+                        <option value="Cônjuge">Cônjuge</option>
+                        <option value="Irmão(ã)">Irmão(ã)</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-0.5 block">Telefone de Emergência *</label>
+                      <input
+                        required
+                        placeholder="Telefone de Emergência *"
+                        value={cadastroForm.emergencyPhone}
+                        onChange={(e) => setCadastroForm({ ...cadastroForm, emergencyPhone: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
-              ))
-            )}
+
+                {/* UPLOAD DOCUMENTOS OBRIGATÓRIOS SUBSECTION */}
+                <div className="md:col-span-2 border-t border-gray-200 pt-3 space-y-3">
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1">
+                    📁 Documentos Admissionais Obrigatórios *
+                  </h4>
+                  <p className="text-[10px] text-gray-400">Envie arquivos nos formatos JPG, JPEG ou PDF de até 2MB.</p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-inner">
+                      <div>
+                        <span className="text-xs font-bold text-gray-700 block">Documento de Identidade (CPF/RG) *</span>
+                        {cadastroCpfRgFile ? (
+                          <div className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg mt-1 flex justify-between items-center">
+                            <span className="truncate font-semibold">{cadastroCpfRgFile.name} ({cadastroCpfRgFile.size})</span>
+                            <button type="button" onClick={() => setCadastroCpfRgFile(null)} className="text-red-500 hover:text-red-700 font-bold ml-1">&times;</button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic block mt-0.5">Nenhum arquivo enviado</span>
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,application/pdf"
+                        id="cadastro-cpfrg-file"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 2 * 1024 * 1024) {
+                              alert("O arquivo excede o limite de 2MB!");
+                              return;
+                            }
+                            try {
+                              const base64 = await fileToBase64(file);
+                              setCadastroCpfRgFile({
+                                name: file.name,
+                                size: (file.size / 1024).toFixed(1) + ' KB',
+                                content: base64
+                              });
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById('cadastro-cpfrg-file').click()}
+                        className="w-full bg-white hover:bg-slate-100 border border-gray-300 text-gray-700 text-[10px] py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Upload size={12} /> Selecionar CPF/RG *
+                      </button>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-inner">
+                      <div>
+                        <span className="text-xs font-bold text-gray-700 block">Comprovante de Matrícula *</span>
+                        {cadastroMatriculaFile ? (
+                          <div className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg mt-1 flex justify-between items-center">
+                            <span className="truncate font-semibold">{cadastroMatriculaFile.name} ({cadastroMatriculaFile.size})</span>
+                            <button type="button" onClick={() => setCadastroMatriculaFile(null)} className="text-red-500 hover:text-red-700 font-bold ml-1">&times;</button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic block mt-0.5">Nenhum arquivo enviado</span>
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,application/pdf"
+                        id="cadastro-matricula-file"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 2 * 1024 * 1024) {
+                              alert("O arquivo excede o limite de 2MB!");
+                              return;
+                            }
+                            try {
+                              const base64 = await fileToBase64(file);
+                              setCadastroMatriculaFile({
+                                name: file.name,
+                                size: (file.size / 1024).toFixed(1) + ' KB',
+                                content: base64
+                              });
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById('cadastro-matricula-file').click()}
+                        className="w-full bg-white hover:bg-slate-100 border border-gray-300 text-gray-700 text-[10px] py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Upload size={12} /> Selecionar Comprovante *
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4 border-t border-gray-100">
+                <button
+                  type="submit"
+                  disabled={isSubmittingCadastro}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md text-xs flex items-center justify-center gap-1.5"
+                >
+                  {isSubmittingCadastro ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Cadastrando estagiário...
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      Enviar Cadastro Obrigatório
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentView('kiosk');
+                  }}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl transition-colors text-xs font-bold"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      )}
+      </div>
+    );
+  };
+
+  // ============================================================
+  // PAINEL: Gestão de estagiários
+  // ============================================================
+  const renderManageSection = () => (
+    <div className="bg-white rounded-xl shadow-md overflow-hidden transition-all hover:shadow-lg duration-300 border border-slate-100">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+          <Users size={20} className="text-blue-600" /> Gestão de Estagiários
+        </h2>
+      </div>
+
+      <div className="p-4 space-y-6">
+        <form onSubmit={handleSaveIntern} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <h3 className="font-semibold text-gray-700 flex items-center gap-2 text-xs uppercase tracking-wider pb-2 border-b border-gray-200">
+            {editingId ? <><Pencil size={16} className="text-blue-600" /> Editar estagiário</> : <><Plus size={16} className="text-green-600" /> Novo estagiário</>}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2 bg-white border border-gray-200 rounded-xl p-3 flex flex-col sm:flex-row gap-4 items-center shadow-inner">
+              <div className="w-16 h-20 bg-gray-100 rounded border border-gray-300 overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                {form.photo ? (
+                  <img src={form.photo} alt="Foto 3x4" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center p-1 text-[8px] text-gray-400 font-bold uppercase tracking-wider">
+                    Foto 3x4 *
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 w-full space-y-2 text-center sm:text-left">
+                <label className="block text-xs font-bold text-gray-700">Foto de Cadastro (Formato 3x4) *</label>
+                <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    id="intern-photo-input"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try {
+                          const base64 = await fileToBase64(file);
+                          setForm({ ...form, photo: base64 });
+                        } catch (err) {
+                          console.error("Erro ao converter foto:", err);
+                          alert("Erro ao processar foto.");
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById('intern-photo-input').click()}
+                    className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs px-3 py-1.5 rounded-lg font-semibold border border-blue-200 transition-colors"
+                  >
+                    <Upload size={13} /> Escolher Foto 3x4 *
+                  </button>
+                  {form.photo && (
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, photo: '' })}
+                      className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs px-3 py-1.5 rounded-lg font-semibold border border-red-200 transition-colors"
+                    >
+                      <Trash size={13} /> Remover
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-400">Insira a imagem no formato 3x4 inicial de cadastro para comparação biométrica.</p>
+              </div>
+            </div>
+            <input
+              required placeholder="Nome completo *"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="CPF *"
+              value={form.cpf}
+              onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              type="email"
+              placeholder="E-mail *"
+              required
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="RG *"
+              value={form.rg}
+              onChange={(e) => setForm({ ...form, rg: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="Telefone *"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="Curso *"
+              value={form.course}
+              onChange={(e) => setForm({ ...form, course: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="Instituição de ensino *"
+              value={form.institution}
+              onChange={(e) => setForm({ ...form, institution: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="Profissional Supervisor *"
+              value={form.supervisorName}
+              onChange={(e) => setForm({ ...form, supervisorName: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+            />
+            <input
+              required placeholder="Endereço completo *"
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 md:col-span-2 text-xs"
+            />
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Unidade padrão *</label>
+              <select
+                required
+                value={form.unitId}
+                onChange={(e) => setForm({ ...form, unitId: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              >
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Turno *</label>
+              <select
+                required
+                value={form.shift}
+                onChange={(e) => setForm({ ...form, shift: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              >
+                <option>Manhã</option>
+                <option>Tarde</option>
+                <option>Noite</option>
+                <option>Integral</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Carga horária diária * (máx. 6h - Lei 11.788)</label>
+              <input
+                required
+                type="number" min={1} max={8}
+                value={form.dailyHours}
+                onChange={(e) => setForm({ ...form, dailyHours: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Data de Início do Contrato *</label>
+              <input
+                required
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Data de Fim do Contrato *</label>
+              <input
+                required
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Bolsa/Auxílio Firmado (R$) *</label>
+              <input
+                required
+                type="number" step="0.01" min="0"
+                placeholder="Bolsa/Auxílio *"
+                value={form.allowance}
+                onChange={(e) => setForm({ ...form, allowance: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              />
+            </div>
+
+            {/* DADOS BANCÁRIOS SUBSECTION */}
+            <div className="md:col-span-2 border-t border-gray-200 pt-3">
+              <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Dados Bancários *</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <input
+                  required
+                  placeholder="Banco *"
+                  value={form.bankName}
+                  onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+                  className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  required
+                  placeholder="Agência *"
+                  value={form.bankAgency}
+                  onChange={(e) => setForm({ ...form, bankAgency: e.target.value })}
+                  className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  required
+                  placeholder="Conta Corrente *"
+                  value={form.bankAccount}
+                  onChange={(e) => setForm({ ...form, bankAccount: e.target.value })}
+                  className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  required
+                  placeholder="Chave PIX (CPF) *"
+                  value={form.pixKey}
+                  onChange={(e) => setForm({ ...form, pixKey: e.target.value })}
+                  className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* CONTATO DE EMERGÊNCIA SUBSECTION */}
+            <div className="md:col-span-2 border-t border-gray-200 pt-3">
+              <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Contato de Emergência *</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input
+                  required
+                  placeholder="Nome do Contato *"
+                  value={form.emergencyName}
+                  onChange={(e) => setForm({ ...form, emergencyName: e.target.value })}
+                  className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                />
+                <div>
+                  <select
+                    required
+                    value={form.emergencyRelationship}
+                    onChange={(e) => setForm({ ...form, emergencyRelationship: e.target.value })}
+                    className="w-full p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Pais">Pais</option>
+                    <option value="Cônjuge">Cônjuge</option>
+                    <option value="Irmão(ã)">Irmão(ã)</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
+                <input
+                  required
+                  placeholder="Telefone de Emergência *"
+                  value={form.emergencyPhone}
+                  onChange={(e) => setForm({ ...form, emergencyPhone: e.target.value })}
+                  className="p-2 border border-gray-300 rounded-lg bg-white text-xs focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 self-end md:col-span-2 py-1">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                className="w-4 h-4"
+              />
+              Estagiário ativo (aparece na tela de registro)
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow">
+              <Save size={16} /> {editingId ? 'Salvar alterações' : 'Cadastrar'}
+            </button>
+            {editingId && (
+              <button type="button" onClick={resetForm} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors">
+                Cancelar
+              </button>
+            )}
+          </div>
+        </form>
+
+        <div className="divide-y divide-gray-100">
+          {interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit).length === 0 ? (
+            <p className="text-center text-gray-500 py-6">Nenhum estagiário correspondente aos filtros.</p>
+          ) : (
+            interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit).map((intern) => (
+              <div key={intern.id} className="flex items-center justify-between py-3 gap-3">
+                <div className="min-w-0 flex items-center gap-3">
+                  <div className="w-10 h-14 bg-gray-100 rounded border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-sm">
+                    {intern.photo ? (
+                      <img src={intern.photo} alt={intern.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <User size={18} className="text-gray-300" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800 truncate flex items-center gap-2">
+                      {intern.name}
+                      {intern.active === false && (
+                        <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-semibold">Inativo</span>
+                      )}
+                      {intern.registrationStatus === 'pending_validation' && (
+                        <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold border border-amber-200 animate-pulse">⚠️ Aguardando Validação</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {[intern.course, intern.institution, unitName(intern.unitId), intern.shift, `${intern.dailyHours || 6}h/dia`]
+                        .filter(Boolean).join(' • ')}
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      Supervisor: <strong className="text-slate-600">{intern.supervisorName || 'Não atribuído'}</strong>
+                    </p>
+                    {intern.username && (
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                        Usuário: {intern.username} • Senha: {intern.isFirstLogin ? '0000 (Padrão)' : 'Alterada'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {intern.registrationStatus === 'pending_validation' && (
+                    <button
+                      onClick={() => handleApproveRegistration(intern.id)}
+                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                      title="Aprovar e Validar Cadastro"
+                    >
+                      <Check size={16} />
+                    </button>
+                  )}
+                  {intern.username && (
+                    <button
+                      onClick={() => handleResetPassword(intern)}
+                      className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                      title="Resetar Senha para 0000"
+                    >
+                      <Lock size={16} />
+                    </button>
+                  )}
+                  <button onClick={() => handleEditIntern(intern)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
+                    <Pencil size={16} />
+                  </button>
+                  <button onClick={() => handleDeleteIntern(intern)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 
@@ -2568,7 +3562,7 @@ export default function App() {
           <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 8px; border-radius: 6px; margin-bottom: 12px; font-size: 9.5px;">
             <p style="margin: 0 0 4px 0;"><strong>1) Período de vigência deste Instrumento:</strong> De <strong>${startFormatted}</strong> a <strong>${endFormatted}</strong>, podendo ser rescindido unilateralmente por qualquer das partes, a qualquer momento, sem ônus, multas ou aviso-prévio, mediante formalização do respectivo Termo de Rescisão;</p>
             <p style="margin: 0 0 4px 0;"><strong>2) Jornada:</strong> <strong>${hoursCount} horas diárias</strong> (${shiftName});</p>
-            <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>Barbara Batista</strong>;</p>
+            <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>${intern?.supervisorName || 'Barbara Batista'}</strong>;</p>
             <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, uma Bolsa-estágio mensal no valor de <strong>R$ ${intern?.allowance ? Number(intern.allowance).toFixed(2).replace('.', ',') : '800,00'}</strong> (bolsa estágio) e <strong>R$ 200,00</strong> (auxílio-transporte, não se aplicando ao benefício o desconto previsto na CLT).</p>
           </div>
 
@@ -2687,7 +3681,7 @@ export default function App() {
             <tr>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
-                  <strong>Supervisão Técnica</strong><br>Porto Terapia
+                  <strong>Supervisora de Estágio: ${intern?.supervisorName || 'Barbara Batista'}</strong><br>Porto Terapia
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
@@ -2925,7 +3919,7 @@ export default function App() {
             className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
           >
             <option value="">Selecione um estagiário para gerar documentos...</option>
-            {interns.map(i => (
+            {interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit).map(i => (
               <option key={i.id} value={i.id}>{i.name}</option>
             ))}
           </select>
@@ -3063,7 +4057,8 @@ export default function App() {
   // PAINEL: Alertas de RH e Contratos
   // ============================================================
   const renderRhAlertsSection = () => {
-    const internsRhData = interns.map(intern => {
+    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
+    const internsRhData = filteredInterns.map(intern => {
       const metrics = getInternRhMetrics(intern);
       return { intern, metrics };
     });
@@ -3224,7 +4219,7 @@ export default function App() {
                 className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
               >
                 <option value="">Selecione um estagiário para ver o checklist...</option>
-                {interns.map(i => (
+                {interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit).map(i => (
                   <option key={i.id} value={i.id}>{i.name} ({i.active !== false ? 'Ativo' : 'Inativo'})</option>
                 ))}
               </select>
@@ -3397,7 +4392,8 @@ export default function App() {
           .from('interns')
           .update({
             last_report_date: activityReportDate || null,
-            recess_days_taken: Number(activityRecessDays) || 0
+            recess_days_taken: Number(activityRecessDays) || 0,
+            supervisor_name: activitySupervisorName || null
           })
           .eq('id', selectedInternData.id);
         if (error) throw error;
@@ -3494,7 +4490,7 @@ export default function App() {
               className="w-full md:w-1/2 p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
             >
               <option value="">Selecione um estagiário para acompanhamento...</option>
-              {interns.map(i => (
+              {interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit).map(i => (
                 <option key={i.id} value={i.id}>{i.name} ({i.active !== false ? 'Ativo' : 'Inativo'})</option>
               ))}
             </select>
@@ -3508,6 +4504,17 @@ export default function App() {
                   Atividades & Recesso
                 </h3>
                 <form onSubmit={handleSaveActivitiesData} className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1 font-semibold">Profissional Supervisor</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nome do Supervisor"
+                      value={activitySupervisorName}
+                      onChange={(e) => setActivitySupervisorName(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Último Relatório de Atividades</label>
                     <input
@@ -3651,7 +4658,8 @@ export default function App() {
   };
 
   const renderFinanceSection = () => {
-    const [year, month] = filterFinanceMonth.split('-').map(Number);
+    const monthKey = filterFinanceMonth || new Date().toISOString().substring(0, 7);
+    const [year, month] = monthKey.split('-').map(Number);
     const totalWorkingDays = (() => {
       let count = 0;
       const date = new Date(year, month - 1, 1);
@@ -3663,9 +4671,22 @@ export default function App() {
       return count || 22;
     })();
 
+    const firstDayOfMonthStr = `${year}-${month.toString().padStart(2, '0')}-01`;
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const lastDayOfMonthStr = `${year}-${month.toString().padStart(2, '0')}-${lastDayOfMonth.toString().padStart(2, '0')}`;
+
+    const getEffectiveEnd = (i) => {
+      if (i.contractTermination && i.contractTermination.date) {
+        return i.contractTermination.date;
+      }
+      return i.endDate || '9999-12-31';
+    };
+
     const filteredInterns = interns.filter(i => {
-      if (filterFinanceUnit !== 'all' && i.unitId !== filterFinanceUnit) return false;
-      return true;
+      if (filterUnit !== 'all' && i.unitId !== filterUnit) return false;
+      const start = i.startDate || '0000-01-01';
+      const end = getEffectiveEnd(i);
+      return (start <= lastDayOfMonthStr) && (end >= firstDayOfMonthStr);
     });
 
     return (
@@ -3682,18 +4703,6 @@ export default function App() {
                 onChange={(e) => setFilterFinanceMonth(e.target.value)}
                 className="p-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-blue-500"
               />
-            </div>
-            <div>
-              <select
-                value={filterFinanceUnit}
-                onChange={(e) => setFilterFinanceUnit(e.target.value)}
-                className="p-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="all">Todas as unidades</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
             </div>
           </div>
         </div>
@@ -3726,8 +4735,10 @@ export default function App() {
                     const allowance = Number(intern.allowance) || 0;
                     const internRecords = records.filter(r => {
                       if (r.internId !== intern.id) return false;
-                      const d = new Date(r.timestamp);
-                      return d.getFullYear() === year && (d.getMonth() + 1) === month && (r.justification || r.justificationDoc);
+                      if (!r.timestamp) return false;
+                      const dateStr = typeof r.timestamp === 'string' ? r.timestamp : new Date(r.timestamp).toISOString();
+                      const recordYearMonth = dateStr.substring(0, 7);
+                      return recordYearMonth === monthKey && (r.justification || (r.justificationDoc && Object.keys(r.justificationDoc).length > 0));
                     });
 
                     let medicalDays = 0;
@@ -3832,7 +4843,7 @@ export default function App() {
         if (error) throw error;
         alert('Informações de desligamento salvas com sucesso!');
       } catch (err) {
-        console.error('Erro ao salvar finalização de contrato:', err);
+        console.error('Erro ao salvar encerramento de vínculo:', err);
         alert('Erro ao salvar alterações.');
       }
     };
@@ -3867,9 +4878,9 @@ export default function App() {
           .eq('id', selectedInternData.id);
         if (error) throw error;
         if (fileInput) fileInput.value = '';
-        alert('Carta de finalização assinada anexada com sucesso!');
+        alert('Carta de encerramento de vínculo assinada anexada com sucesso!');
       } catch (err) {
-        console.error("Erro no upload da carta de finalização:", err);
+        console.error("Erro no upload da carta de encerramento de vínculo:", err);
         alert('Erro ao enviar documento.');
       } finally {
         setUploadingTerminationLetter(false);
@@ -3878,7 +4889,7 @@ export default function App() {
 
     const handleDeleteTerminationLetter = async () => {
       if (!selectedInternData) return;
-      const ok = window.confirm('Deseja realmente excluir a carta de finalização assinada arquivada?');
+      const ok = window.confirm('Deseja realmente excluir a carta de encerramento de vínculo assinada arquivada?');
       if (!ok) return;
 
       try {
@@ -3892,7 +4903,7 @@ export default function App() {
         if (error) throw error;
         alert('Documento excluído com sucesso!');
       } catch (err) {
-        console.error("Erro ao deletar documento de finalização:", err);
+        console.error("Erro ao deletar documento de encerramento de vínculo:", err);
         alert('Erro ao excluir documento.');
       }
     };
@@ -3901,7 +4912,7 @@ export default function App() {
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
         <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-            <Lock size={20} className="text-blue-600" /> Aba de Finalização de Contrato
+            <Lock size={20} className="text-blue-600" /> Aba de Encerramento de Vínculo
           </h2>
           <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
             Rescisão & Legislação
@@ -3917,7 +4928,7 @@ export default function App() {
               className="w-full md:w-1/2 p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
             >
               <option value="">Selecione um estagiário...</option>
-              {interns.map(i => (
+              {interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit).map(i => (
                 <option key={i.id} value={i.id}>{i.name} ({i.active !== false ? 'Ativo' : 'Inativo'})</option>
               ))}
             </select>
@@ -3943,7 +4954,7 @@ export default function App() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-600 mb-1">Data Efetiva de Finalização</label>
+                    <label className="block text-xs text-gray-600 mb-1">Data Efetiva de Encerramento</label>
                     <input
                       type="date"
                       value={terminationDate}
@@ -3968,7 +4979,7 @@ export default function App() {
                       <FileText size={16} className="text-blue-600" /> Carta de Resignação de Estágio
                     </h4>
                     <p className="text-[11px] text-blue-700 leading-normal">
-                      Gere a minuta da Carta de Finalização de Contrato preenchida automaticamente com os dados acadêmicos e do termo de compromisso para que o estagiário assine.
+                      Gere a minuta da Carta de Encerramento de Vínculo preenchida automaticamente com os dados acadêmicos e do termo de compromisso para que o estagiário assine.
                     </p>
                     <button
                       type="button"
@@ -3996,7 +5007,7 @@ export default function App() {
                           onClick={() => {
                             setViewDocBase64(contractTermination.signedLetter.content);
                             setViewDocName(contractTermination.signedLetter.name);
-                            setViewDocType('Carta de Finalização Assinada');
+                            setViewDocType('Carta de Encerramento de Vínculo Assinada');
                           }}
                           className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded"
                           title="Visualizar documento"
@@ -4046,9 +5057,368 @@ export default function App() {
           ) : (
             <div className="bg-slate-50 rounded-xl p-8 border border-slate-100 text-center text-slate-400 text-sm">
               <Lock size={40} className="mx-auto text-slate-300 mb-2" />
-              Selecione um estagiário acima para exibir o painel de finalização de contrato.
+              Selecione um estagiário acima para exibir o painel de encerramento de vínculo.
             </div>
           )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderOcorrenciasSection = () => {
+    // Filtrar ocorrências considerando a unidade e o estagiário selecionados
+    const ocorrenciasList = records.filter(r => {
+      const isOcorrencia = r.action === 'ocorrencia' || (r.justificationDoc && Object.keys(r.justificationDoc).length > 0);
+      if (!isOcorrencia) return false;
+      if (ocorrenciaFilterIntern !== 'all' && r.internId !== ocorrenciaFilterIntern) return false;
+      
+      // Filtragem por Unidade
+      if (filterUnit !== 'all') {
+        const intern = interns.find(i => i.id === r.internId);
+        if (!intern || intern.unitId !== filterUnit) return false;
+      }
+      return true;
+    });
+
+    // Agrupar comprovantes dos estagiários baseados nos filtros de estagiário e unidade
+    const internOccurrenceDocs = [];
+    const filteredInternsForDocs = interns.filter(i => {
+      if (ocorrenciaFilterIntern !== 'all' && i.id !== ocorrenciaFilterIntern) return false;
+      if (filterUnit !== 'all' && i.unitId !== filterUnit) return false;
+      return true;
+    });
+
+    filteredInternsForDocs.forEach(i => {
+      if (i.documents) {
+        Object.keys(i.documents).forEach(key => {
+          if (key.startsWith('ocorrencia_')) {
+            internOccurrenceDocs.push({
+              key,
+              internName: i.name,
+              internId: i.id,
+              ...i.documents[key]
+            });
+          }
+        });
+      }
+    });
+
+    const handleExportOcorrenciasJSON = () => {
+      if (ocorrenciasList.length === 0) {
+        alert('Nenhuma ocorrência para exportar.');
+        return;
+      }
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(ocorrenciasList, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      const filename = ocorrenciaFilterIntern !== 'all' 
+        ? `Ocorrencias_${interns.find(i => i.id === ocorrenciaFilterIntern)?.name.replace(/\s+/g, '_')}.json`
+        : "Ocorrencias_Todos_Estagiarios.json";
+      downloadAnchor.setAttribute("download", filename);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* LADO ESQUERDO: FORMULÁRIO DE CADASTRO */}
+          <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden lg:col-span-1 animate-fade-in">
+            <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+              <Plus className="text-blue-600" size={18} />
+              <h3 className="font-bold text-gray-700 text-xs uppercase tracking-wider">Nova Ocorrência</h3>
+            </div>
+            
+            <form onSubmit={handleSaveOcorrencia} className="p-4 space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">Estagiário</label>
+                <select
+                  value={selectedOcorrenciaIntern}
+                  onChange={(e) => setSelectedOcorrenciaIntern(e.target.value)}
+                  required
+                  className="w-full p-2 border border-gray-300 rounded-lg bg-white focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Selecione um estagiário...</option>
+                  {interns
+                    .filter(i => filterUnit === 'all' || i.unitId === filterUnit)
+                    .map(i => (
+                      <option key={i.id} value={i.id}>{i.name} ({i.active !== false ? 'Ativo' : 'Inativo'})</option>
+                    ))}
+                </select>
+              </div>
+
+              {/* CALENDÁRIO DOS AFASTAMENTOS */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                <span className="font-semibold text-slate-700 flex items-center gap-1">
+                  <Calendar size={13} className="text-blue-500" /> Calendário dos Afastamentos
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Data de Início</label>
+                    <input
+                      type="date"
+                      value={ocorrenciaStartDate}
+                      onChange={(e) => setOcorrenciaStartDate(e.target.value)}
+                      required
+                      className="w-full p-1.5 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-[10px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Data de Fim</label>
+                    <input
+                      type="date"
+                      value={ocorrenciaEndDate}
+                      onChange={(e) => setOcorrenciaEndDate(e.target.value)}
+                      required
+                      className="w-full p-1.5 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-[10px]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* TIPO COMPROVANTE & DIAS AFASTADOS */}
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 space-y-3">
+                <span className="font-semibold text-blue-700 flex items-center gap-1">
+                  <Upload size={13} /> Comprovante de Ocorrência (Faltas/Atrasos)
+                </span>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Tipo do Comprovante</label>
+                    <select
+                      value={ocorrenciaType}
+                      onChange={(e) => setOcorrenciaType(e.target.value)}
+                      className="w-full p-1.5 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-[10px]"
+                    >
+                      <option value="atestado">Atestado Médico</option>
+                      <option value="falta">Falta Injustificada</option>
+                      <option value="atraso">Atraso</option>
+                      <option value="curso">Inscrição em Curso</option>
+                      <option value="academico">Atividade Acadêmica</option>
+                      <option value="outros">Outro Comprovante</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Dias Afastados</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={ocorrenciaDays}
+                      onChange={(e) => setOcorrenciaDays(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full p-1.5 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-[10px]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-0.5">Arquivo (PDF/PNG/JPG)</label>
+                  <input
+                    id="ocorrencia-file-input"
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    className="w-full text-[10px] p-1 bg-white border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">Justificativa / Descrição</label>
+                <textarea
+                  value={ocorrenciaDesc}
+                  onChange={(e) => setOcorrenciaDesc(e.target.value)}
+                  required
+                  placeholder="Ex: Apresentou atestado médico relativo ao período..."
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 resize-none h-16"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={ocorrenciaLoading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow border-none cursor-pointer"
+              >
+                {ocorrenciaLoading ? 'Salvando...' : 'Registrar Ocorrência'}
+              </button>
+            </form>
+          </div>
+
+          {/* LADO DIREITO: HISTÓRICO & CONTROLE DE ARQUIVAMENTO */}
+          <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden lg:col-span-2 space-y-6 p-4 animate-fade-in">
+            
+            {/* SELEÇÃO DO ESTAGIÁRIO E FILTROS */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <div>
+                <h4 className="font-bold text-gray-700 text-xs">Histórico & Arquivo Digital de Ocorrências</h4>
+                <p className="text-[10px] text-gray-400">Gerenciamento e controle de comprovantes por estagiário</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={ocorrenciaFilterIntern}
+                  onChange={(e) => setOcorrenciaFilterIntern(e.target.value)}
+                  className="p-1.5 border border-gray-300 bg-white rounded-lg text-xs focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="all">Todos os estagiários</option>
+                  {interns
+                    .filter(i => filterUnit === 'all' || i.unitId === filterUnit)
+                    .map(i => (
+                      <option key={i.id} value={i.id}>{i.name}</option>
+                    ))}
+                </select>
+                <button
+                  onClick={handleExportOcorrenciasJSON}
+                  className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 border-none cursor-pointer shadow-sm"
+                >
+                  <Download size={13} /> Exportar JSON
+                </button>
+              </div>
+            </div>
+
+            {/* TABELA DE OCORRÊNCIAS */}
+            <div className="space-y-2">
+              <h4 className="font-semibold text-gray-700 text-xs">Ocorrências Lançadas</h4>
+              <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-600 uppercase tracking-wider border-b border-gray-100">
+                      <th className="p-3 font-semibold">Estagiário</th>
+                      <th className="p-3 font-semibold">Data/Período</th>
+                      <th className="p-3 font-semibold">Tipo</th>
+                      <th className="p-3 font-semibold">Descrição</th>
+                      <th className="p-3 font-semibold text-center">Descontado</th>
+                      <th className="p-3 font-semibold text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {ocorrenciasList.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="p-4 text-center text-gray-400">Nenhuma ocorrência correspondente aos filtros.</td>
+                      </tr>
+                    ) : (
+                      ocorrenciasList.map(occ => {
+                        const type = occ.justificationDoc?.type || 'outros';
+                        const isMedical = type === 'atestado' || (occ.justification && occ.justification.toLowerCase().includes('atestado'));
+                        const days = Number(occ.daysAway) || 0;
+                        const dateFormatted = new Date(occ.timestamp).toLocaleDateString('pt-BR');
+
+                        return (
+                          <tr key={occ.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-3 font-medium text-gray-800">{occ.internName}</td>
+                            <td className="p-3">
+                              <div>{dateFormatted}</div>
+                              {days > 0 && <span className="text-[10px] text-gray-400">{days} dia(s)</span>}
+                            </td>
+                            <td className="p-3">
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-semibold ${
+                                isMedical ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                              }`}>
+                                {isMedical ? 'Atestado Médico' : (type === 'curso' ? 'Curso' : (type === 'academico' ? 'Acadêmico' : (type === 'falta' ? 'Falta' : (type === 'atraso' ? 'Atraso' : 'Outros'))))}
+                              </span>
+                            </td>
+                            <td className="p-3 max-w-xs truncate" title={occ.justification}>{occ.justification}</td>
+                            <td className="p-3 text-center">
+                              {isMedical ? (
+                                <span className="text-green-600 font-semibold">Não (Abonado)</span>
+                              ) : (
+                                <span className="text-red-600 font-semibold">Sim ({days}d)</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="flex justify-end gap-1.5">
+                                {occ.justificationDoc?.content && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setViewDocBase64(occ.justificationDoc.content);
+                                      setViewDocName(occ.justificationDoc.name);
+                                      setViewDocType(`Comprovante - ${occ.internName}`);
+                                    }}
+                                    className="p-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border-none cursor-pointer"
+                                    title="Visualizar Comprovante"
+                                  >
+                                    <Eye size={12} />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteOcorrencia(occ.id, occ.internId)}
+                                  className="p-1 bg-red-50 text-red-600 hover:bg-red-100 rounded border-none cursor-pointer animate-fade-in"
+                                  title="Remover"
+                                >
+                                  <Trash size={12} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* PASTA DE COMPROVANTES (ARQUIVO PERMANENTE) */}
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-gray-700 text-xs flex items-center gap-1.5">
+                  <FolderOpen size={14} className="text-amber-500" />
+                  Pasta de Comprovantes de Afastamento (Arquivo Permanente)
+                </h4>
+                {ocorrenciaFilterIntern !== 'all' && (
+                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                    Ficha do Estagiário
+                  </span>
+                )}
+              </div>
+
+              {internOccurrenceDocs.length === 0 ? (
+                <div className="bg-slate-50 text-center py-6 border border-dashed border-gray-200 rounded-xl text-gray-400">
+                  Nenhum comprovante arquivado no perfil.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {internOccurrenceDocs.map((doc, idx) => (
+                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between hover:shadow-sm transition-all">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-gray-800 truncate max-w-[150px]">{doc.name}</span>
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                            doc.type === 'atestado' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {doc.type === 'atestado' ? 'Atestado' : 'Outros'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 space-y-0.5">
+                          {doc.internName && <p><strong>Estagiário:</strong> {doc.internName}</p>}
+                          <p><strong>Período:</strong> {doc.period || 'Não especificado'}</p>
+                          {doc.daysAway > 0 && <p><strong>Afastamento:</strong> {doc.daysAway} dia(s)</p>}
+                          {doc.desc && <p className="italic text-gray-400 line-clamp-1">"{doc.desc}"</p>}
+                        </div>
+                      </div>
+                      <div className="border-t border-slate-200 mt-2.5 pt-2 flex items-center justify-between text-[9px] text-gray-400">
+                        <span>Anexado em {new Date(doc.uploadedAt).toLocaleDateString('pt-BR')}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewDocBase64(doc.content);
+                            setViewDocName(doc.name);
+                            setViewDocType('Comprovante Arquivado');
+                          }}
+                          className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 border-none bg-transparent cursor-pointer"
+                        >
+                          <Eye size={10} /> Visualizar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
         </div>
       </div>
     );
@@ -4194,6 +5564,253 @@ export default function App() {
     );
   };
 
+  // renderDashboardSection — Aba do Dashboard
+  const renderDashboardSection = () => {
+    const activeInterns = interns.filter(i => i.active !== false && (filterUnit === 'all' || i.unitId === filterUnit));
+    const totalActive = activeInterns.length;
+    
+    // Total monthly payroll (allowance sum)
+    const totalPayroll = activeInterns.reduce((acc, curr) => acc + (Number(curr.allowance) || 0), 0);
+    
+    // Average daily hours
+    const avgDailyHours = activeInterns.length > 0 
+      ? (activeInterns.reduce((acc, curr) => acc + (Number(curr.dailyHours) || 6), 0) / activeInterns.length).toFixed(1)
+      : 0;
+
+    // Dossier completion: check missing documents for active interns
+    // TCE, PAE, matrícula, RG/CPF, Seguro, Ficha
+    const requiredDocKeys = ['tce', 'pae', 'matricula', 'documentos', 'seguro', 'ficha'];
+    let totalMissingDocs = 0;
+    activeInterns.forEach(intern => {
+      const docs = intern.documents || {};
+      requiredDocKeys.forEach(key => {
+        if (!docs[key] || !docs[key].content) {
+          totalMissingDocs++;
+        }
+      });
+    });
+
+    // Breakdown per unit
+    const unitStats = {};
+    activeInterns.forEach(intern => {
+      const uName = intern.unitId ? unitName(intern.unitId) : 'Outra/Não definida';
+      unitStats[uName] = (unitStats[uName] || 0) + 1;
+    });
+
+    // Breakdown per shift
+    const shiftStats = {};
+    activeInterns.forEach(intern => {
+      const shift = intern.shift || 'Manhã';
+      shiftStats[shift] = (shiftStats[shift] || 0) + 1;
+    });
+
+    // Contract warnings (expiring in 30 days)
+    const expiringSoon = activeInterns.filter(intern => {
+      if (!intern.endDate) return false;
+      const end = new Date(intern.endDate);
+      const diffTime = end - new Date();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 30;
+    });
+
+    // Total records this month
+    const currentMonthPrefix = new Date().toISOString().substring(0, 7);
+    const recordsThisMonth = records.filter(r => {
+      if (!r.timestamp) return false;
+      const dateStr = typeof r.timestamp === 'string' ? r.timestamp : new Date(r.timestamp).toISOString();
+      const inMonth = dateStr.substring(0, 7) === currentMonthPrefix;
+      const matchesUnit = filterUnit === 'all' || r.geo?.unitId === filterUnit;
+      return inMonth && matchesUnit;
+    }).length;
+
+    return (
+      <div className="space-y-6 animate-fade-in">
+        {/* KPI Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-md shadow-indigo-100 hover:scale-[1.02] transition-transform duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs text-blue-100 font-semibold uppercase tracking-wider">Estagiários Ativos</p>
+                <h3 className="text-3xl font-extrabold mt-2">{totalActive}</h3>
+              </div>
+              <div className="bg-white/20 p-2.5 rounded-xl">
+                <Users size={22} className="text-white" />
+              </div>
+            </div>
+            <p className="text-[10px] text-blue-100/80 mt-4 flex items-center gap-1 font-medium">
+              Vínculos ativos na Porto Terapia
+            </p>
+          </div>
+
+          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md shadow-emerald-100 hover:scale-[1.02] transition-transform duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs text-emerald-100 font-semibold uppercase tracking-wider">Folha de Pagamento</p>
+                <h3 className="text-3xl font-extrabold mt-2">
+                  {totalPayroll.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </h3>
+              </div>
+              <div className="bg-white/20 p-2.5 rounded-xl">
+                <Timer size={22} className="text-white" />
+              </div>
+            </div>
+            <p className="text-[10px] text-emerald-100/80 mt-4 flex items-center gap-1 font-medium">
+              Soma total das bolsas/auxílios mensais
+            </p>
+          </div>
+
+          <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-5 text-white shadow-md shadow-amber-100 hover:scale-[1.02] transition-transform duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs text-amber-100 font-semibold uppercase tracking-wider">Média Carga Horária</p>
+                <h3 className="text-3xl font-extrabold mt-2">{avgDailyHours}h <span className="text-xs font-normal">/dia</span></h3>
+              </div>
+              <div className="bg-white/20 p-2.5 rounded-xl">
+                <Clock size={22} className="text-white" />
+              </div>
+            </div>
+            <p className="text-[10px] text-amber-100/80 mt-4 flex items-center gap-1 font-medium">
+              Carga horária diária média
+            </p>
+          </div>
+
+          <div className="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-md shadow-red-100 hover:scale-[1.02] transition-transform duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs text-red-100 font-semibold uppercase tracking-wider">Pendências no Dossiê</p>
+                <h3 className="text-3xl font-extrabold mt-2">{totalMissingDocs}</h3>
+              </div>
+              <div className="bg-white/20 p-2.5 rounded-xl">
+                <FileText size={22} className="text-white" />
+              </div>
+            </div>
+            <p className="text-[10px] text-red-100/80 mt-4 flex items-center gap-1 font-medium">
+              Documentos obrigatórios ausentes
+            </p>
+          </div>
+        </div>
+
+        {/* Charts & Insights Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Unit & Shift Distributions */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white rounded-2xl p-6 shadow-md shadow-slate-100 border border-slate-100">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center gap-2">
+                🏢 Distribuição por Unidade
+              </h3>
+              <div className="space-y-4">
+                {Object.entries(unitStats).map(([uName, count]) => {
+                  const pct = totalActive > 0 ? Math.round((count / totalActive) * 100) : 0;
+                  return (
+                    <div key={uName} className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-semibold text-gray-700">
+                        <span>{uName}</span>
+                        <span>{count} estagiários ({pct}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-3.5 rounded-full overflow-hidden border border-slate-200 shadow-inner">
+                        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {Object.keys(unitStats).length === 0 && (
+                  <p className="text-center text-xs text-gray-400 italic py-4">Nenhum dado de unidade disponível.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 shadow-md shadow-slate-100 border border-slate-100">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center gap-2">
+                🌅 Distribuição por Turno
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {['Manhã', 'Tarde', 'Noite', 'Integral'].map(shift => {
+                  const count = shiftStats[shift] || 0;
+                  const pct = totalActive > 0 ? Math.round((count / totalActive) * 100) : 0;
+                  return (
+                    <div key={shift} className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">{shift}</span>
+                      <strong className="text-2xl font-black text-slate-800 block mt-1">{count}</strong>
+                      <span className="text-[10px] text-indigo-600 font-semibold block mt-1 bg-indigo-50 px-1.5 py-0.5 rounded-full w-fit mx-auto">{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Insights Panel */}
+          <div className="lg:col-span-1 bg-white rounded-2xl p-6 shadow-md shadow-slate-100 border border-slate-100 space-y-6">
+            <h3 className="text-sm font-bold text-gray-800 mb-2 uppercase tracking-wider flex items-center gap-2 border-b pb-3">
+              💡 Insights de Gerenciamento
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex gap-3">
+                <span className="text-xl">📅</span>
+                <div>
+                  <h4 className="text-xs font-bold text-blue-900">Registros de Ponto no Mês</h4>
+                  <p className="text-[10px] text-blue-700 leading-normal mt-0.5">
+                    Foram registrados <strong>{recordsThisMonth} pontos</strong> de entrada/saída durante este mês.
+                  </p>
+                </div>
+              </div>
+
+              {expiringSoon.length > 0 ? (
+                <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3">
+                  <span className="text-xl">⚠️</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-900">Contratos Próximos do Fim</h4>
+                    <p className="text-[10px] text-amber-700 leading-normal mt-0.5">
+                      Estagiários com contrato encerrando nos próximos 30 dias:
+                    </p>
+                    <ul className="text-[9px] text-amber-800 font-semibold mt-1 list-disc list-inside">
+                      {expiringSoon.map(i => (
+                        <li key={i.id}>{i.name} ({new Date(i.endDate).toLocaleDateString('pt-BR')})</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-green-50 border border-green-100 rounded-xl flex gap-3">
+                  <span className="text-xl">✅</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-green-900">Vigência de Contratos</h4>
+                    <p className="text-[10px] text-green-700 leading-normal mt-0.5">
+                      Nenhum contrato de estágio expira nos próximos 30 dias.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {totalMissingDocs > 0 ? (
+                <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex gap-3">
+                  <span className="text-xl">📁</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-red-900">Atenção ao Dossiê</h4>
+                    <p className="text-[10px] text-red-700 leading-normal mt-0.5">
+                      Existem pendências de documentos essenciais no dossiê. Revise a aba "Dossiê" para carregar TCEs ou comprovantes pendentes.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-green-50 border border-green-100 rounded-xl flex gap-3">
+                  <span className="text-xl">🎉</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-green-900">Documentação Completa</h4>
+                    <p className="text-[10px] text-green-700 leading-normal mt-0.5">
+                      Excelente! Todos os estagiários ativos possuem dossiês 100% preenchidos.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // renderFrequenciaSection — Aba de Frequência (tabela histórica)
   const renderFrequenciaSection = () => (
     <div className="space-y-4">
@@ -4258,10 +5875,16 @@ export default function App() {
                     <td className="p-3 text-gray-600">{record.geo?.unitName || '—'}</td>
                     <td className="p-3">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold ${
-                        record.action === 'entrada' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+                        record.action === 'ocorrencia' 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : record.action === 'entrada' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
                       }`}>
-                        {record.action === 'entrada' ? <LogIn size={10} /> : <LogOut size={10} />}
-                        {record.action === 'entrada' ? 'Entrada' : 'Saída'}
+                        {record.action === 'ocorrencia' 
+                          ? <AlertTriangle size={10} /> 
+                          : record.action === 'entrada' ? <LogIn size={10} /> : <LogOut size={10} />}
+                        {record.action === 'ocorrencia' 
+                          ? 'Ocorrência' 
+                          : record.action === 'entrada' ? 'Entrada' : 'Saída'}
                       </span>
                     </td>
                     <td className="p-3">
@@ -4309,7 +5932,8 @@ export default function App() {
 
   // renderResumoGerencial — Aba de IA e Resumo Gerencial
   const renderResumoGerencial = () => {
-    const sortedInterns = [...interns].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
+    const sortedInterns = [...filteredInterns].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     return (
       <div className="space-y-4">
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-100 p-6">
@@ -4434,11 +6058,13 @@ export default function App() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
           <nav className="flex text-xs font-semibold">
             {[
+              { id: 'dashboard',       label: '📊 Dashboard' },
               { id: 'frequencia',      label: '📋 Frequência' },
               { id: 'estagiarios',     label: '👤 Estagiários' },
               { id: 'acompanhamento',  label: '📊 Acompanhamento' },
               { id: 'financeiro',      label: '💰 Financeiro' },
-              { id: 'finalizacao',     label: '🔒 Finalização' },
+              { id: 'ocorrencias',     label: '⚠️ Ocorrências' },
+              { id: 'finalizacao',     label: '🔒 Encerramento de Vínculo' },
               { id: 'documentos',      label: '🖨️ Documentos' },
               { id: 'admissional',     label: '📁 Dossiê' },
               { id: 'rh',              label: '⚠️ Alertas RH' },
@@ -4476,10 +6102,12 @@ export default function App() {
         )}
 
         {/* ── CONTEÚDO DAS ABAS ── */}
+        {activeAdminTab === 'dashboard'      && renderDashboardSection()}
         {activeAdminTab === 'frequencia'     && renderFrequenciaSection()}
         {activeAdminTab === 'estagiarios'    && renderManageSection()}
         {activeAdminTab === 'acompanhamento' && renderActivitiesSection()}
         {activeAdminTab === 'financeiro'     && renderFinanceSection()}
+        {activeAdminTab === 'ocorrencias'    && renderOcorrenciasSection()}
         {activeAdminTab === 'finalizacao'    && renderContractTerminationSection()}
         {activeAdminTab === 'documentos'     && renderPrintDocumentsSection()}
         {activeAdminTab === 'admissional'    && renderAdmissionalSection()}
@@ -4504,7 +6132,7 @@ export default function App() {
           animation: scan 3s linear infinite;
         }
       `}</style>
-      {currentView === 'kiosk' ? renderKiosk() : renderAdmin()}
+      {currentView === 'kiosk' ? renderKiosk() : currentView === 'recadastro' ? renderRecadastroSection() : renderAdmin()}
       {renderRecordPhotoModal()}
       {renderDocumentViewModal()}
       {renderTemplateModal()}

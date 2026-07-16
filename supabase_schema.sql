@@ -54,6 +54,8 @@ CREATE TABLE public.interns (
     emergency_relationship text,
     emergency_phone text,
     allowance numeric DEFAULT 0,
+    supervisor_name text,
+    registration_status text DEFAULT 'validated',
     semestral_reports jsonb DEFAULT '{}'::jsonb,
     contract_termination jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT now()
@@ -305,7 +307,10 @@ CREATE OR REPLACE FUNCTION public.create_intern_user(
   p_emergency_name text DEFAULT NULL,
   p_emergency_relationship text DEFAULT NULL,
   p_emergency_phone text DEFAULT NULL,
-  p_allowance numeric DEFAULT 0
+  p_allowance numeric DEFAULT 0,
+  p_supervisor_name text DEFAULT NULL,
+  p_registration_status text DEFAULT 'validated',
+  p_documents jsonb DEFAULT '{}'::jsonb
 ) RETURNS uuid AS $$
 DECLARE
   new_user_id uuid;
@@ -400,6 +405,8 @@ BEGIN
     emergency_relationship,
     emergency_phone,
     allowance,
+    supervisor_name,
+    registration_status,
     semestral_reports,
     contract_termination
   ) VALUES (
@@ -415,7 +422,7 @@ BEGIN
     p_end_date,
     split_part(p_email, '@', 1),
     true,
-    '{}'::jsonb,
+    p_documents,
     p_photo,
     p_cpf,
     p_email,
@@ -430,6 +437,8 @@ BEGIN
     p_emergency_relationship,
     p_emergency_phone,
     p_allowance,
+    p_supervisor_name,
+    p_registration_status,
     '{}'::jsonb,
     '{}'::jsonb
   );
