@@ -3466,6 +3466,108 @@ export default function App() {
   // ============================================================
   // GERAÇÃO DE MODELOS E CONTRATOS (TIMBRE E PDF)
   // ============================================================
+  const extensoBRL = (num) => {
+    if (num === 0) return 'zero reais';
+    
+    const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+    const dezenas10 = ['dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+    const dezenas = ['', 'dez', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+    const centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+    
+    const converterGrupo = (n) => {
+      if (n === 100) return 'cem';
+      let output = '';
+      const c = Math.floor(n / 100);
+      const d = Math.floor((n % 100) / 10);
+      const u = n % 10;
+      
+      if (c > 0) {
+        output += centenas[c];
+      }
+      
+      if (d > 0 || u > 0) {
+        if (output !== '') output += ' e ';
+        if (d === 1) {
+          output += dezenas10[u];
+        } else {
+          if (d > 0) {
+            output += dezenas[d];
+            if (u > 0) output += ' e ' + unidades[u];
+          } else {
+            output += unidades[u];
+          }
+        }
+      }
+      return output;
+    };
+
+    const converterMilhares = (n) => {
+      if (n < 1000) return converterGrupo(n);
+      const mil = Math.floor(n / 1000);
+      const resto = n % 1000;
+      let output = '';
+      if (mil === 1) {
+        output = 'mil';
+      } else {
+        output = converterGrupo(mil) + ' mil';
+      }
+      if (resto > 0) {
+        if (resto < 100 || resto % 100 === 0) {
+          output += ' e ' + converterGrupo(resto);
+        } else {
+          output += ' ' + converterGrupo(resto);
+        }
+      }
+      return output;
+    };
+
+    const partes = Number(num).toFixed(2).split('.');
+    const inteiros = parseInt(partes[0], 10);
+    const centavos = parseInt(partes[1], 10);
+
+    let textoInteiro = '';
+    if (inteiros > 0) {
+      textoInteiro = converterMilhares(inteiros);
+      textoInteiro += inteiros === 1 ? ' real' : ' reais';
+    }
+
+    let textoCentavos = '';
+    if (centavos > 0) {
+      if (centavos === 1) {
+        textoCentavos = 'um centavo';
+      } else if (centavos < 10) {
+        textoCentavos = unidades[centavos] + ' centavos';
+      } else if (centavos < 20) {
+        textoCentavos = dezenas10[centavos - 10] + ' centavos';
+      } else {
+        const d = Math.floor(centavos / 10);
+        const u = centavos % 10;
+        textoCentavos = dezenas[d] + (u > 0 ? ' e ' + unidades[u] : '') + ' centavos';
+      }
+    }
+
+    if (textoInteiro && textoCentavos) {
+      return `${textoInteiro} e ${textoCentavos}`;
+    }
+    return textoInteiro || textoCentavos || 'zero reais';
+  };
+
+  const getBolsaAuxilioText = (intern) => {
+    const allowanceVal = intern?.allowance ? Number(intern.allowance) : 0;
+    if (!allowanceVal) {
+      return '___________________________';
+    }
+    const transportVal = 200;
+    const stipendVal = Math.max(0, allowanceVal - 200);
+    
+    const transportText = `R$ 200,00 (duzentos reais) de auxílio-transporte`;
+    const stipendFormatted = stipendVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const stipendExtenso = extensoBRL(stipendVal);
+    const stipendText = `R$ ${stipendFormatted} (${stipendExtenso}) de bolsa-auxílio`;
+    
+    return `${transportText} e ${stipendText}`;
+  };
+
   const getDocumentHtml = (type, intern = null) => {
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
@@ -3567,7 +3669,7 @@ export default function App() {
             <p style="margin: 0 0 4px 0;"><strong>1) Período de vigência deste Instrumento:</strong> De <strong>${startFormatted}</strong> a <strong>${endFormatted}</strong>, podendo ser rescindido unilateralmente por qualquer das partes, a qualquer momento, sem ônus, multas ou aviso-prévio, mediante formalização do respectivo Termo de Rescisão;</p>
             <p style="margin: 0 0 4px 0;"><strong>2) Jornada:</strong> <strong>${hoursCount} horas diárias</strong> (${shiftName});</p>
             <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>${intern?.supervisorName || '________________________'}</strong>;</p>
-            <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, uma Bolsa-estágio mensal no valor de <strong>R$ ${intern?.allowance ? Number(intern.allowance).toFixed(2).replace('.', ',') : '800,00'}</strong> (bolsa estágio) e <strong>R$ 200,00</strong> (auxílio-transporte, não se aplicando ao benefício o desconto previsto na CLT).</p>
+            <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, a importância mensal correspondente a: <strong>${getBolsaAuxilioText(intern)}</strong> (não se aplicando ao benefício de auxílio-transporte o desconto previsto na CLT).</p>
           </div>
 
           <div style="text-align: justify; font-size: 8.5px; line-height: 1.4;">
@@ -3756,7 +3858,7 @@ export default function App() {
             </tr>
             <tr>
               <td style="border: 1px solid #e5e7eb; padding: 5px; font-weight: bold;">Bolsa/Auxílio:</td>
-              <td style="border: 1px solid #e5e7eb; padding: 5px;" colspan="3">${intern?.allowance ? intern.allowance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '___________________________'}</td>
+              <td style="border: 1px solid #e5e7eb; padding: 5px;" colspan="3">${getBolsaAuxilioText(intern)}</td>
             </tr>
           </table>
 
