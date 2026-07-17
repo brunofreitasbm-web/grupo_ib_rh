@@ -336,6 +336,7 @@ export default function App() {
   const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
   const [records, setRecords] = useState([]);
   const [interns, setInterns] = useState([]);
+  const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
 
   // Formulário de registro & Login Individual
@@ -580,7 +581,7 @@ export default function App() {
 
   // Garante a existência do estagiário "TEste" para testes do usuário
   useEffect(() => {
-    if (user && user.user_metadata?.role === 'supervisor' && interns.length > 0) {
+    if (user && user.user_metadata?.role === 'supervisor' && internsLoaded) {
       const hasTest = interns.some(i => i.name.toLowerCase() === 'teste');
       if (!hasTest) {
         supabase.rpc('create_intern_user', {
@@ -597,11 +598,14 @@ export default function App() {
         })
         .then(({ error }) => {
           if (error) console.error('Erro ao criar estagiário TEste:', error);
-          else console.log('Estagiário TEste criado automaticamente via RPC.');
+          else {
+            console.log('Estagiário TEste criado automaticamente via RPC.');
+            fetchInterns();
+          }
         });
       }
     }
-  }, [user, interns, units]);
+  }, [user, interns, internsLoaded, units, fetchInterns]);
 
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
@@ -668,15 +672,21 @@ export default function App() {
     if (!user) return;
     const role = user.user_metadata?.role;
     if (role !== 'supervisor' && role !== 'intern_unit') return;
-    // Otimização: Selecionar campos leves, excluindo a coluna de documentos com arquivos Base64 grandes
-    const { data, error } = await supabase
-      .from('interns')
-      .select('*')
-      .order('name', { ascending: true });
-    if (error) {
-      console.error('Erro ao buscar estagiários:', error);
-    } else {
-      setInterns((data || []).map(mapInternFromDb));
+    try {
+      // Otimização: Selecionar campos leves, excluindo a coluna de documentos com arquivos Base64 grandes
+      const { data, error } = await supabase
+        .from('interns')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) {
+        console.error('Erro ao buscar estagiários:', error);
+      } else {
+        setInterns((data || []).map(mapInternFromDb));
+      }
+    } catch (err) {
+      console.error('Erro ao carregar estagiários:', err);
+    } finally {
+      setInternsLoaded(true);
     }
   }, [user]);
 
