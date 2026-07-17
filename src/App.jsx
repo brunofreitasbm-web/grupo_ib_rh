@@ -10,6 +10,19 @@ import {
 // Supabase Client Integration
 import { supabase } from './supabase';
 
+import DashboardTab from './components/tabs/DashboardTab';
+import FrequenciaTab from './components/tabs/FrequenciaTab';
+import EstagiariosTab from './components/tabs/EstagiariosTab';
+import AcompanhamentoTab from './components/tabs/AcompanhamentoTab';
+import FinanceiroTab from './components/tabs/FinanceiroTab';
+import OcorrenciasTab from './components/tabs/OcorrenciasTab';
+import EncerramentoTab from './components/tabs/EncerramentoTab';
+import DocumentosTab from './components/tabs/DocumentosTab';
+import DossieTab from './components/tabs/DossieTab';
+import AlertasRhTab from './components/tabs/AlertasRhTab';
+import ResumoIaTab from './components/tabs/ResumoIaTab';
+
+
 
 // ============================================================
 // CONFIGURAÇÕES GERAIS
@@ -6360,17 +6373,17 @@ export default function App() {
         )}
 
         {/* ── CONTEÚDO DAS ABAS ── */}
-        {activeAdminTab === 'dashboard'      && renderDashboardSection()}
-        {activeAdminTab === 'frequencia'     && renderFrequenciaSection()}
-        {activeAdminTab === 'estagiarios'    && renderManageSection()}
-        {activeAdminTab === 'acompanhamento' && renderActivitiesSection()}
-        {activeAdminTab === 'financeiro'     && renderFinanceSection()}
-        {activeAdminTab === 'ocorrencias'    && renderOcorrenciasSection()}
-        {activeAdminTab === 'finalizacao'    && renderContractTerminationSection()}
-        {activeAdminTab === 'documentos'     && renderPrintDocumentsSection()}
-        {activeAdminTab === 'admissional'    && renderAdmissionalSection()}
-        {activeAdminTab === 'rh'             && renderRhAlertsSection()}
-        {activeAdminTab === 'resumo'         && renderResumoGerencial()}
+        {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+        {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+        {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
+        {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
+        {activeAdminTab === 'resumo'         && <ResumoIaTab filterUnit={filterUnit} />}
       </div>
     </div>
   );

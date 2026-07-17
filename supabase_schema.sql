@@ -552,8 +552,12 @@ CREATE POLICY "Permitir inserção de conteúdo de documento para supervisor, pr
                 AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id')
             )
         )
-    );
-
 CREATE POLICY "Permitir modificação/exclusão de conteúdo de documento apenas para supervisor" 
     ON public.document_contents FOR ALL 
     USING ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor');
+
+-- Habilitar replicação em tempo real para as tabelas principais
+alter publication supabase_realtime add table public.interns;
+alter publication supabase_realtime add table public.records;
+alter publication supabase_realtime add table public.units;
+
