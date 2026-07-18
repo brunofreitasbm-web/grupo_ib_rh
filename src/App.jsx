@@ -579,34 +579,6 @@ export default function App() {
     };
   }, [handleSession]);
 
-  // Garante a existência do estagiário "TEste" para testes do usuário
-  useEffect(() => {
-    if (user && user.user_metadata?.role === 'supervisor' && internsLoaded) {
-      const hasTest = interns.some(i => i.name.toLowerCase() === 'teste');
-      if (!hasTest) {
-        supabase.rpc('create_intern_user', {
-          p_email: 'teste.estagio@portoterapia.com',
-          p_password: '0000',
-          p_name: 'TEste',
-          p_course: 'Psicologia Clínica',
-          p_institution: 'UFPA',
-          p_shift: 'Tarde',
-          p_daily_hours: 6,
-          p_unit_id: units[0]?.id || 'antonio-barreto',
-          p_start_date: new Date().toISOString().split('T')[0],
-          p_end_date: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-        })
-        .then(({ error }) => {
-          if (error) console.error('Erro ao criar estagiário TEste:', error);
-          else {
-            console.log('Estagiário TEste criado automaticamente via RPC.');
-            fetchInterns();
-          }
-        });
-      }
-    }
-  }, [user, interns, internsLoaded, units, fetchInterns]);
-
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
     const intern = interns.find(i => i.id === selectedActivityIntern);
@@ -705,6 +677,34 @@ export default function App() {
       supabase.removeChannel(channel);
     };
   }, [user, fetchInterns]);
+
+  // Garante a existência do estagiário "TEste" para testes do usuário
+  useEffect(() => {
+    if (user && user.user_metadata?.role === 'supervisor' && internsLoaded) {
+      const hasTest = interns.some(i => i.name.toLowerCase() === 'teste');
+      if (!hasTest) {
+        supabase.rpc('create_intern_user', {
+          p_email: 'teste.estagio@portoterapia.com',
+          p_password: '0000',
+          p_name: 'TEste',
+          p_course: 'Psicologia Clínica',
+          p_institution: 'UFPA',
+          p_shift: 'Tarde',
+          p_daily_hours: 6,
+          p_unit_id: units[0]?.id || 'antonio-barreto',
+          p_start_date: new Date().toISOString().split('T')[0],
+          p_end_date: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        })
+        .then(({ error }) => {
+          if (error) console.error('Erro ao criar estagiário TEste:', error);
+          else {
+            console.log('Estagiário TEste criado automaticamente via RPC.');
+            fetchInterns();
+          }
+        });
+      }
+    }
+  }, [user, interns, internsLoaded, units, fetchInterns]);
 
   // 4. Configuração das unidades
   const fetchUnits = useCallback(async () => {
