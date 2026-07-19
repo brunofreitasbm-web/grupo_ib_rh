@@ -65,7 +65,7 @@ export default function FinanceiroTab({ filterUnit }) {
 
   const monthKey = filterFinanceMonth || new Date().toISOString().substring(0, 7);
   const [year, month] = monthKey.split('-').map(Number);
-  
+
   const totalWorkingDays = useMemo(() => {
     let count = 0;
     const date = new Date(year, month - 1, 1);
@@ -165,13 +165,13 @@ export default function FinanceiroTab({ filterUnit }) {
                     const type = r.justificationDoc?.type || 'outros';
                     const isMedical = type === 'atestado' || (r.justification && r.justification.toLowerCase().includes('atestado'));
                     const days = Number(r.daysAway) || 0;
-                    
+
                     if (isMedical) {
                       medicalDays += days;
                     } else {
                       deductibleDays += days;
                     }
-                    
+
                     occurrenceDetails.push({
                       date: new Date(r.timestamp).toLocaleDateString('pt-BR'),
                       type: isMedical ? 'Atestado Médico' : (type === 'curso' ? 'Curso' : (type === 'academico' ? 'Acadêmico' : 'Outros')),
@@ -201,9 +201,8 @@ export default function FinanceiroTab({ filterUnit }) {
                         ) : (
                           <div className="space-y-1">
                             {occurrenceDetails.map((occ, idx) => (
-                              <div key={idx} className={`p-1.5 rounded border text-[9px] ${
-                                occ.isMedical ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-800'
-                              }`}>
+                              <div key={idx} className={`p-1.5 rounded border text-[9px] ${occ.isMedical ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-800'
+                                }`}>
                                 <strong>{occ.date} - {occ.type} ({occ.days}d):</strong> {occ.desc}
                               </div>
                             ))}
