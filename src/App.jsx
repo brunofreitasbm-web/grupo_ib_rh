@@ -1413,6 +1413,27 @@ export default function App() {
       supervisorName: form.supervisorName.trim(),
     };
     try {
+      if (form.cpf) {
+        const cleanCpf = form.cpf.replace(/\D/g, '');
+        let formattedCpf = cleanCpf;
+        if (cleanCpf.length === 11) {
+          formattedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9)}`;
+        }
+        const { data: existingCpfUsers, error: cpfError } = await supabase
+          .from('interns')
+          .select('id, name, cpf')
+          .or(`cpf.eq.${cleanCpf},cpf.eq.${formattedCpf},cpf.eq.${form.cpf.trim()}`);
+        if (cpfError) throw cpfError;
+        const duplicate = existingCpfUsers?.find(intern => {
+          const cleanDbCpf = (intern.cpf || '').replace(/\D/g, '');
+          return cleanDbCpf === cleanCpf && intern.id !== editingId;
+        });
+        if (duplicate) {
+          alert(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+          return;
+        }
+      }
+
       if (editingId) {
         const dbPayload = mapInternToDb(payload);
         delete dbPayload.last_report_date;
@@ -2420,6 +2441,26 @@ export default function App() {
 
       setIsSubmittingCadastro(true);
       try {
+        const cleanCpf = cadastroForm.cpf.replace(/\D/g, '');
+        let formattedCpf = cleanCpf;
+        if (cleanCpf.length === 11) {
+          formattedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9)}`;
+        }
+        const { data: existingCpfUsers, error: cpfError } = await supabase
+          .from('interns')
+          .select('id, name, cpf')
+          .or(`cpf.eq.${cleanCpf},cpf.eq.${formattedCpf},cpf.eq.${cadastroForm.cpf.trim()}`);
+        if (cpfError) throw cpfError;
+        const duplicate = existingCpfUsers?.find(intern => {
+          const cleanDbCpf = (intern.cpf || '').replace(/\D/g, '');
+          return cleanDbCpf === cleanCpf;
+        });
+        if (duplicate) {
+          alert(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+          setIsSubmittingCadastro(false);
+          return;
+        }
+
         const email = cadastroForm.email.trim();
         const username = generateUsername(cadastroForm.name.trim());
         const finalEmail = email || `${username}@portoterapia.com`;
@@ -2522,7 +2563,12 @@ export default function App() {
         }
 
         // Extrai biometria e salva junto com a data de nascimento no banco
-        const descriptor = cadastroForm.photo ? await getFaceDescriptor(cadastroForm.photo) : null;
+        let descriptor = null;
+        try {
+          descriptor = cadastroForm.photo ? await getFaceDescriptor(cadastroForm.photo) : null;
+        } catch (bioError) {
+          console.error("Erro ao obter descritor facial:", bioError);
+        }
         await supabase
           .from('interns')
           .update({

@@ -164,6 +164,27 @@ export default function EstagiariosTab({ filterUnit }) {
     };
 
     try {
+      if (form.cpf) {
+        const cleanCpf = form.cpf.replace(/\D/g, '');
+        let formattedCpf = cleanCpf;
+        if (cleanCpf.length === 11) {
+          formattedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9)}`;
+        }
+        const { data: existingCpfUsers, error: cpfError } = await supabase
+          .from('interns')
+          .select('id, name, cpf')
+          .or(`cpf.eq.${cleanCpf},cpf.eq.${formattedCpf},cpf.eq.${form.cpf.trim()}`);
+        if (cpfError) throw cpfError;
+        const duplicate = existingCpfUsers?.find(intern => {
+          const cleanDbCpf = (intern.cpf || '').replace(/\D/g, '');
+          return cleanDbCpf === cleanCpf && intern.id !== editingId;
+        });
+        if (duplicate) {
+          alert(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+          return;
+        }
+      }
+
       if (editingId) {
         const dbPayload = mapInternToDb(payload);
         delete dbPayload.last_report_date;

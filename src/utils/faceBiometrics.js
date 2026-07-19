@@ -20,7 +20,12 @@ export async function loadModels() {
 
 export async function getFaceDescriptor(base64Image) {
   if (!base64Image) return null;
-  await loadModels();
+  try {
+    await loadModels();
+  } catch (err) {
+    console.error('Falha ao carregar modelos de biometria, prosseguindo sem descritor facial:', err);
+    return null;
+  }
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = base64Image;
