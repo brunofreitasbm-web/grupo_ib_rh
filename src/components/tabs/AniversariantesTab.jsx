@@ -69,20 +69,20 @@ export default function AniversariantesTab({ filterUnit }) {
   const birthdayInterns = useMemo(() =>
     filteredInterns
       .filter(i => {
-        if (!i.birthday) return false;
-        const d = new Date(i.birthday + 'T00:00:00');
+        if (!i.birthdate) return false;
+        const d = new Date(i.birthdate + 'T00:00:00');
         return d.getMonth() === selectedMonth;
       })
       .sort((a, b) => {
-        const dA = new Date(a.birthday + 'T00:00:00').getDate();
-        const dB = new Date(b.birthday + 'T00:00:00').getDate();
+        const dA = new Date(a.birthdate + 'T00:00:00').getDate();
+        const dB = new Date(b.birthdate + 'T00:00:00').getDate();
         return dA - dB;
       }),
     [filteredInterns, selectedMonth]
   );
 
   const withoutBirthday = useMemo(() =>
-    filteredInterns.filter(i => !i.birthday && i.active !== false),
+    filteredInterns.filter(i => !i.birthdate && i.active !== false),
     [filteredInterns]
   );
 
@@ -90,9 +90,9 @@ export default function AniversariantesTab({ filterUnit }) {
     const today = new Date();
     const todayMD = today.getMonth() * 100 + today.getDate();
     const upcoming = filteredInterns
-      .filter(i => i.birthday)
+      .filter(i => i.birthdate)
       .map(i => {
-        const d = new Date(i.birthday + 'T00:00:00');
+        const d = new Date(i.birthdate + 'T00:00:00');
         const md = d.getMonth() * 100 + d.getDate();
         return { intern: i, md, day: d.getDate(), month: d.getMonth() };
       })
@@ -106,7 +106,7 @@ export default function AniversariantesTab({ filterUnit }) {
     try {
       const { error } = await supabase
         .from('interns')
-        .update({ birthday: editBirthday || null })
+        .update({ birthdate: editBirthday || null })
         .eq('id', internId);
       if (error) throw error;
       setEditingId(null);
@@ -114,7 +114,7 @@ export default function AniversariantesTab({ filterUnit }) {
       fetchData();
     } catch (err) {
       console.error('Erro ao salvar aniversário:', err);
-      alert('Erro ao salvar data de aniversário. Verifique se a coluna "birthday" foi adicionada ao banco de dados.');
+      alert('Erro ao salvar data de aniversário. Verifique se a coluna "birthdate" foi adicionada ao banco de dados.');
     } finally {
       setSaving(false);
     }
@@ -123,7 +123,7 @@ export default function AniversariantesTab({ filterUnit }) {
   const handlePrint = () => {
     const monthLabel = MONTH_NAMES[selectedMonth];
     const rows = birthdayInterns.map(i => {
-      const d = new Date(i.birthday + 'T00:00:00');
+      const d = new Date(i.birthdate + 'T00:00:00');
       const dayStr = `${String(d.getDate()).padStart(2, '0')}/${String(selectedMonth + 1).padStart(2, '0')}`;
       const age = new Date().getFullYear() - d.getFullYear();
       return `
@@ -284,7 +284,7 @@ export default function AniversariantesTab({ filterUnit }) {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {birthdayInterns.map(intern => {
-              const d = new Date(intern.birthday + 'T00:00:00');
+              const d = new Date(intern.birthdate + 'T00:00:00');
               const day = d.getDate();
               const age = new Date().getFullYear() - d.getFullYear();
               const isToday = new Date().getDate() === day && new Date().getMonth() === selectedMonth;
