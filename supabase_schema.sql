@@ -8,6 +8,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- 1. LIMPEZA DE TABELAS EXISTENTES (Caso queira recriar do zero)
 DROP TABLE IF EXISTS public.records CASCADE;
+DROP TABLE IF EXISTS public.document_contents CASCADE;
 DROP TABLE IF EXISTS public.interns CASCADE;
 DROP TABLE IF EXISTS public.units CASCADE;
 
@@ -39,6 +40,8 @@ CREATE TABLE public.interns (
     recess_days_taken numeric DEFAULT 0,
     username text UNIQUE NOT NULL,
     is_first_login boolean DEFAULT true,
+    birthdate date,
+    face_descriptor text,
     documents jsonb DEFAULT '{}'::jsonb,
     photo text,
     cpf text,
@@ -552,6 +555,8 @@ CREATE POLICY "Permitir inserção de conteúdo de documento para supervisor, pr
                 AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id')
             )
         )
+    );
+
 CREATE POLICY "Permitir modificação/exclusão de conteúdo de documento apenas para supervisor" 
     ON public.document_contents FOR ALL 
     USING ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor');

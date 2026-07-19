@@ -75,10 +75,13 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
       };
       const { error } = await supabase
         .from('interns')
-        .update({ contract_termination: updatedTermination })
+        .update({ 
+          contract_termination: updatedTermination,
+          active: false
+        })
         .eq('id', selectedInternData.id);
       if (error) throw error;
-      alert('Informações de desligamento salvas com sucesso!');
+      alert('Informações de desligamento salvas com sucesso! Estagiário foi marcado como Inativo.');
       fetchData();
     } catch (err) {
       console.error('Erro ao salvar encerramento de vínculo:', err);
@@ -112,11 +115,14 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
 
       const { error } = await supabase
         .from('interns')
-        .update({ contract_termination: updatedTermination })
+        .update({ 
+          contract_termination: updatedTermination,
+          active: false
+        })
         .eq('id', selectedInternData.id);
       if (error) throw error;
       if (fileInput) fileInput.value = '';
-      alert('Carta de encerramento de vínculo assinada anexada com sucesso!');
+      alert('Carta de encerramento de vínculo assinada anexada com sucesso! Estagiário foi marcado como Inativo.');
       fetchData();
     } catch (err) {
       console.error("Erro no upload da carta de encerramento de vínculo:", err);
@@ -169,7 +175,7 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
     <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <Lock size={20} className="text-blue-600" /> Aba de Encerramento de Vínculo
+          <Lock size={20} className="text-blue-600" /> Encerramento de Vínculo & Desligamento
         </h2>
         <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
           Rescisão & Legislação

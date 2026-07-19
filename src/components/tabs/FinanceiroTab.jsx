@@ -109,7 +109,7 @@ export default function FinanceiroTab({ filterUnit }) {
     <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <Timer size={20} className="text-blue-600" /> Aba de Financeiro (Folha de Pagamento)
+          <Timer size={20} className="text-blue-600" /> Gestão Financeira & Folha de Pagamento
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <div>

@@ -3,6 +3,7 @@ import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload } from 'lucide-
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
+import { getFaceDescriptor } from '../../utils/faceBiometrics';
 
 export default function EstagiariosTab({ filterUnit }) {
   const [interns, setInterns] = useState([]);
@@ -21,7 +22,7 @@ export default function EstagiariosTab({ filterUnit }) {
     photo: '', cpf: '', email: '', rg: '', phone: '', address: '',
     bankName: '', bankAgency: '', bankAccount: '', pixKey: '',
     emergencyName: '', emergencyRelationship: 'Pais', emergencyPhone: '',
-    allowance: 0, supervisorName: '',
+    allowance: 0, supervisorName: '', birthdate: '', faceDescriptor: '',
   });
 
   const fetchData = useCallback(async () => {
@@ -75,7 +76,7 @@ export default function EstagiariosTab({ filterUnit }) {
       photo: '', cpf: '', email: '', rg: '', phone: '', address: '',
       bankName: '', bankAgency: '', bankAccount: '', pixKey: '',
       emergencyName: '', emergencyRelationship: 'Pais', emergencyPhone: '',
-      allowance: 0, supervisorName: '',
+      allowance: 0, supervisorName: '', birthdate: '', faceDescriptor: '',
     });
     setShowManage(false);
   };
@@ -107,6 +108,8 @@ export default function EstagiariosTab({ filterUnit }) {
       emergencyPhone: intern.emergencyPhone || '',
       allowance: intern.allowance || 0,
       supervisorName: intern.supervisorName || '',
+      birthdate: intern.birthdate || '',
+      faceDescriptor: intern.faceDescriptor || '',
     });
     setShowManage(true);
   };
@@ -117,6 +120,15 @@ export default function EstagiariosTab({ filterUnit }) {
     try {
       const base64 = await compressImage(file, 200, 260, 0.7);
       setForm(f => ({ ...f, photo: base64 }));
+      
+      // Extrai biometria facial
+      const descriptor = await getFaceDescriptor(base64);
+      if (descriptor) {
+        setForm(f => ({ ...f, faceDescriptor: JSON.stringify(descriptor) }));
+        console.log("Biometria extraída do cadastro.");
+      } else {
+        alert("Aviso: Rosto não identificado claramente. Recomenda-se usar outra foto para garantir o funcionamento do Ponto Facial.");
+      }
     } catch (err) {
       console.error('Erro ao processar foto:', err);
       alert('Erro ao processar imagem.');
@@ -126,6 +138,7 @@ export default function EstagiariosTab({ filterUnit }) {
   const handleSaveIntern = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return alert('Nome completo é obrigatório.');
+    if (!form.birthdate) return alert('Data de Nascimento é obrigatória.');
     if (form.cpf && !validateCPF(form.cpf)) return alert('CPF informado é inválido.');
 
     const payload = {
@@ -223,12 +236,20 @@ export default function EstagiariosTab({ filterUnit }) {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName }).eq('id', newId);
+            await supabase.from('interns').update({ 
+              supervisor_name: payload.supervisorName,
+              birthdate: payload.birthdate || null,
+              face_descriptor: payload.faceDescriptor || null
+            }).eq('id', newId);
           }
         } else {
           const newId = createResult.data;
           if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName }).eq('id', newId);
+            await supabase.from('interns').update({ 
+              supervisor_name: payload.supervisorName,
+              birthdate: payload.birthdate || null,
+              face_descriptor: payload.faceDescriptor || null
+            }).eq('id', newId);
           }
         }
         alert('Estagiário criado com sucesso!');
@@ -461,6 +482,17 @@ export default function EstagiariosTab({ filterUnit }) {
                   className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-400"
                   value={form.email}
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-gray-700">Data de Nascimento *</label>
+                <input
+                  type="date"
+                  required
+                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  value={form.birthdate}
+                  onChange={e => setForm(f => ({ ...f, birthdate: e.target.value }))}
                 />
               </div>
             </div>

@@ -223,7 +223,7 @@ export default function AcompanhamentoTab({ filterUnit }) {
     <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <FileText size={20} className="text-blue-600" /> Acompanhamento de Atividades Estagiário
+          <FileText size={20} className="text-blue-600" /> Acompanhamento de Atividades Diárias
         </h2>
         <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
           Desempenho & Recesso

@@ -6,6 +6,7 @@ import {
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen
 } from 'lucide-react';
+import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
 
 // Supabase Client Integration
 import { supabase } from './supabase';
@@ -20,7 +21,7 @@ import EncerramentoTab from './components/tabs/EncerramentoTab';
 import DocumentosTab from './components/tabs/DocumentosTab';
 import DossieTab from './components/tabs/DossieTab';
 import AlertasRhTab from './components/tabs/AlertasRhTab';
-import ResumoIaTab from './components/tabs/ResumoIaTab';
+
 import AniversariantesTab from './components/tabs/AniversariantesTab';
 
 
@@ -397,6 +398,7 @@ export default function App() {
 
   // Visualização de foto de ponto histórico
   const [selectedRecordPhoto, setSelectedRecordPhoto] = useState(null);
+  const [showOccurrenceModal, setShowOccurrenceModal] = useState(false);
 
   // Estados dos novos módulos (Acompanhamento, Financeiro, Impressão, Encerramento de Vínculo)
   const [selectedActivityIntern, setSelectedActivityIntern] = useState('');
@@ -451,7 +453,7 @@ export default function App() {
     startDate: '', endDate: '', photo: '', cpf: '', email: '',
     rg: '', phone: '', address: '', bankName: '', bankAgency: '',
     bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
-    emergencyPhone: '', allowance: 0, supervisorName: ''
+    emergencyPhone: '', allowance: 0, supervisorName: '', birthdate: ''
   });
   const [cadastroCpfRgFile, setCadastroCpfRgFile] = useState(null);
   const [cadastroMatriculaFile, setCadastroMatriculaFile] = useState(null);
@@ -1174,6 +1176,27 @@ export default function App() {
       if (!photoBase64) {
         setGeoError('Falha ao capturar a foto do Controle Facial. Ative a câmera ou justifique para registrar sem foto.');
         return;
+      }
+
+      // Validação facial automática em tempo real
+      if (intern.faceDescriptor) {
+        setGeoError('Validando biometria facial...');
+        try {
+          const pointDescriptor = await getFaceDescriptor(photoBase64);
+          if (!pointDescriptor) {
+            setGeoError('Não foi possível identificar seu rosto na imagem do ponto. Centralize seu rosto na câmera.');
+            return;
+          }
+          const { isMatch, distance } = compareFaces(intern.faceDescriptor, pointDescriptor);
+          if (!isMatch) {
+            setGeoError(`Acesso negado por divergência biométrica facial (Diferença: ${distance.toFixed(2)}).`);
+            return;
+          }
+        } catch (err) {
+          console.error("Erro ao validar biometria:", err);
+          setGeoError('Erro de processamento na biometria facial. Tente novamente.');
+          return;
+        }
       }
     } else {
       // Registro manual exige justificativa no RH
@@ -1974,7 +1997,7 @@ export default function App() {
             <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
               <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-16 w-auto mb-2 rounded-lg shadow-sm" />
               <h1 className="text-2xl font-bold mb-1">Porto Terapia</h1>
-              <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios</p>
+              <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
               <div className="mt-4 text-3xl font-light tracking-wider flex items-center justify-center gap-2">
                 <Clock size={24} className="text-blue-200" />
                 {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
@@ -2219,117 +2242,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* PAINEL DE CERCA VIRTUAL (GEOFENCING VISUAL) */}
-                {currentUnit && (
-                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                        <Crosshair size={14} className="text-blue-600" /> Cerca Virtual (Radar GPS)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={fetchGpsForRadar}
-                        disabled={gpsLoading}
-                        className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold disabled:opacity-50 flex items-center gap-1 bg-white border border-gray-200 px-2 py-0.5 rounded shadow-sm"
-                      >
-                        {gpsLoading ? <Loader2 size={10} className="animate-spin" /> : <Navigation size={10} />}
-                        Recalibrar Radar
-                      </button>
-                    </div>
 
-                    {gpsRadarError ? (
-                      <div className="bg-red-50 border border-red-200 text-red-700 text-[11px] rounded-lg p-2.5 flex items-start gap-1.5">
-                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                        <span>{gpsRadarError}</span>
-                      </div>
-                    ) : gpsLoading && !currentGPS ? (
-                      <div className="flex flex-col items-center justify-center py-4 text-slate-400 text-xs gap-1.5">
-                        <Loader2 size={20} className="animate-spin text-blue-600" />
-                        Calculando distância do satélite...
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                        <div className="flex justify-center">
-                          <svg width="120" height="120" className="mx-auto bg-slate-900 rounded-full border-2 border-slate-800 shadow-inner relative overflow-hidden">
-                            <circle cx="60" cy="60" r="50" fill="none" stroke="#1e293b" strokeWidth="1" />
-                            <circle cx="60" cy="60" r="35" fill="none" stroke="#10b981" strokeWidth="1.5" strokeDasharray="3 2" />
-                            <circle cx="60" cy="60" r="20" fill="none" stroke="#1e293b" strokeWidth="1" />
-                            
-                            <line x1="60" y1="5" x2="60" y2="115" stroke="#1e293b" strokeWidth="0.75" />
-                            <line x1="5" y1="60" x2="115" y2="60" stroke="#1e293b" strokeWidth="0.75" />
-                            
-                            <circle cx="60" cy="60" r="3.5" fill="#3b82f6" />
-                            <circle cx="60" cy="60" r="8" fill="#3b82f6" fillOpacity="0.2" className="animate-ping" style={{ animationDuration: '3s' }} />
-
-                            {currentGPS && (
-                              <>
-                                {(() => {
-                                  const allowedRadiusM = Number(currentUnit.radiusM) || (Number(currentUnit.radiusKm) * 1000) || 100;
-                                  const distKm = haversineKm(currentGPS.lat, currentGPS.lng, currentUnit.lat, currentUnit.lng);
-                                  const distM = distKm * 1000;
-                                  const isInside = distM <= allowedRadiusM;
-                                  
-                                  const dx = (currentGPS.lng - currentUnit.lng) * 111320 * Math.cos(currentUnit.lat * Math.PI / 180);
-                                  const dy = (currentGPS.lat - currentUnit.lat) * 111000;
-                                  const scale = 35 / allowedRadiusM;
-                                  
-                                  let rx = dx * scale;
-                                  let ry = dy * scale;
-                                  const currentDistPix = Math.sqrt(rx*rx + ry*ry);
-                                  const maxPix = 50;
-                                  if (currentDistPix > maxPix) {
-                                    rx = (rx / currentDistPix) * maxPix;
-                                    ry = (ry / currentDistPix) * maxPix;
-                                  }
-                                  
-                                  const px = 60 + rx;
-                                  const py = 60 - ry;
-
-                                  return (
-                                    <>
-                                      <circle cx={px} cy={py} r="4.5" fill={isInside ? "#10b981" : "#f97316"} />
-                                      <circle cx={px} cy={py} r="9" fill={isInside ? "#10b981" : "#f97316"} fillOpacity="0.3" className="animate-ping" style={{ animationDuration: '2s' }} />
-                                      <line x1="60" y1="60" x2={px} y2={py} stroke={isInside ? "#10b981" : "#f97316"} strokeWidth="0.75" strokeDasharray="1.5 1.5" strokeOpacity="0.6" />
-                                    </>
-                                  );
-                                })()}
-                              </>
-                            )}
-                            <line x1="60" y1="60" x2="120" y2="60" stroke="#10b981" strokeWidth="0.75" strokeOpacity="0.15" className="origin-center animate-spin" style={{ animationDuration: '5s' }} />
-                          </svg>
-                        </div>
-
-                        <div className="text-center sm:text-left space-y-0.5">
-                          {(() => {
-                            const allowedRadiusM = Number(currentUnit.radiusM) || (Number(currentUnit.radiusKm) * 1000) || 100;
-                            if (!currentGPS) {
-                              return <p className="text-xs text-slate-400">Calculando GPS...</p>;
-                            }
-                            const distKm = haversineKm(currentGPS.lat, currentGPS.lng, currentUnit.lat, currentUnit.lng);
-                            const distM = distKm * 1000;
-                            const isInside = distM <= allowedRadiusM;
-                            return (
-                              <>
-                                <p className={`text-xs font-bold ${isInside ? 'text-green-600 animate-pulse' : 'text-orange-600'}`}>
-                                  {isInside ? '● DENTRO DA CERCA' : '● FORA DA CERCA'}
-                                </p>
-                                <p className="text-xs text-slate-700 font-bold">
-                                  Distância: {distM < 1000 ? `${Math.round(distM)} m` : `${(distM/1000).toFixed(2)} km`}
-                                </p>
-                                <p className="text-[10px] text-slate-500">
-                                  Cerca: {allowedRadiusM}m autorizados
-                                </p>
-                                <p className="text-[10px] text-slate-400">
-                                  Precisão: ±{Math.round(currentGPS.accuracy)}m
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* PAINEL DE CONTROLE FACIAL (WEBCAM) */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-4 space-y-3">
@@ -2423,63 +2336,19 @@ export default function App() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-medium text-gray-700 flex items-center gap-1.5">
-                      <FileText size={14} /> Ocorrências (Opcional)
-                    </label>
-                  </div>
-                  <textarea
-                    value={justification}
-                    onChange={(e) => setJustification(e.target.value)}
-                    placeholder="Ex: Atraso devido a compromisso acadêmico..."
-                    className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50 resize-none h-20 transition-all text-xs"
-                  />
-                </div>
-
-                {/* COMPROVANTE DE OCORRÊNCIA (UPLOAD ATESTADOS/CURSOS) */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                  <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                    <Upload size={14} className="text-blue-500" /> Comprovante de Ocorrência (Faltas/Atrasos)
-                  </span>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-[9px] text-gray-500 mb-0.5">Tipo do Comprovante</label>
-                      <select
-                        value={justificationDocType}
-                        onChange={(e) => setJustificationDocType(e.target.value)}
-                        className="w-full p-1.5 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-[10px]"
-                      >
-                        <option value="atestado">Atestado Médico</option>
-                        <option value="curso">Inscrição em Curso</option>
-                        <option value="academico">Atividade Acadêmica</option>
-                        <option value="outros">Outro Comprovante</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-[9px] text-gray-500 mb-0.5">Dias Afastados</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={daysAway}
-                        onChange={(e) => setDaysAway(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-full p-1.5 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-[10px]"
-                      >
-                      </input>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-[9px] text-gray-500 mb-0.5">Arquivo (PDF/PNG/JPG)</label>
-                      <input
-                        id="justification-doc-input"
-                        type="file"
-                        accept=".pdf,.png,.jpg,.jpeg"
-                        className="w-full text-[9px] p-1 bg-white border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
+                <div className="flex flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowOccurrenceModal(true)}
+                    className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <FileText size={14} /> Registrar Ocorrência (Opcional)
+                  </button>
+                  {(justification || daysAway > 0) && (
+                    <span className="text-[10px] text-green-600 font-semibold mt-1 block">
+                      ✓ Ocorrência/Justificativa preenchida
+                    </span>
+                  )}
                 </div>
 
                 {geoError && (
@@ -2521,8 +2390,9 @@ export default function App() {
           !cadastroForm.phone.trim() || !cadastroForm.course.trim() || !cadastroForm.institution.trim() || !cadastroForm.address.trim() || 
           !cadastroForm.unitId || !cadastroForm.shift || !cadastroForm.startDate || !cadastroForm.endDate || 
           !cadastroForm.bankName.trim() || !cadastroForm.bankAgency.trim() || !cadastroForm.bankAccount.trim() || !cadastroForm.pixKey.trim() || 
-          !cadastroForm.emergencyName.trim() || !cadastroForm.emergencyRelationship || !cadastroForm.emergencyPhone.trim()) {
-        alert("Todos os campos do Cadastro de Estagiário são obrigatórios!");
+          !cadastroForm.emergencyName.trim() || !cadastroForm.emergencyRelationship || !cadastroForm.emergencyPhone.trim() ||
+          !cadastroForm.birthdate) {
+        alert("Todos os campos do Cadastro de Estagiário são obrigatórios, incluindo a Data de Nascimento!");
         return;
       }
 
@@ -2651,6 +2521,16 @@ export default function App() {
           throw new Error("Não foi possível obter o ID do novo estagiário.");
         }
 
+        // Extrai biometria e salva junto com a data de nascimento no banco
+        const descriptor = cadastroForm.photo ? await getFaceDescriptor(cadastroForm.photo) : null;
+        await supabase
+          .from('interns')
+          .update({
+            birthdate: cadastroForm.birthdate || null,
+            face_descriptor: descriptor ? JSON.stringify(descriptor) : null
+          })
+          .eq('id', newId);
+
         setCadastroSuccess(true);
         fetchInterns();
       } catch (err) {
@@ -2769,6 +2649,16 @@ export default function App() {
                     required placeholder="CPF *"
                     value={cadastroForm.cpf}
                     onChange={(e) => setCadastroForm({ ...cadastroForm, cpf: e.target.value })}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Data de Nascimento *</label>
+                  <input
+                    type="date"
+                    required
+                    value={cadastroForm.birthdate}
+                    onChange={(e) => setCadastroForm({ ...cadastroForm, birthdate: e.target.value })}
                     className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
                   />
                 </div>
@@ -4104,6 +3994,44 @@ export default function App() {
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
                   <strong>Porto Terapia</strong><br>Representante Concedente
+                </div>
+              </td>
+            </tr>
+          </table>
+          ${footerHtml}
+        </div>
+      `;
+    }
+
+    if (type === 'declaracao') {
+      return `
+        <div style="font-family: 'Inter', Arial, sans-serif; font-size: 11px; line-height: 1.8; color: #1f2937; padding: 30px;">
+          ${headerHtml}
+          <div style="text-align: center; margin-top: 40px; margin-bottom: 50px;">
+            <h2 style="margin: 0; font-size: 16px; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 1px;">DECLARAÇÃO DE VÍNCULO</h2>
+          </div>
+
+          <p style="text-align: justify; text-indent: 50px; margin-bottom: 30px;">
+            Declaramos, para os devidos fins de comprovação junto à instituição de ensino e demais interessados, que o(a) estudante <strong>${internName}</strong>, inscrito(a) sob o CPF nº <strong>${intern?.cpf || '_____________________'}</strong>, é estagiário(a) regularmente matriculado(a) no curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong> e atualmente desenvolve estágio prático curricular não obrigatório nas dependências da Clínica Porto Terapia, unidade <strong>${unitTitle}</strong>.
+          </p>
+
+          <p style="text-align: justify; text-indent: 50px; margin-bottom: 30px;">
+            O contrato de estágio iniciou-se em <strong>${startFormatted}</strong> e possui previsão de encerramento em <strong>${endFormatted}</strong>, com carga horária de <strong>${hoursCount} horas diárias</strong>, totalizando <strong>30 horas semanais</strong> no turno <strong>${shiftName}</strong>.
+          </p>
+
+          <p style="text-align: justify; text-indent: 50px; margin-bottom: 40px; font-weight: bold; color: #4b5563;">
+            Período de Vínculo com a Clínica. A validade desta declaração é de 30 dias a partir da data de sua emissão.
+          </p>
+
+          <p style="text-align: right; margin-top: 60px; margin-bottom: 60px;">
+            Belém/PA, ${new Date().toLocaleDateString('pt-BR')}.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 10px; margin-top: 50px;">
+            <tr>
+              <td style="width: 100%; vertical-align: top; padding: 10px;">
+                <div style="border-top: 1px solid #9ca3af; margin-top: 40px; padding-top: 5px; width: 60%; margin-left: auto; margin-right: auto;">
+                  <strong>Porto Terapia Clínica de Psicologia</strong><br>Representante Concedente
                 </div>
               </td>
             </tr>
@@ -5796,6 +5724,93 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const renderOccurrenceModal = () => {
+    if (!showOccurrenceModal) return null;
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md relative">
+          <button
+            type="button"
+            onClick={() => setShowOccurrenceModal(false)}
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 rounded-full p-1 border border-gray-100"
+          >
+            <X size={18} />
+          </button>
+          
+          <div className="mb-4">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+              <FileText size={16} className="text-blue-600" /> Registrar Ocorrência / Justificativa
+            </h3>
+            <p className="text-[10px] text-gray-500">Utilize este formulário apenas em caso de faltas, atrasos ou justificativas especiais.</p>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <label className="font-semibold text-gray-700">Anotações / Descrição da Ocorrência</label>
+              <textarea
+                value={justification}
+                onChange={(e) => setJustification(e.target.value)}
+                placeholder="Ex: Atraso devido a compromisso acadêmico..."
+                className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50 resize-none h-24 transition-all"
+              />
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+              <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                <Upload size={14} className="text-blue-500" /> Comprovante de Ocorrência
+              </span>
+              
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-[9px] text-gray-500 mb-0.5">Tipo do Comprovante</label>
+                  <select
+                    value={justificationDocType}
+                    onChange={(e) => setJustificationDocType(e.target.value)}
+                    className="w-full p-2 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-xs"
+                  >
+                    <option value="atestado">Atestado Médico</option>
+                    <option value="curso">Inscrição em Curso</option>
+                    <option value="academico">Atividade Acadêmica</option>
+                    <option value="outros">Outro Comprovante</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-[9px] text-gray-500 mb-0.5">Dias Afastados</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={daysAway}
+                    onChange={(e) => setDaysAway(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full p-2 border border-gray-300 bg-white rounded-lg focus:ring-1 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-[9px] text-gray-500 mb-0.5">Arquivo (PDF/PNG/JPG)</label>
+                  <input
+                    id="justification-doc-input"
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    className="w-full text-xs p-1 bg-white border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowOccurrenceModal(false)}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs transition-colors shadow"
+            >
+              Confirmar e Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderDocumentViewModal = () => {
     if (!viewDocBase64) return null;
     const isPdf = viewDocBase64.startsWith('data:application/pdf');
@@ -6343,17 +6358,16 @@ export default function App() {
           <nav className="flex text-xs font-semibold">
             {[
               { id: 'dashboard',       label: '📊 Dashboard' },
-              { id: 'frequencia',      label: '📋 Frequência' },
-              { id: 'estagiarios',     label: '👤 Estagiários' },
-              { id: 'acompanhamento',  label: '📊 Acompanhamento' },
-              { id: 'financeiro',      label: '💰 Financeiro' },
-              { id: 'ocorrencias',     label: '⚠️ Ocorrências' },
-              { id: 'finalizacao',     label: '🔒 Encerramento de Vínculo' },
+              { id: 'estagiarios',     label: '👤 Cadastro' },
               { id: 'documentos',      label: '🖨️ Documentos' },
+              { id: 'frequencia',      label: '📋 Frequência' },
               { id: 'admissional',     label: '📁 Dossiê' },
+              { id: 'acompanhamento',  label: '📊 Acompanhamento' },
+              { id: 'ocorrencias',     label: '⚠️ Ocorrências' },
+              { id: 'finalizacao',     label: '🔒 Encerramento' },
+              { id: 'financeiro',      label: '💰 Financeiro' },
               { id: 'rh',              label: '⚠️ Alertas RH' },
               { id: 'aniversariantes', label: '🎂 Aniversariantes' },
-              { id: 'resumo',          label: '🤖 IA/Resumo' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -6398,7 +6412,7 @@ export default function App() {
         {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
         {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
         {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'resumo'         && <ResumoIaTab filterUnit={filterUnit} />}
+
       </div>
     </div>
   );
@@ -6422,6 +6436,7 @@ export default function App() {
       {renderRecordPhotoModal()}
       {renderDocumentViewModal()}
       {renderTemplateModal()}
+      {renderOccurrenceModal()}
     </>
   );
 }

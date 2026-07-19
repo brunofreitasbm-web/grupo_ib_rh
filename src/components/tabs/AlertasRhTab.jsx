@@ -60,7 +60,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
     <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <ShieldAlert size={20} className="text-indigo-600" /> Alertas de Contratos & Recesso (RH)
+          <ShieldAlert size={20} className="text-indigo-600" /> Alertas de Contratos & Prazos (RH)
         </h2>
         <span className="text-xs text-gray-500">Lei nº 11.788/2008</span>
       </div>

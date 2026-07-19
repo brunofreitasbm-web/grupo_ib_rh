@@ -97,7 +97,8 @@ export const mapInternFromDb = (i) => ({
   registrationStatus: i.registration_status || 'validated',
   semestralReports: i.semestral_reports || {},
   contractTermination: i.contract_termination || {},
-  birthday: i.birthday || '',
+  birthdate: i.birthdate || '',
+  faceDescriptor: i.face_descriptor || '',
 });
 
 export const mapInternToDb = (i) => ({
@@ -133,7 +134,8 @@ export const mapInternToDb = (i) => ({
   registration_status: i.registrationStatus || 'validated',
   semestral_reports: i.semestralReports || {},
   contract_termination: i.contractTermination || {},
-  birthday: i.birthday || null,
+  birthdate: i.birthdate || null,
+  face_descriptor: i.faceDescriptor || null,
 });
 
 export const mapRecordFromDb = (r) => ({
