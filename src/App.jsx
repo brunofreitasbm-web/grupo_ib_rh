@@ -21,6 +21,7 @@ import DocumentosTab from './components/tabs/DocumentosTab';
 import DossieTab from './components/tabs/DossieTab';
 import AlertasRhTab from './components/tabs/AlertasRhTab';
 import ResumoIaTab from './components/tabs/ResumoIaTab';
+import AniversariantesTab from './components/tabs/AniversariantesTab';
 
 
 
@@ -165,6 +166,7 @@ const mapInternFromDb = (i) => ({
   registrationStatus: i.registration_status || 'validated',
   semestralReports: i.semestral_reports || {},
   contractTermination: i.contract_termination || {},
+  birthday: i.birthday || '',
 });
 
 const mapInternToDb = (i) => ({
@@ -200,6 +202,7 @@ const mapInternToDb = (i) => ({
   registration_status: i.registrationStatus || 'validated',
   semestral_reports: i.semestralReports || {},
   contract_termination: i.contractTermination || {},
+  birthday: i.birthday || null,
 });
 
 const mapRecordFromDb = (r) => ({
@@ -6349,6 +6352,7 @@ export default function App() {
               { id: 'documentos',      label: '🖨️ Documentos' },
               { id: 'admissional',     label: '📁 Dossiê' },
               { id: 'rh',              label: '⚠️ Alertas RH' },
+              { id: 'aniversariantes', label: '🎂 Aniversariantes' },
               { id: 'resumo',          label: '🤖 IA/Resumo' },
             ].map(tab => (
               <button
@@ -6393,6 +6397,7 @@ export default function App() {
         {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
         {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
         {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
+        {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
         {activeAdminTab === 'resumo'         && <ResumoIaTab filterUnit={filterUnit} />}
       </div>
     </div>

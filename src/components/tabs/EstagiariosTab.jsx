@@ -40,16 +40,15 @@ export default function EstagiariosTab({ filterUnit }) {
       if (unitsData) {
         const mappedUnits = unitsData.map(mapUnitFromDb);
         setUnits(mappedUnits);
-        if (mappedUnits.length > 0 && !form.unitId) {
-          setForm(f => ({ ...f, unitId: mappedUnits[0].id }));
-        }
+        // Inicializa unitId apenas se ainda não foi definido (sem dependência no callback)
+        setForm(f => f.unitId ? f : { ...f, unitId: mappedUnits[0]?.id || '' });
       }
     } catch (err) {
       console.error('Erro ao carregar estagiários:', err);
     } finally {
       setLoading(false);
     }
-  }, [form.unitId]);
+  }, []); // sem dependências — evita loop infinito de re-fetch
 
   useEffect(() => {
     fetchData();
