@@ -10,6 +10,9 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5000000,
+      },
       manifest: {
         name: 'Controle de Estagiários',
         short_name: 'PontoRH',
@@ -38,5 +41,13 @@ export default defineConfig({
   },
   build: {
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ['recharts'],
+          vendor: ['react', 'react-dom', 'lucide-react', 'cmdk', 'sonner']
+        }
+      }
+    }
   }
 });
