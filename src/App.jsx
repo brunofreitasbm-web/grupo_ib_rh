@@ -2199,9 +2199,6 @@ export default function App() {
               <Clock size={24} className="text-blue-200" />
               {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
             </div>
-            <div className="mt-3 inline-flex items-center gap-1.5 text-[10px] bg-blue-700/60 px-3 py-1 rounded-full">
-              <MapPin size={10} /> Cerca Virtual: {currentUnit?.radiusM || (currentUnit?.radiusKm ? currentUnit.radiusKm * 1000 : 100)}m autorizados
-            </div>
           </div>
 
           <div className="p-6">
