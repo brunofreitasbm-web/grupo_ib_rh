@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Timer, Clock, FileText, Cake, CheckCircle2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb } from '../../utils/mappings';
 
@@ -111,11 +112,13 @@ export default function DashboardTab({ filterUnit }) {
   const unitStats = useMemo(() => {
     const stats = {};
     activeInterns.forEach(intern => {
-      const uName = intern.unitId ? unitName(intern.unitId) : 'Outra/Não definida';
+      const uName = intern.unitId ? unitName(intern.unitId) : 'Outra';
       stats[uName] = (stats[uName] || 0) + 1;
     });
-    return stats;
+    return Object.entries(stats).map(([name, value]) => ({ name, value }));
   }, [activeInterns, units]);
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
   // Breakdown per shift
   const shiftStats = useMemo(() => {
@@ -124,7 +127,7 @@ export default function DashboardTab({ filterUnit }) {
       const shift = intern.shift || 'Manhã';
       stats[shift] = (stats[shift] || 0) + 1;
     });
-    return stats;
+    return Object.entries(stats).map(([name, count]) => ({ name, count }));
   }, [activeInterns]);
 
   // Contract warnings (expiring in 30 days)
@@ -292,28 +295,33 @@ export default function DashboardTab({ filterUnit }) {
         
         {/* Left Column: Distributions */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Distribuição por Unidade */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md">
             <h3 className="text-sm font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center gap-2">
               🏢 Distribuição por Unidade
             </h3>
-            <div className="space-y-4">
-              {Object.entries(unitStats).map(([uName, count]) => {
-                const pct = totalActive > 0 ? Math.round((count / totalActive) * 100) : 0;
-                return (
-                  <div key={uName} className="space-y-1.5">
-                    <div className="flex justify-between text-xs font-semibold text-gray-700">
-                      <span>{uName}</span>
-                      <span className="text-blue-600">{count} estagiários ({pct}%)</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-3.5 rounded-full overflow-hidden border border-slate-200/60 shadow-inner">
-                      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
-                    </div>
-                  </div>
-                );
-              })}
-              {Object.keys(unitStats).length === 0 && (
-                <p className="text-center text-xs text-gray-400 italic py-4">Nenhum dado de unidade disponível.</p>
+            <div className="h-64">
+              {unitStats.length === 0 ? (
+                <p className="text-center text-xs text-gray-400 italic py-4">Nenhum dado disponível.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={unitStats}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {unitStats.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
               )}
             </div>
           </div>
@@ -323,18 +331,16 @@ export default function DashboardTab({ filterUnit }) {
             <h3 className="text-sm font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center gap-2">
               🌅 Distribuição por Turno
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {['Manhã', 'Tarde', 'Noite', 'Integral'].map(shift => {
-                const count = shiftStats[shift] || 0;
-                const pct = totalActive > 0 ? Math.round((count / totalActive) * 100) : 0;
-                return (
-                  <div key={shift} className="bg-slate-50 hover:bg-slate-100/70 border border-slate-150 rounded-2xl p-4 text-center transition-all duration-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">{shift}</span>
-                    <strong className="text-2xl font-black text-slate-800 block mt-1">{count}</strong>
-                    <span className="text-[10px] text-blue-600 font-semibold block mt-1.5 bg-blue-50/80 px-2 py-0.5 rounded-full w-fit mx-auto">{pct}%</span>
-                  </div>
-                );
-              })}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={shiftStats} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} />
+                  <Bar dataKey="count" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
 

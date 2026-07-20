@@ -4,7 +4,8 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
-
+import Skeleton from '../Skeleton';
+import { toast } from 'sonner';
 export default function EstagiariosTab({ filterUnit }) {
   const [interns, setInterns] = useState([]);
   const [units, setUnits] = useState([]);
@@ -137,9 +138,9 @@ export default function EstagiariosTab({ filterUnit }) {
 
   const handleSaveIntern = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return alert('Nome completo é obrigatório.');
-    if (!form.birthdate) return alert('Data de Nascimento é obrigatória.');
-    if (form.cpf && !validateCPF(form.cpf)) return alert('CPF informado é inválido.');
+    if (!form.name.trim()) return toast.error('Nome completo é obrigatório.');
+    if (!form.birthdate) return toast.error('Data de Nascimento é obrigatória.');
+    if (form.cpf && !validateCPF(form.cpf)) return toast.error('CPF informado é inválido.');
 
     const payload = {
       ...form,
@@ -180,7 +181,7 @@ export default function EstagiariosTab({ filterUnit }) {
           return cleanDbCpf === cleanCpf && intern.id !== editingId;
         });
         if (duplicate) {
-          alert(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+          toast.error(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
           return;
         }
       }
@@ -197,7 +198,7 @@ export default function EstagiariosTab({ filterUnit }) {
           .update(dbPayload)
           .eq('id', editingId);
         if (error) throw error;
-        alert('Estagiário atualizado com sucesso!');
+        toast.success('Estagiário atualizado com sucesso!');
       } else {
         const email = payload.email || `${generateUsername(payload.name)}@portoterapia.com`;
         const createResult = await supabase.rpc('create_intern_user', {
@@ -273,13 +274,13 @@ export default function EstagiariosTab({ filterUnit }) {
             }).eq('id', newId);
           }
         }
-        alert('Estagiário criado com sucesso!');
+        toast.success('Estagiário criado com sucesso!');
       }
       resetForm();
       fetchData();
     } catch (error) {
       console.error('Erro ao salvar estagiário:', error);
-      alert('Erro ao salvar estagiário: ' + (error.message || error));
+      toast.error('Erro ao salvar estagiário: ' + (error.message || error));
     }
   };
 
@@ -294,12 +295,12 @@ export default function EstagiariosTab({ filterUnit }) {
         p_intern_id: intern.id
       });
       if (error) throw error;
-      alert('Estagiário excluído com sucesso!');
+      toast.success('Estagiário excluído com sucesso!');
       resetForm();
       fetchData();
     } catch (error) {
       console.error('Erro ao excluir estagiário:', error);
-      alert('Erro ao excluir estagiário.');
+      toast.error('Erro ao excluir estagiário.');
     }
   };
 
@@ -312,11 +313,11 @@ export default function EstagiariosTab({ filterUnit }) {
         .update({ registration_status: 'validated' })
         .eq('id', internId);
       if (error) throw error;
-      alert("Cadastro validado com sucesso!");
+      toast.success("Cadastro validado com sucesso!");
       fetchData();
     } catch (err) {
       console.error("Erro ao aprovar cadastro:", err);
-      alert("Erro ao validar cadastro: " + err.message);
+      toast.error("Erro ao validar cadastro: " + err.message);
     }
   };
 
@@ -325,8 +326,22 @@ export default function EstagiariosTab({ filterUnit }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <Skeleton className="h-8 w-48 mb-6" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="border rounded-xl p-4 h-32 flex flex-col gap-3">
+              <div className="flex gap-3">
+                <Skeleton className="w-12 h-16 shrink-0 rounded-lg" />
+                <div className="w-full space-y-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

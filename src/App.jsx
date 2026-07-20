@@ -11,6 +11,8 @@ import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
 // Supabase Client Integration
 import { supabase } from './supabase';
 
+import Omnibar from './components/Omnibar';
+import { toast } from 'sonner';
 import DashboardTab from './components/tabs/DashboardTab';
 import FrequenciaTab from './components/tabs/FrequenciaTab';
 import EstagiariosTab from './components/tabs/EstagiariosTab';
@@ -342,6 +344,17 @@ export default function App() {
   const [interns, setInterns] = useState([]);
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
+  const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+
+  const handleOmnibarAction = (action, internId) => {
+    if (action === 'view_dossie') {
+      setActiveAdminTab('admissional');
+    } else if (action === 'new_occurrence') {
+      setActiveAdminTab('ocorrencias');
+    } else if (action === 'view_reports') {
+      setActiveAdminTab('financeiro');
+    }
+  };
 
   // Formulário de registro & Login Individual
   const [selectedIntern, setSelectedIntern] = useState('');
@@ -583,6 +596,30 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, [handleSession]);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
+      if (offlineRecords.length > 0) {
+        toast.info(`Sincronizando ${offlineRecords.length} ponto(s) salvo(s) offline...`);
+        try {
+          const { error } = await supabase.from('records').insert(offlineRecords.map(mapRecordToDb));
+          if (error) throw error;
+          localStorage.removeItem('offline_records');
+          toast.success('Pontos offline sincronizados com sucesso!');
+          fetchRecords();
+        } catch (error) {
+          console.error('Erro ao sincronizar pontos offline:', error);
+          toast.error('Falha ao sincronizar pontos offline. Tentaremos novamente depois.');
+        }
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    if (navigator.onLine) {
+      handleOnline();
+    }
+    return () => window.removeEventListener('online', handleOnline);
+  }, [fetchRecords]);
 
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
@@ -1297,7 +1334,20 @@ export default function App() {
       }, 3000);
     } catch (error) {
       console.error('Erro ao salvar:', error);
-      setGeoError('Erro ao conectar com o banco de dados. Tente novamente.');
+      if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('Network') || error.message.includes('fetch'))) {
+        alert('O ponto foi salvo offline e será sincronizado quando houver internet.');
+        const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
+        offlineRecords.push(newRecord);
+        localStorage.setItem('offline_records', JSON.stringify(offlineRecords));
+        stopCamera();
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+          handleLogout();
+        }, 3000);
+      } else {
+        setGeoError('Erro ao conectar com o banco de dados. Tente novamente.');
+      }
     } finally {
       setIsLocating(false);
     }
@@ -6489,6 +6539,14 @@ export default function App() {
       {renderDocumentViewModal()}
       {renderTemplateModal()}
       {renderOccurrenceModal()}
+      {currentView === 'admin' && (
+        <Omnibar 
+          isOpen={isOmnibarOpen} 
+          setIsOpen={setIsOmnibarOpen} 
+          interns={interns} 
+          onSelectAction={handleOmnibarAction} 
+        />
+      )}
     </>
   );
 }
