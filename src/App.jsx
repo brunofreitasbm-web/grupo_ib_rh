@@ -597,29 +597,7 @@ export default function App() {
     };
   }, [handleSession]);
 
-  useEffect(() => {
-    const handleOnline = async () => {
-      const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
-      if (offlineRecords.length > 0) {
-        toast.info(`Sincronizando ${offlineRecords.length} ponto(s) salvo(s) offline...`);
-        try {
-          const { error } = await supabase.from('records').insert(offlineRecords.map(mapRecordToDb));
-          if (error) throw error;
-          localStorage.removeItem('offline_records');
-          toast.success('Pontos offline sincronizados com sucesso!');
-          fetchRecords();
-        } catch (error) {
-          console.error('Erro ao sincronizar pontos offline:', error);
-          toast.error('Falha ao sincronizar pontos offline. Tentaremos novamente depois.');
-        }
-      }
-    };
-    window.addEventListener('online', handleOnline);
-    if (navigator.onLine) {
-      handleOnline();
-    }
-    return () => window.removeEventListener('online', handleOnline);
-  }, [fetchRecords]);
+
 
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
@@ -666,6 +644,30 @@ export default function App() {
       setRecords((data || []).map(mapRecordFromDb));
     }
   }, [user]);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
+      if (offlineRecords.length > 0) {
+        toast.info(`Sincronizando ${offlineRecords.length} ponto(s) salvo(s) offline...`);
+        try {
+          const { error } = await supabase.from('records').insert(offlineRecords.map(mapRecordToDb));
+          if (error) throw error;
+          localStorage.removeItem('offline_records');
+          toast.success('Pontos offline sincronizados com sucesso!');
+          fetchRecords();
+        } catch (error) {
+          console.error('Erro ao sincronizar pontos offline:', error);
+          toast.error('Falha ao sincronizar pontos offline. Tentaremos novamente depois.');
+        }
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    if (navigator.onLine) {
+      handleOnline();
+    }
+    return () => window.removeEventListener('online', handleOnline);
+  }, [fetchRecords]);
 
   useEffect(() => {
     if (!user) return;
