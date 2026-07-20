@@ -10,6 +10,7 @@ export default function FrequenciaTab({ filterUnit }) {
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'timeline'
   const [selectedRecordPhoto, setSelectedRecordPhoto] = useState(null);
   const [viewDocBase64, setViewDocBase64] = useState(null);
   const [viewDocName, setViewDocName] = useState('');
@@ -79,7 +80,23 @@ export default function FrequenciaTab({ filterUnit }) {
       : records.filter((r) => r.geo?.unitId === filterUnit);
   }, [records, filterUnit]);
 
-  // Calulate Hours Summary
+  // Group records by date for the timeline
+  const groupedRecordsByDate = useMemo(() => {
+    const groups = {};
+    filteredRecords.forEach((r) => {
+      if (!r.timestamp) return;
+      const dateKey = new Date(r.timestamp).toLocaleDateString('pt-BR');
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(r);
+    });
+    return Object.entries(groups).sort((a, b) => {
+      const [dayA, monthA, yearA] = a[0].split('/').map(Number);
+      const [dayB, monthB, yearB] = b[0].split('/').map(Number);
+      return new Date(yearB, monthB - 1, dayB) - new Date(yearA, monthA - 1, dayA);
+    });
+  }, [filteredRecords]);
+
+  // Calculate Hours Summary
   const hoursSummary = useMemo(() => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -235,14 +252,36 @@ export default function FrequenciaTab({ filterUnit }) {
       {renderHoursSummary()}
 
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+        <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-3">
           <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
             <List size={20} /> Histórico Sincronizado
             {filterUnit !== 'all' && (
               <span className="text-xs font-normal text-gray-500">• {unitName(filterUnit)}</span>
             )}
           </h2>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center ml-auto">
+            {/* Visualizer Toggle */}
+            <div className="flex items-center bg-slate-200/70 p-0.5 rounded-lg border border-slate-300/40 mr-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  viewMode === 'table' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Tabela
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('timeline')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  viewMode === 'timeline' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Timeline
+              </button>
+            </div>
+
             <button
               onClick={handleExportCSV}
               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors inline-flex items-center gap-1.5"
@@ -254,10 +293,11 @@ export default function FrequenciaTab({ filterUnit }) {
             </span>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          {filteredRecords.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">Nenhum registro de frequência encontrado.</div>
-          ) : (
+
+        {filteredRecords.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">Nenhum registro de frequência encontrado.</div>
+        ) : viewMode === 'table' ? (
+          <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider border-b border-gray-200">
@@ -351,8 +391,111 @@ export default function FrequenciaTab({ filterUnit }) {
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        ) : (
+          /* Timeline view: Grouped vertically by Date */
+          <div className="p-6 space-y-8 bg-slate-50/50">
+            {groupedRecordsByDate.map(([dateStr, dayRecords]) => (
+              <div key={dateStr} className="space-y-4">
+                {/* Date separator */}
+                <div className="sticky top-0 bg-white/80 backdrop-blur-sm z-10 py-1.5 px-3 rounded-lg border border-slate-200/50 shadow-sm w-fit">
+                  <span className="text-xs font-extrabold text-blue-800 tracking-wide uppercase">{dateStr}</span>
+                </div>
+
+                <div className="relative border-l-2 border-slate-200 ml-4 pl-6 space-y-6">
+                  {dayRecords.map((record) => {
+                    const isEntrada = record.action === 'entrada';
+                    const isSaida = record.action === 'saida';
+                    return (
+                      <div key={record.id} className="relative group">
+                        {/* Circle node indicator */}
+                        <span className={`absolute -left-[35px] top-1.5 flex items-center justify-center w-6 h-6 rounded-full border-2 bg-white transition-all group-hover:scale-110 shadow-sm ${
+                          isEntrada 
+                            ? 'border-green-500 text-green-600' 
+                            : isSaida ? 'border-orange-500 text-orange-600' : 'border-amber-500 text-amber-600'
+                        }`}>
+                          {isEntrada ? <LogIn size={11} /> : isSaida ? <LogOut size={11} /> : <AlertTriangle size={11} />}
+                        </span>
+
+                        {/* Content card */}
+                        <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-gray-800 text-xs sm:text-sm">{record.internName}</span>
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                isEntrada 
+                                  ? 'bg-green-50 text-green-700 border border-green-150' 
+                                  : isSaida ? 'bg-orange-50 text-orange-700 border border-orange-150' : 'bg-amber-50 text-amber-700 border border-amber-150'
+                              }`}>
+                                {isEntrada ? 'Entrada' : isSaida ? 'Saída' : 'Ocorrência'}
+                              </span>
+                              <span className="text-gray-500 text-[10px] font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
+                                {formatTime(record.timestamp)}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 font-medium flex items-center gap-2">
+                              <span>Unidade: {record.geo?.unitName || '—'}</span>
+                              {record.geo ? (
+                                <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold bg-emerald-50/50 px-1.5 py-0.2 rounded border border-emerald-100/30">
+                                  <MapPin size={9} />
+                                  {record.geo.distanceM != null ? `${Math.round(record.geo.distanceM)}m` : formatDistance(record.geo.distanceKm)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 italic">sem GPS</span>
+                              )}
+                            </div>
+                            {record.justification && (
+                              <p className="text-[11px] text-gray-600 bg-slate-50/80 p-2 rounded-lg border border-slate-200/40 mt-1 max-w-xl">
+                                <strong>Justificativa:</strong> {record.justification}
+                              </p>
+                            )}
+                            {record.justificationDoc && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewDocBase64(record.justificationDoc.content);
+                                  setViewDocName(record.justificationDoc.name);
+                                  setViewDocType(`Comprovante: ${record.justificationDoc.type.toUpperCase()}`);
+                                }}
+                                className="inline-flex items-center gap-1 text-[9px] text-indigo-600 hover:text-indigo-800 font-semibold mt-1.5 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5 transition-colors shadow-sm"
+                              >
+                                <FileText size={10} />
+                                Anexo: {record.justificationDoc.type.toUpperCase()} ({record.justificationDoc.size})
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 flex items-center gap-2 ml-auto sm:ml-0">
+                            {record.photo ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRecordPhoto(record)}
+                                className="relative w-12 h-16 rounded-lg overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all flex items-center justify-center bg-slate-50 shadow-sm"
+                                title="Visualizar Foto Facial"
+                              >
+                                <img src={record.photo} alt="Face check" className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Camera size={12} className="text-white" />
+                                </div>
+                              </button>
+                            ) : record.isManual ? (
+                              <span
+                                className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-amber-50 text-amber-700 border border-dashed border-amber-300 text-[8px] font-extrabold text-center leading-none p-1.5"
+                                title="Bateu ponto sem Controle Facial (Manual)"
+                              >
+                                MANUAL
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Local Photo Modal */}

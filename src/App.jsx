@@ -2307,6 +2307,15 @@ export default function App() {
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></span>
                         BIOMETRIA PRONTA
                       </div>
+
+                      {/* Premium Validation overlay during submission */}
+                      {isLocating && (
+                        <div className="absolute inset-0 bg-blue-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-3 animate-fade-in z-20">
+                          <Loader2 className="animate-spin text-white mb-2" size={24} />
+                          <span className="text-[10px] text-white font-bold tracking-wider uppercase">Validando...</span>
+                          <span className="text-[8px] text-blue-200 mt-1">Processando face e localização GPS</span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="bg-slate-100 border border-dashed border-slate-300 rounded-lg p-4 text-center">
