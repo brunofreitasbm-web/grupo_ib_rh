@@ -237,9 +237,9 @@ export default function AniversariantesTab({ filterUnit }) {
         <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5">
           {MONTH_NAMES.map((m, idx) => {
             const count = interns.filter(i => {
-              if (!i.birthday) return false;
+              if (!i.birthdate) return false;
               if (filterUnit !== 'all' && i.unitId !== filterUnit) return false;
-              return new Date(i.birthday + 'T00:00:00').getMonth() === idx;
+              return new Date(i.birthdate + 'T00:00:00').getMonth() === idx;
             }).length;
             return (
               <button

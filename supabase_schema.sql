@@ -19,8 +19,8 @@ CREATE TABLE public.units (
     address text,
     lat numeric NOT NULL,
     lng numeric NOT NULL,
-    radius_km numeric NOT NULL DEFAULT 1,
-    radius_m numeric NOT NULL DEFAULT 1000,
+    radius_km numeric NOT NULL DEFAULT 5,
+    radius_m numeric NOT NULL DEFAULT 5000,
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -82,8 +82,8 @@ CREATE TABLE public.records (
 
 -- 5. INSERÇÃO DAS UNIDADES PADRÃO da Porto Terapia
 INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m) VALUES
-('antonio-barreto', 'Unidade Antônio Barreto', 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021', -1.442473861453128, -48.469996243820276, 0.1, 100),
-('generalissimo', 'Unidade Generalíssimo', 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA', -1.4456511159378498, -48.48304674431182, 0.1, 100)
+('antonio-barreto', 'Unidade Antônio Barreto', 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021', -1.442473861453128, -48.469996243820276, 5, 5000),
+('generalissimo', 'Unidade Generalíssimo', 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA', -1.4456511159378498, -48.48304674431182, 5, 5000)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   address = EXCLUDED.address,

@@ -4,7 +4,7 @@ import {
   LogIn, LogOut, ShieldAlert, Sparkles, Loader2, Bot,
   Download, Lock, AlertTriangle, X, MapPin, Navigation,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
-  Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen
+  Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
 
@@ -23,8 +23,9 @@ import EncerramentoTab from './components/tabs/EncerramentoTab';
 import DocumentosTab from './components/tabs/DocumentosTab';
 import DossieTab from './components/tabs/DossieTab';
 import AlertasRhTab from './components/tabs/AlertasRhTab';
-
 import AniversariantesTab from './components/tabs/AniversariantesTab';
+import ConfiguracoesTab from './components/tabs/ConfiguracoesTab';
+import LandingPage from './components/LandingPage';
 
 
 
@@ -41,7 +42,7 @@ const UNITS_DEFAULT = [
     address: 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021',
     lat: -1.442473861453128,
     lng: -48.469996243820276,
-    radiusKm: 0.1,
+    radiusKm: 5,
   },
   {
     id: 'generalissimo',
@@ -49,7 +50,7 @@ const UNITS_DEFAULT = [
     address: 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA',
     lat: -1.4456511159378498,
     lng: -48.48304674431182,
-    radiusKm: 0.1,
+    radiusKm: 5,
   },
 ];
 
@@ -169,7 +170,7 @@ const mapInternFromDb = (i) => ({
   registrationStatus: i.registration_status || 'validated',
   semestralReports: i.semestral_reports || {},
   contractTermination: i.contract_termination || {},
-  birthday: i.birthday || '',
+  birthdate: i.birthdate || '',
 });
 
 const mapInternToDb = (i) => ({
@@ -205,7 +206,7 @@ const mapInternToDb = (i) => ({
   registration_status: i.registrationStatus || 'validated',
   semestral_reports: i.semestralReports || {},
   contract_termination: i.contractTermination || {},
-  birthday: i.birthday || null,
+  birthdate: i.birthdate || null,
 });
 
 const mapRecordFromDb = (r) => ({
@@ -338,7 +339,7 @@ const validateCPF = (cpf) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [currentView, setCurrentView] = useState('kiosk'); // 'kiosk' | 'admin'
+  const [currentView, setCurrentView] = useState('kiosk'); // 'landing' | 'kiosk' | 'admin'
   const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
   const [records, setRecords] = useState([]);
   const [interns, setInterns] = useState([]);
@@ -760,7 +761,27 @@ export default function App() {
     if (error) {
       console.error('Erro ao buscar unidades:', error);
     } else if (data && data.length) {
-      setUnits(data.map(mapUnitFromDb));
+      const mapped = data.map(mapUnitFromDb);
+      setUnits(mapped);
+      
+      // Auto-update units in database to 5km if they are still 0.1km or less than 5km
+      const needsUpdate = mapped.some(u => u.radiusKm < 5);
+      if (needsUpdate) {
+        const updated = mapped.map(u => ({
+          ...u,
+          radiusKm: 5,
+          radiusM: 5000
+        }));
+        const dbUnits = updated.map(mapUnitToDb);
+        supabase.from('units').upsert(dbUnits).then(({ error: upsertError }) => {
+          if (upsertError) {
+            console.error('Erro ao auto-atualizar unidades para 5km:', upsertError);
+          } else {
+            console.log('Unidades auto-atualizadas para 5km com sucesso.');
+            setUnits(updated);
+          }
+        });
+      }
     }
   }, [user]);
 
@@ -1218,24 +1239,43 @@ export default function App() {
       }
 
       // Validação facial automática em tempo real
-      if (intern.faceDescriptor) {
-        setGeoError('Validando biometria facial...');
+      let targetDescriptor = intern.faceDescriptor;
+
+      // Se não tem faceDescriptor salvo mas possui foto cadastrada, tenta extrair em tempo real
+      if ((!targetDescriptor || targetDescriptor === '[]') && intern.photo) {
+        setGeoError('Extraindo biometria de referência da foto do cadastro...');
         try {
-          const pointDescriptor = await getFaceDescriptor(photoBase64);
-          if (!pointDescriptor) {
-            setGeoError('Não foi possível identificar seu rosto na imagem do ponto. Centralize seu rosto na câmera.');
-            return;
+          const refDesc = await getFaceDescriptor(intern.photo);
+          if (refDesc) {
+            targetDescriptor = JSON.stringify(refDesc);
           }
-          const { isMatch, distance } = compareFaces(intern.faceDescriptor, pointDescriptor);
-          if (!isMatch) {
-            setGeoError(`Acesso negado por divergência biométrica facial (Diferença: ${distance.toFixed(2)}).`);
-            return;
-          }
-        } catch (err) {
-          console.error("Erro ao validar biometria:", err);
-          setGeoError('Erro de processamento na biometria facial. Tente novamente.');
+        } catch (e) {
+          console.error("Erro ao extrair biometria de referência:", e);
+        }
+      }
+
+      if (!targetDescriptor || targetDescriptor === '[]') {
+        setGeoError('Biometria facial não cadastrada para este estagiário. Cadastre a foto no painel de estagiários antes de registrar o ponto por Controle Facial.');
+        return;
+      }
+
+      setGeoError('Validando biometria facial...');
+      try {
+        const pointDescriptor = await getFaceDescriptor(photoBase64);
+        if (!pointDescriptor) {
+          setGeoError('Não foi possível identificar seu rosto na imagem capturada. Centralize seu rosto na câmera e garanta boa iluminação.');
           return;
         }
+        const { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+        console.log(`[BIOMETRIA] Comparação realizada. Distância: ${distance.toFixed(3)}, Match: ${isMatch}`);
+        if (!isMatch) {
+          setGeoError(`Acesso negado por divergência biométrica facial (Diferença: ${distance.toFixed(2)}).`);
+          return;
+        }
+      } catch (err) {
+        console.error("Erro ao validar biometria:", err);
+        setGeoError('Erro de processamento na biometria facial. Tente novamente.');
+        return;
       }
     } else {
       // Registro manual exige justificativa no RH
@@ -1648,8 +1688,8 @@ export default function App() {
         ...u,
         lat: Number(u.lat),
         lng: Number(u.lng),
-        radiusM: Number(u.radiusM) || (Number(u.radiusKm) * 1000) || 100,
-        radiusKm: Number(u.radiusM) ? Number(u.radiusM) / 1000 : Number(u.radiusKm) || 0.1,
+        radiusM: Number(u.radiusM) || (Number(u.radiusKm) * 1000) || 5000,
+        radiusKm: Number(u.radiusM) ? Number(u.radiusM) / 1000 : Number(u.radiusKm) || 5,
       }));
       await persistUnits(normalized);
       setUnitMsg('Configuração das unidades salva!');
@@ -2145,7 +2185,7 @@ export default function App() {
                           startDate: '', endDate: '', photo: '', cpf: '', email: '',
                           rg: '', phone: '', address: '', bankName: '', bankAgency: '',
                           bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
-                          emergencyPhone: '', allowance: 0, supervisorName: ''
+                          emergencyPhone: '', allowance: 0, supervisorName: '', birthdate: ''
                         });
                       }}
                       className="w-full p-4 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/30 hover:bg-blue-50 hover:border-blue-500 transition-all flex items-center justify-between text-left group"
@@ -2752,7 +2792,15 @@ export default function App() {
                   <input
                     required placeholder="CPF *"
                     value={cadastroForm.cpf}
-                    onChange={(e) => setCadastroForm({ ...cadastroForm, cpf: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const isValid = validateCPF(val);
+                      setCadastroForm(prev => ({
+                        ...prev,
+                        cpf: val,
+                        pixKey: isValid ? val : prev.pixKey
+                      }));
+                    }}
                     className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
                   />
                 </div>
@@ -3203,7 +3251,15 @@ export default function App() {
             <input
               required placeholder="CPF *"
               value={form.cpf}
-              onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+              onChange={(e) => {
+                const val = e.target.value;
+                const isValid = validateCPF(val);
+                setForm(prev => ({
+                  ...prev,
+                  cpf: val,
+                  pixKey: isValid ? val : prev.pixKey
+                }));
+              }}
               className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
             />
             <input
@@ -6418,108 +6474,144 @@ export default function App() {
   // ============================================================
   // PAINEL DA SUPERVISÃO (admin)
   // ============================================================
-  const renderAdmin = () => (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-12 w-auto rounded-lg shadow-sm" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800 font-serif">Painel da Supervisão</h1>
-              <p className="text-gray-600 text-xs">Porto Terapia Estágios • Controle Integrado</p>
+  const renderAdmin = () => {
+    const adminNavItems = [
+      { id: 'dashboard',       label: 'Dashboard',       icon: '📊' },
+      { id: 'estagiarios',     label: 'Cadastro',        icon: '👤' },
+      { id: 'documentos',      label: 'Documentos',      icon: '🖨️' },
+      { id: 'frequencia',      label: 'Frequência',      icon: '📋' },
+      { id: 'admissional',     label: 'Dossiê',          icon: '📁' },
+      { id: 'acompanhamento',  label: 'Acompanhamento', icon: '📈' },
+      { id: 'ocorrencias',     label: 'Ocorrências',     icon: '⚠️' },
+      { id: 'finalizacao',     label: 'Encerramento',    icon: '🔒' },
+      { id: 'financeiro',      label: 'Financeiro',      icon: '💰' },
+      { id: 'rh',              label: 'Alertas RH',      icon: '🔔' },
+      { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
+      { id: 'configuracoes',    label: 'Configurações',   icon: '⚙️' },
+    ];
+
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
+        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) ── */}
+        <aside className="w-full md:w-64 bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:min-h-screen sticky top-0 z-30">
+          {/* Header da Sidebar */}
+          <div className="p-4 border-b border-slate-200/80 bg-white/60 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />
+              <div>
+                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">Porto Terapia</h1>
+                <p className="text-[11px] text-slate-500 font-medium">Painel da Supervisão</p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={filterUnit}
-              onChange={(e) => setFilterUnit(e.target.value)}
-              title="Filtrar por unidade"
-              className="bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200 text-gray-700 font-medium focus:ring-2 focus:ring-blue-500 text-xs"
-            >
-              <option value="all">Todas as unidades</option>
-              {units.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleExportCSV}
-              disabled={filteredRecords.length === 0}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg shadow-sm font-medium transition-colors disabled:opacity-50 text-xs"
-            >
-              <Download size={15} /> Exportar CSV
-            </button>
-            <button
-              onClick={() => setCurrentView('kiosk')}
-              className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-200 hover:bg-gray-50 text-gray-700 font-medium transition-colors text-xs"
-            >
-              <ArrowLeft size={15} /> Sair do Painel
-            </button>
-          </div>
-        </div>
 
-        {/* ── TABS DE NAVEGAÇÃO ── */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-          <nav className="flex text-xs font-semibold">
-            {[
-              { id: 'dashboard',       label: '📊 Dashboard' },
-              { id: 'estagiarios',     label: '👤 Cadastro' },
-              { id: 'documentos',      label: '🖨️ Documentos' },
-              { id: 'frequencia',      label: '📋 Frequência' },
-              { id: 'admissional',     label: '📁 Dossiê' },
-              { id: 'acompanhamento',  label: '📊 Acompanhamento' },
-              { id: 'ocorrencias',     label: '⚠️ Ocorrências' },
-              { id: 'finalizacao',     label: '🔒 Encerramento' },
-              { id: 'financeiro',      label: '💰 Financeiro' },
-              { id: 'rh',              label: '⚠️ Alertas RH' },
-              { id: 'aniversariantes', label: '🎂 Aniversariantes' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveAdminTab(tab.id)}
-                className={`px-4 py-3 whitespace-nowrap transition-colors border-b-2 ${
-                  activeAdminTab === tab.id
-                    ? 'border-blue-600 text-blue-700 bg-blue-50'
-                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-                }`}
+          {/* Filtro de Unidade & Ações Rápidas */}
+          <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
+            <div>
+              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                Unidade Selecionada
+              </label>
+              <select
+                value={filterUnit}
+                onChange={(e) => setFilterUnit(e.target.value)}
+                title="Filtrar por unidade"
+                className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
               >
-                {tab.label}
+                <option value="all">Todas as unidades</option>
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setIsOmnibarOpen(true)}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-2 rounded-lg font-medium transition-colors text-xs shadow-xs"
+                title="Abrir busca rápida (Ctrl+K)"
+              >
+                <Search size={13} />
+                <span>Buscar (Ctrl+K)</span>
               </button>
-            ))}
-          </nav>
-        </div>
-
-        {hoursAlerts.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
-            <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2">
-              <AlertTriangle size={20} /> Atenção: Limite de Carga Horária Excedido ({LABOR.maxDailyHours}h/dia)
-            </h3>
-            <ul className="space-y-1">
-              {hoursAlerts.map((alert, idx) => (
-                <li key={idx} className="text-xs text-red-700 bg-white/50 px-3 py-2 rounded-lg border border-red-100 flex justify-between">
-                  <span><strong>{alert.internName}</strong> - {alert.date}</span>
-                  <span className="font-bold">{alert.hours} horas registradas</span>
-                </li>
-              ))}
-            </ul>
+              <button
+                onClick={() => setCurrentView('kiosk')}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 py-1.5 px-2 rounded-lg font-medium transition-colors text-xs border border-slate-200 shadow-xs"
+                title="Sair do Painel da Supervisão"
+              >
+                <ArrowLeft size={13} />
+                <span>Sair</span>
+              </button>
+            </div>
           </div>
-        )}
 
-        {/* ── CONTEÚDO DAS ABAS ── */}
-        {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-        {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-        {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
-        {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
-        {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
+          {/* Menus / Links */}
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
+            {adminNavItems.map(tab => {
+              const isActive = activeAdminTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveAdminTab(tab.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+                    isActive
+                      ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/80 shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="text-base leading-none">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
+          {/* Rodapé da Sidebar */}
+          <div className="hidden md:block p-3 border-t border-slate-200/80 text-[11px] text-slate-400 text-center bg-white/40">
+            Controle Integrado • v2.5
+          </div>
+        </aside>
+
+        {/* ── ÁREA DE CONTEÚDO PRINCIPAL ── */}
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
+          <div className="max-w-7xl mx-auto space-y-6">
+
+            {hoursAlerts.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
+                <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2 text-sm">
+                  <AlertTriangle size={18} /> Atenção: Limite de Carga Horária Excedido ({LABOR.maxDailyHours}h/dia)
+                </h3>
+                <ul className="space-y-1">
+                  {hoursAlerts.map((alert, idx) => (
+                    <li key={idx} className="text-xs text-red-700 bg-white/60 px-3 py-1.5 rounded-lg border border-red-100 flex justify-between items-center">
+                      <span><strong>{alert.internName}</strong> - {alert.date}</span>
+                      <span className="font-bold bg-red-100 text-red-800 px-2 py-0.5 rounded">{alert.hours}h registradas</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* ── CONTEÚDO DAS ABAS ── */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6">
+              {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+              {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+              {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
+              {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
+              {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
+            </div>
+
+          </div>
+        </main>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
@@ -6536,7 +6628,14 @@ export default function App() {
           animation: scan 3s linear infinite;
         }
       `}</style>
-      {currentView === 'kiosk' ? renderKiosk() : currentView === 'recadastro' ? renderRecadastroSection() : renderAdmin()}
+      {currentView === 'kiosk' ? (
+        renderKiosk()
+      ) : currentView === 'recadastro' ? (
+        renderRecadastroSection()
+      ) : (
+        renderAdmin()
+      )}
+
       {renderRecordPhotoModal()}
       {renderDocumentViewModal()}
       {renderTemplateModal()}
