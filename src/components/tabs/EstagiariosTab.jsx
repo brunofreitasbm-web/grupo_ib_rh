@@ -391,7 +391,11 @@ export default function EstagiariosTab({ filterUnit }) {
           p_emergency_relationship: payload.emergencyRelationship || 'Pais',
           p_emergency_phone: payload.emergencyPhone || null,
           p_allowance: Number(payload.allowance) || 0,
-          p_supervisor_name: payload.supervisorName || null
+          p_supervisor_name: payload.supervisorName || null,
+          p_registration_status: 'validated',
+          p_documents: {},
+          p_birthdate: payload.birthdate || null,
+          p_face_descriptor: payload.faceDescriptor || null
         });
 
         if (createResult.error) {

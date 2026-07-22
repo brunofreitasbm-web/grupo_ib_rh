@@ -1563,7 +1563,9 @@ export default function App() {
           p_emergency_relationship: payload.emergencyRelationship || 'Pais',
           p_emergency_phone: payload.emergencyPhone || null,
           p_allowance: Number(payload.allowance) || 0,
-          p_supervisor_name: payload.supervisorName || null
+          p_supervisor_name: payload.supervisorName || null,
+          p_birthdate: payload.birthdate || null,
+          p_face_descriptor: payload.faceDescriptor || null
         });
 
         if (createResult.error) {
@@ -1596,12 +1598,12 @@ export default function App() {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName }).eq('id', newId);
+            await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
           }
         } else {
           const newId = createResult.data;
           if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName }).eq('id', newId);
+            await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
           }
         }
       }
@@ -2609,7 +2611,8 @@ export default function App() {
           p_allowance: Number(cadastroForm.allowance) || 0,
           p_supervisor_name: cadastroForm.supervisorName.trim() || null,
           p_registration_status: 'pending_validation',
-          p_documents: updatedDocs
+          p_documents: updatedDocs,
+          p_birthdate: cadastroForm.birthdate || null
         });
 
         let newId = null;

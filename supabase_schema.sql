@@ -6,14 +6,14 @@
 -- Habilitar a extensão pgcrypto para criptografia de senhas
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1. LIMPEZA DE TABELAS EXISTENTES (Caso queira recriar do zero)
-DROP TABLE IF EXISTS public.records CASCADE;
-DROP TABLE IF EXISTS public.document_contents CASCADE;
-DROP TABLE IF EXISTS public.interns CASCADE;
-DROP TABLE IF EXISTS public.units CASCADE;
+-- 1. LIMPEZA DE TABELAS EXISTENTES (ATENÇÃO: MANTIDO COMENTADO PARA NÃO APAGAR DADOS)
+-- DROP TABLE IF EXISTS public.records CASCADE;
+-- DROP TABLE IF EXISTS public.document_contents CASCADE;
+-- DROP TABLE IF EXISTS public.interns CASCADE;
+-- DROP TABLE IF EXISTS public.units CASCADE;
 
 -- 2. TABELA DE UNIDADES
-CREATE TABLE public.units (
+CREATE TABLE IF NOT EXISTS public.units (
     id text NOT NULL PRIMARY KEY,
     name text NOT NULL,
     address text,
@@ -25,7 +25,7 @@ CREATE TABLE public.units (
 );
 
 -- 3. TABELA DE ESTAGIÁRIOS (Sem vínculo obrigatório com auth.users)
-CREATE TABLE public.interns (
+CREATE TABLE IF NOT EXISTS public.interns (
     id uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL,
     course text,
@@ -65,7 +65,7 @@ CREATE TABLE public.interns (
 );
 
 -- 4. TABELA DE REGISTROS DE FREQUÊNCIA (PONTO)
-CREATE TABLE public.records (
+CREATE TABLE IF NOT EXISTS public.records (
     id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
     intern_id uuid REFERENCES public.interns(id) ON DELETE SET NULL,
     intern_name text,
@@ -321,7 +321,9 @@ CREATE OR REPLACE FUNCTION public.create_intern_user(
   p_allowance numeric DEFAULT 0,
   p_supervisor_name text DEFAULT NULL,
   p_registration_status text DEFAULT 'validated',
-  p_documents jsonb DEFAULT '{}'::jsonb
+  p_documents jsonb DEFAULT '{}'::jsonb,
+  p_birthdate date DEFAULT NULL,
+  p_face_descriptor text DEFAULT NULL
 ) RETURNS uuid AS $$
 DECLARE
   new_intern_id uuid;
@@ -361,7 +363,9 @@ BEGIN
     supervisor_name,
     registration_status,
     semestral_reports,
-    contract_termination
+    contract_termination,
+    birthdate,
+    face_descriptor
   ) VALUES (
     new_intern_id,
     p_name,
@@ -393,7 +397,9 @@ BEGIN
     p_supervisor_name,
     p_registration_status,
     '{}'::jsonb,
-    '{}'::jsonb
+    '{}'::jsonb,
+    p_birthdate,
+    p_face_descriptor
   );
 
   RETURN new_intern_id;
