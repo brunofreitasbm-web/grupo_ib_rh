@@ -101,6 +101,9 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
         fetchData();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
+        fetchData();
+      })
       .subscribe();
 
     return () => {

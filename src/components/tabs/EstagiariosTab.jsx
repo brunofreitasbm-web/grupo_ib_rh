@@ -24,6 +24,12 @@ export default function EstagiariosTab({ filterUnit }) {
   const [isProcessingBio, setIsProcessingBio] = useState(false);
   const [bioStatusMsg, setBioStatusMsg] = useState('');
 
+  // State do Pop-up de Processamento de Upload de Foto
+  const [isBioUploadModalOpen, setIsBioUploadModalOpen] = useState(false);
+  const [bioUploadStatus, setBioUploadStatus] = useState('processing'); // 'processing', 'success', 'error'
+  const [bioUploadMsg, setBioUploadMsg] = useState('');
+  const [bioUploadTimeLeft, setBioUploadTimeLeft] = useState(20);
+
   const bioVideoRef = useRef(null);
   const bioStreamRef = useRef(null);
 
@@ -284,21 +290,79 @@ export default function EstagiariosTab({ filterUnit }) {
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setIsBioUploadModalOpen(true);
+    setBioUploadStatus('processing');
+    setBioUploadMsg('Compactando foto 3x4 e inicializando modelos neurais...');
+    setBioUploadTimeLeft(20);
+
+    let timeLeft = 20;
+    const timerInterval = setInterval(() => {
+      timeLeft -= 1;
+      setBioUploadTimeLeft(timeLeft);
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+      }
+    }, 1000);
+
+    const runExtraction = async (base64) => {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('TIMEOUT'));
+        }, 20000);
+      });
+      return Promise.race([
+        getFaceDescriptor(base64),
+        timeoutPromise
+      ]);
+    };
+
     try {
       const base64 = await compressImage(file, 200, 260, 0.7);
       setForm(f => ({ ...f, photo: base64 }));
+      setBioUploadMsg('Analisando traços faciais na imagem (limite de 20s)...');
       
-      // Extrai biometria facial
-      const descriptor = await getFaceDescriptor(base64);
-      if (descriptor) {
-        setForm(f => ({ ...f, faceDescriptor: JSON.stringify(descriptor) }));
-        console.log("Biometria extraída do cadastro.");
+      const descriptor = await runExtraction(base64);
+      clearInterval(timerInterval);
+
+      if (descriptor && descriptor.length === 128) {
+        const descriptorStr = JSON.stringify(descriptor);
+        setForm(f => ({ 
+          ...f, 
+          faceDescriptor: descriptorStr,
+          registrationStatus: 'biometria validada'
+        }));
+        setBioUploadStatus('success');
+        setBioUploadMsg('✅ Biometria validada com sucesso! O rosto foi identificado e a assinatura biométrica foi anexada ao cadastro. O estagiário está isento de futuras validações presenciais.');
+
+        // Atualizar banco imediatamente se for edição
+        if (editingId) {
+          try {
+            await supabase
+              .from('interns')
+              .update({
+                photo: base64,
+                face_descriptor: descriptorStr,
+                registration_status: 'biometria validada'
+              })
+              .eq('id', editingId);
+          } catch (dbErr) {
+            console.error("Erro ao persistir biometria no banco:", dbErr);
+          }
+        }
       } else {
-        alert("Aviso: Rosto não identificado claramente. Recomenda-se usar outra foto para garantir o funcionamento do Ponto Facial.");
+        setBioUploadStatus('error');
+        setBioUploadMsg('❌ Rosto não identificado na imagem. Certifique-se de usar uma foto bem iluminada, de frente e sem adereços que cubram o rosto.');
       }
     } catch (err) {
-      console.error('Erro ao processar foto:', err);
-      alert('Erro ao processar imagem.');
+      clearInterval(timerInterval);
+      console.error('Erro ao processar biometria:', err);
+      setBioUploadStatus('error');
+      if (err.message === 'TIMEOUT') {
+        setBioUploadMsg('❌ Tempo limite de 20 segundos esgotado. A extração biométrica falhou.');
+      } else {
+        setBioUploadMsg('❌ Falha técnica ao decodificar a foto ou processar a detecção facial.');
+      }
     }
   };
 
@@ -749,6 +813,11 @@ export default function EstagiariosTab({ filterUnit }) {
                 )}
               </div>
             </div>
+            {form.registrationStatus === 'biometria validada' && (
+              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                <CheckCircle2 size={10} /> Biometria Validada — Isento de Validação Presencial
+              </span>
+            )}
 
             <div className="flex justify-end gap-3.5 border-t pt-3.5">
               <button
@@ -1017,6 +1086,58 @@ export default function EstagiariosTab({ filterUnit }) {
                 className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
               >
                 <Save size={14} /> Salvar Biometria
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PROCESSAMENTO DE BIOMETRIA DE UPLOAD DE FOTO (3x4) */}
+      {isBioUploadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 flex flex-col p-6 space-y-4 animate-fade-in">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b pb-2">
+              <ScanFace size={16} className="text-indigo-600 animate-pulse" /> Extração Biométrica Facial
+            </h3>
+            
+            <div className="py-4 flex flex-col items-center justify-center text-center space-y-3">
+              {bioUploadStatus === 'processing' && (
+                <>
+                  <div className="relative flex items-center justify-center">
+                    <RefreshCw size={36} className="animate-spin text-indigo-600" />
+                    <span className="absolute text-[10px] font-black text-indigo-700">{bioUploadTimeLeft}s</span>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-600 leading-normal">{bioUploadMsg}</p>
+                </>
+              )}
+
+              {bioUploadStatus === 'success' && (
+                <>
+                  <div className="bg-emerald-100 p-3 rounded-full text-emerald-600">
+                    <CheckCircle2 size={36} />
+                  </div>
+                  <p className="text-xs font-semibold text-slate-700 leading-relaxed">{bioUploadMsg}</p>
+                </>
+              )}
+
+              {bioUploadStatus === 'error' && (
+                <>
+                  <div className="bg-rose-100 p-3 rounded-full text-rose-600">
+                    <AlertCircle size={36} />
+                  </div>
+                  <p className="text-xs font-semibold text-slate-700 leading-relaxed">{bioUploadMsg}</p>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setIsBioUploadModalOpen(false)}
+                disabled={bioUploadStatus === 'processing'}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {bioUploadStatus === 'processing' ? 'Aguardando...' : 'Fechar'}
               </button>
             </div>
           </div>

@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Clock, User, FileText, CheckCircle, List, ArrowLeft,
   LogIn, LogOut, ShieldAlert, Sparkles, Loader2, Bot,
-  Download, Lock, AlertTriangle, X, MapPin, Navigation,
+  Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
-  Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search
+  Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
 import * as faceapi from 'face-api.js';
@@ -476,12 +477,19 @@ export default function App() {
     startDate: '', endDate: '', photo: '', cpf: '', email: '',
     rg: '', phone: '', address: '', bankName: '', bankAgency: '',
     bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
-    emergencyPhone: '', allowance: 0, supervisorName: '', birthdate: ''
+    emergencyPhone: '', allowance: 0, supervisorName: '', birthdate: '',
+    registrationStatus: 'pending_validation', faceDescriptor: ''
   });
   const [cadastroCpfRgFile, setCadastroCpfRgFile] = useState(null);
   const [cadastroMatriculaFile, setCadastroMatriculaFile] = useState(null);
   const [isSubmittingCadastro, setIsSubmittingCadastro] = useState(false);
   const [cadastroSuccess, setCadastroSuccess] = useState(false);
+
+  // State do Pop-up de Processamento de Upload de Foto no Auto-cadastro
+  const [isBioCadastroModalOpen, setIsBioCadastroModalOpen] = useState(false);
+  const [bioCadastroStatus, setBioCadastroStatus] = useState('processing'); // 'processing', 'success', 'error'
+  const [bioCadastroMsg, setBioCadastroMsg] = useState('');
+  const [bioCadastroTimeLeft, setBioCadastroTimeLeft] = useState(20);
 
   // IA (Gemini) e Alertas
   const [isImproving, setIsImproving] = useState(false);
@@ -500,6 +508,16 @@ export default function App() {
   const [chatMessage, setChatMessage] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [chatFeedback, setChatFeedback] = useState('');
+  const [pendingChatCount, setPendingChatCount] = useState(0);
+
+  // Auto-selecionar ID do estagiário se estiver logado individualmente
+  useEffect(() => {
+    if (loggedInIntern && loggedInIntern.role !== 'intern_unit') {
+      setChatInternId(loggedInIntern.id);
+    } else {
+      setChatInternId('');
+    }
+  }, [loggedInIntern]);
 
   // Gestão de estagiários
   const [showManage, setShowManage] = useState(false);
@@ -667,6 +685,50 @@ export default function App() {
       setRecords((data || []).map(mapRecordFromDb));
     }
   }, [user]);
+
+  const fetchPendingChatCount = useCallback(async () => {
+    if (!user || user.user_metadata?.role !== 'supervisor') return;
+    const { data, error } = await supabase
+      .from('records')
+      .select('id, geo')
+      .eq('action', 'supervisor_chat');
+    
+    if (!error && data) {
+      const pending = data.filter(r => r.geo && r.geo.status === 'pending');
+      setPendingChatCount(pending.length);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user && user.user_metadata?.role === 'supervisor') {
+      fetchPendingChatCount();
+    }
+  }, [user, fetchPendingChatCount]);
+
+  useEffect(() => {
+    if (!user || user.user_metadata?.role !== 'supervisor') return;
+
+    const channel = supabase
+      .channel('admin-records-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newRecord = payload.new;
+          if (newRecord.action === 'supervisor_chat') {
+            toast.info(`Novo chamado recebido de ${newRecord.intern_name}: "${newRecord.justification?.substring(0, 30)}..."`, {
+              onClick: () => setActiveAdminTab('rh'),
+              autoClose: 8000
+            });
+          }
+        }
+        fetchRecords();
+        fetchPendingChatCount();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchRecords, fetchPendingChatCount]);
 
   useEffect(() => {
     const handleOnline = async () => {
@@ -1633,6 +1695,10 @@ export default function App() {
   };
 
   const renderChatWidget = () => {
+    if (!user) return null;
+
+    const isIndividualIntern = loggedInIntern && loggedInIntern.role !== 'intern_unit';
+
     return (
       <div className="fixed bottom-4 right-4 z-40">
         {!isChatOpen && (
@@ -1640,6 +1706,9 @@ export default function App() {
             onClick={() => {
               setIsChatOpen(true);
               setChatFeedback('');
+              if (isIndividualIntern) {
+                setChatInternId(loggedInIntern.id);
+              }
             }}
             className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-3.5 shadow-2xl flex items-center justify-center gap-2 transition-all hover:scale-105 duration-200 border border-indigo-500/20"
             title="Fale com a Supervisão"
@@ -1678,19 +1747,28 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Selecione seu nome:</label>
-                    <select
-                      value={chatInternId}
-                      onChange={(e) => setChatInternId(e.target.value)}
-                      className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                    >
-                      <option value="" disabled>Selecione...</option>
-                      {interns.filter(i => i.active !== false).map(i => (
-                        <option key={i.id} value={i.id}>{i.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {isIndividualIntern ? (
+                    <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-lg">
+                      <span className="block text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Estagiário(a):</span>
+                      <span className="text-xs font-bold text-slate-800">{loggedInIntern.name}</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Selecione seu nome:</label>
+                      <select
+                        value={chatInternId}
+                        onChange={(e) => setChatInternId(e.target.value)}
+                        className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                      >
+                        <option value="" disabled>Selecione...</option>
+                        {interns
+                          .filter(i => i.active !== false && (!loggedInIntern || loggedInIntern.role !== 'intern_unit' || i.unitId === loggedInIntern.unitId))
+                          .map(i => (
+                            <option key={i.id} value={i.id}>{i.name}</option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sua Mensagem ou Dúvida:</label>
@@ -3460,7 +3538,7 @@ export default function App() {
           p_emergency_phone: cadastroForm.emergencyPhone.trim() || null,
           p_allowance: Number(cadastroForm.allowance) || 0,
           p_supervisor_name: cadastroForm.supervisorName.trim() || null,
-          p_registration_status: 'pending_validation',
+          p_registration_status: cadastroForm.registrationStatus || 'pending_validation',
           p_documents: updatedDocs,
           p_birthdate: cadastroForm.birthdate || null
         });
@@ -3500,7 +3578,7 @@ export default function App() {
           await supabase
             .from('interns')
             .update({
-              registration_status: 'pending_validation',
+              registration_status: cadastroForm.registrationStatus || 'pending_validation',
               documents: updatedDocs,
               supervisor_name: cadastroForm.supervisorName.trim(),
               birthdate: cadastroForm.birthdate || null
@@ -3514,18 +3592,22 @@ export default function App() {
           throw new Error("Não foi possível obter o ID do novo estagiário.");
         }
 
-        // Extrai biometria e salva junto com a data de nascimento no banco
-        let descriptor = null;
-        try {
-          descriptor = cadastroForm.photo ? await getFaceDescriptor(cadastroForm.photo) : null;
-        } catch (bioError) {
-          console.error("Erro ao obter descritor facial:", bioError);
+        // Usa biometria pré-extraída ou extrai se não houver
+        let descriptorStr = cadastroForm.faceDescriptor;
+        if (!descriptorStr && cadastroForm.photo) {
+          try {
+            const desc = await getFaceDescriptor(cadastroForm.photo);
+            if (desc) descriptorStr = JSON.stringify(desc);
+          } catch (bioError) {
+            console.error("Erro ao obter descritor facial no envio:", bioError);
+          }
         }
         await supabase
           .from('interns')
           .update({
             birthdate: cadastroForm.birthdate || null,
-            face_descriptor: descriptor ? JSON.stringify(descriptor) : null
+            face_descriptor: descriptorStr || null,
+            registration_status: cadastroForm.registrationStatus || 'pending_validation'
           })
           .eq('id', newId);
 
@@ -3599,12 +3681,62 @@ export default function App() {
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
+                          setIsBioCadastroModalOpen(true);
+                          setBioCadastroStatus('processing');
+                          setBioCadastroMsg('Compactando foto 3x4 e inicializando modelos...');
+                          setBioCadastroTimeLeft(20);
+
+                          let timeLeft = 20;
+                          const timerInterval = setInterval(() => {
+                            timeLeft -= 1;
+                            setBioCadastroTimeLeft(timeLeft);
+                            if (timeLeft <= 0) {
+                              clearInterval(timerInterval);
+                            }
+                          }, 1000);
+
+                          const runExtraction = async (base64) => {
+                            const timeoutPromise = new Promise((_, reject) => {
+                              setTimeout(() => {
+                                reject(new Error('TIMEOUT'));
+                              }, 20000);
+                            });
+                            return Promise.race([
+                              getFaceDescriptor(base64),
+                              timeoutPromise
+                            ]);
+                          };
+
                           try {
                             const base64 = await compressImage(file, 250, 333, 0.7);
-                            setCadastroForm({ ...cadastroForm, photo: base64 });
+                            setCadastroForm(f => ({ ...f, photo: base64 }));
+                            setBioCadastroMsg('Analisando traços faciais na imagem (limite de 20s)...');
+
+                            const descriptor = await runExtraction(base64);
+                            clearInterval(timerInterval);
+
+                            if (descriptor && descriptor.length === 128) {
+                              setCadastroForm(f => ({
+                                ...f,
+                                photo: base64,
+                                faceDescriptor: JSON.stringify(descriptor),
+                                registrationStatus: 'biometria validada'
+                              }));
+                              setBioCadastroStatus('success');
+                              setBioCadastroMsg('✅ Biometria validada com sucesso! O rosto foi identificado e a biometria facial foi vinculada ao cadastro. Você estará isento de validações presenciais.');
+                            } else {
+                              setBioCadastroStatus('error');
+                              setBioCadastroMsg('❌ Rosto não identificado na imagem. Certifique-se de usar uma foto bem iluminada.');
+                            }
                           } catch (err) {
-                            console.error("Erro ao converter foto:", err);
-                            alert("Erro ao processar foto.");
+                            clearInterval(timerInterval);
+                            console.error("Erro ao converter/extrair biometria:", err);
+                            setBioCadastroStatus('error');
+                            if (err.message === 'TIMEOUT') {
+                              setBioCadastroMsg('❌ Tempo limite de 20 segundos esgotado. A extração biométrica falhou.');
+                            } else {
+                              setBioCadastroMsg('❌ Falha ao processar imagem ou extrair biometria.');
+                            }
                           }
                         }
                       }}
@@ -3627,6 +3759,11 @@ export default function App() {
                     )}
                   </div>
                   <p className="text-[10px] text-gray-400">Insira a imagem no formato 3x4 inicial de cadastro para comparação biométrica.</p>
+                  {cadastroForm.registrationStatus === 'biometria validada' && (
+                    <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300 mt-1">
+                      <CheckCircle2 size={10} /> Biometria Validada — Isento de Validação Presencial
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -3922,33 +4059,49 @@ export default function App() {
                               alert("O arquivo excede o limite de 2MB!");
                               return;
                             }
-                            try {
+                             try {
                               const base64 = await fileToBase64(file);
                               setCadastroCpfRgFile({
                                 name: file.name,
                                 size: (file.size / 1024).toFixed(1) + ' KB',
-                                content: base64
+                                content: base64,
+                                type: file.type
                               });
-                              if (file.type.startsWith('image/') && isAiExtractionActive) {
-                                const dob = await extractBirthdateFromDoc(base64);
-                                if (dob) {
-                                  setCadastroForm(prev => ({ ...prev, birthdate: dob }));
-                                  setIsAiExtractionActive(false);
-                                }
-                              }
                             } catch (err) {
                               console.error(err);
                             }
                           }
                         }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => document.getElementById('cadastro-cpfrg-file').click()}
-                        className="w-full bg-white hover:bg-slate-100 border border-gray-300 text-gray-700 text-[10px] py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <Upload size={12} /> Selecionar CPF/RG *
-                      </button>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => document.getElementById('cadastro-cpfrg-file').click()}
+                          className="w-full bg-white hover:bg-slate-100 border border-gray-300 text-gray-700 text-[10px] py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <Upload size={12} /> Selecionar CPF/RG *
+                        </button>
+                        
+                        {cadastroCpfRgFile && cadastroCpfRgFile.type?.startsWith('image/') && isAiExtractionActive && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              toast.info("Processando documento via IA...");
+                              const dob = await extractBirthdateFromDoc(cadastroCpfRgFile.content);
+                              if (dob) {
+                                setCadastroForm(prev => ({ ...prev, birthdate: dob }));
+                                setIsAiExtractionActive(false);
+                                toast.success("Data de nascimento extraída e preenchida com sucesso!");
+                              } else {
+                                toast.error("Não foi possível extrair a data. Digite-a manualmente.");
+                              }
+                            }}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors shadow"
+                          >
+                            <Sparkles size={12} /> Varredura por IA (Gemini)
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-inner">
@@ -4031,6 +4184,58 @@ export default function App() {
             </form>
           </div>
         </div>
+
+        {/* MODAL DE PROCESSAMENTO DE BIOMETRIA (AUTO-CADASTRO) */}
+        {isBioCadastroModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 flex flex-col p-6 space-y-4 animate-fade-in">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b pb-2">
+                <ScanFace size={16} className="text-indigo-600 animate-pulse" /> Extração Biométrica Facial
+              </h3>
+
+              <div className="py-4 flex flex-col items-center justify-center text-center space-y-3">
+                {bioCadastroStatus === 'processing' && (
+                  <>
+                    <div className="relative flex items-center justify-center w-16 h-16">
+                      <RefreshCw size={48} className="animate-spin text-indigo-500" />
+                      <span className="absolute text-xs font-black text-indigo-700">{bioCadastroTimeLeft}s</span>
+                    </div>
+                    <p className="text-xs font-semibold text-slate-600 leading-normal">{bioCadastroMsg}</p>
+                  </>
+                )}
+
+                {bioCadastroStatus === 'success' && (
+                  <>
+                    <div className="bg-emerald-100 p-4 rounded-full text-emerald-600">
+                      <CheckCircle2 size={40} />
+                    </div>
+                    <p className="text-xs font-semibold text-emerald-800 leading-relaxed">{bioCadastroMsg}</p>
+                  </>
+                )}
+
+                {bioCadastroStatus === 'error' && (
+                  <>
+                    <div className="bg-rose-100 p-4 rounded-full text-rose-600">
+                      <AlertCircle size={40} />
+                    </div>
+                    <p className="text-xs font-semibold text-slate-700 leading-relaxed">{bioCadastroMsg}</p>
+                  </>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsBioCadastroModalOpen(false)}
+                  disabled={bioCadastroStatus === 'processing'}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {bioCadastroStatus === 'processing' ? 'Aguardando...' : 'Fechar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -7586,14 +7791,21 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveAdminTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
                     isActive
                       ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/80 shadow-xs'
                       : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
                   }`}
                 >
-                  <span className="text-base leading-none">{tab.icon}</span>
-                  <span>{tab.label}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-base leading-none">{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </div>
+                  {tab.id === 'rh' && pendingChatCount > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                      {pendingChatCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
