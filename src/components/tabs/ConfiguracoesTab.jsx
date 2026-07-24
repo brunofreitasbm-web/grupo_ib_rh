@@ -14,7 +14,8 @@ import {
   Globe, 
   DollarSign, 
   Lock,
-  Smartphone
+  Smartphone,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function ConfiguracoesTab({ userRole = 'admin' }) {
@@ -43,18 +44,18 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
           id: 'antonio-barreto',
           nome: 'Unidade Antônio Barreto',
           endereco: 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021',
-          geofenceKm: 5
+          geofenceM: 5000
         },
         {
           id: 'generalissimo',
           nome: 'Unidade Generalíssimo',
           endereco: 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA',
-          geofenceKm: 5
+          geofenceM: 5000
         }
       ],
 
       // 2. Geofencing & Ponto Eletrônico
-      geofencePadraoKm: 5,
+      geofencePadraoM: 5000,
       toleranciaAtrasoMinutos: 15,
       exigirBiometriaFacial: true,
       bloquearPontoForaDoRaio: true,
@@ -71,6 +72,8 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
       emailNotificacoes: 'rh@portoterapia.com.br',
       alertarContratoExpirandoDias: 30,
       alertarAniversariantesDoDia: true,
+      backupIntervalo: 'semanal',
+      emailBackup: 'rh@portoterapia.com.br',
 
       // 5. Aparência & Preferências
       modoEscuro: false,
@@ -235,7 +238,7 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full font-medium border border-indigo-200">
-                          Raio Geofence: {unidade.geofenceKm} km
+                          Raio Geofence: {unidade.geofenceM || (unidade.geofenceKm ? unidade.geofenceKm * 1000 : 5000)} m
                         </span>
                       </div>
                     </div>
@@ -259,20 +262,20 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl">
                   <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Raio Padrão da Cerca Virtual (Km)
+                    Raio Padrão da Cerca Virtual (m)
                   </label>
                   <p className="text-xs text-slate-500 mb-3">Distância máxima permitida em relação à unidade para registrar presença.</p>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
-                      step="0.5"
-                      min="0.1"
+                      step="1"
+                      min="1"
                       max="50"
-                      value={settings.geofencePadraoKm}
-                      onChange={(e) => setSettings({ ...settings, geofencePadraoKm: parseFloat(e.target.value) || 1 })}
+                      value={settings.geofencePadraoM || (settings.geofencePadraoKm ? Math.min(50, settings.geofencePadraoKm * 1000) : 15)}
+                      onChange={(e) => setSettings({ ...settings, geofencePadraoM: Math.min(50, Math.max(1, parseInt(e.target.value) || 15)) })}
                       className="w-32 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
-                    <span className="text-sm font-semibold text-slate-600">km</span>
+                    <span className="text-sm font-semibold text-slate-600">m</span>
                   </div>
                 </div>
 
@@ -322,6 +325,67 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
                     className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
                   />
                 </label>
+
+                {/* Painel Informativo da Restrição Vigente */}
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                      Restrição de Acesso ao Ponto Vigente (Unidades Antônio Barreto & Generalíssimo)
+                    </h4>
+                    <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                      A modalidade de autenticação por senha (PIN/Credential) ou contingência manual foi <strong>desativada com efeito imediato</strong> para o perfil de estagiários nestas unidades. O registro de presença exige <strong>100% de validação por Biometria Facial e Geolocalização (GPS)</strong> sem fallback por senha.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Painel de Backups de Segurança */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4 pt-4 mt-4">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">💾 Backup & Recuperação de Dados</h3>
+                  <p className="text-xs text-slate-500">Exporte ou agende cópias de segurança de todos os cadastros e registros de ponto do sistema.</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Backup Programado (Periódico)</label>
+                      <select
+                        value={settings.backupIntervalo || 'semanal'}
+                        onChange={(e) => setSettings({ ...settings, backupIntervalo: e.target.value })}
+                        className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                        <option value="desativado">Desativado</option>
+                        <option value="diario">Diário</option>
+                        <option value="semanal">Semanal</option>
+                        <option value="mensal">Mensal</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">E-mail de Destino do Backup</label>
+                      <input
+                        type="email"
+                        placeholder="Ex: backup@empresa.com"
+                        value={settings.emailBackup || settings.emailNotificacoes || ''}
+                        onChange={(e) => setSettings({ ...settings, emailBackup: e.target.value })}
+                        className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.handleManualBackupTrigger) {
+                          window.handleManualBackupTrigger();
+                        } else {
+                          alert('Função de backup indisponível no momento.');
+                        }
+                      }}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow transition-colors"
+                    >
+                      Fazer Backup Manual Agora (Download JSON)
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

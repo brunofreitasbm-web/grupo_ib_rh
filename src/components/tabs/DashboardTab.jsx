@@ -212,6 +212,13 @@ export default function DashboardTab({ filterUnit }) {
       .sort((a, b) => a.day - b.day);
   }, [activeInterns]);
 
+  const systemAuditOccurrences = useMemo(() => {
+    return records.filter(r => 
+      r.action === 'ocorrencia' && 
+      (r.justification || '').startsWith('[AUDITORIA SISTÊMICA]')
+    );
+  }, [records]);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20">
@@ -289,6 +296,35 @@ export default function DashboardTab({ filterUnit }) {
           </p>
         </div>
       </div>
+
+      {/* Alertas de Auditoria Sistêmica de Ponto */}
+      {systemAuditOccurrences.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5 shadow-sm animate-fade-in space-y-3">
+          <h3 className="text-red-800 font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
+            <ShieldAlert className="w-5 h-5 text-red-600 animate-pulse" />
+            Alertas de Auditoria de Ponto ({systemAuditOccurrences.length})
+          </h3>
+          <p className="text-xs text-red-700 leading-snug">
+            Identificamos as seguintes inconsistências ou ausências de marcação nos últimos 30 dias de estágio. Ajuste ou justifique os pontos correspondentes para liquidar os alertas automaticamente.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1">
+            {systemAuditOccurrences.map((occ) => (
+              <div key={occ.id} className="bg-white border border-red-100 rounded-xl p-3 flex justify-between items-center shadow-xs text-xs text-red-800">
+                <div className="space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    {occ.internName}
+                  </div>
+                  <div className="text-[10px] text-red-600 font-medium">{occ.justification.replace('[AUDITORIA SISTÊMICA] ', '')}</div>
+                </div>
+                <div className="text-[10px] bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-lg shrink-0">
+                  {new Date(occ.timestamp).toLocaleDateString('pt-BR')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: distribuições + painel de presenças + aniversariantes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

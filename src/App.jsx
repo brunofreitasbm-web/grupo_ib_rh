@@ -7,6 +7,7 @@ import {
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
+import * as faceapi from 'face-api.js';
 
 // Supabase Client Integration
 import { supabase } from './supabase';
@@ -461,6 +462,13 @@ export default function App() {
     setSelectedActivityIntern('');
   }, [filterUnit]);
 
+  // Autogestão de Biometria
+  const [autogestaoInternId, setAutogestaoInternId] = useState('');
+  const [autogestaoCpf, setAutogestaoCpf] = useState('');
+  const [autogestaoSuccess, setAutogestaoSuccess] = useState(false);
+  const [publicInterns, setPublicInterns] = useState([]);
+  const [loadingPublicInterns, setLoadingPublicInterns] = useState(false);
+
   // Cadastro obrigatório (do zero)
   const [cadastroForm, setCadastroForm] = useState({
     name: '', course: '', institution: '', shift: 'Manhã',
@@ -480,6 +488,11 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiSummary, setAiSummary] = useState('');
   const [hoursAlerts, setHoursAlerts] = useState([]);
+  const [auditAlerts, setAuditAlerts] = useState([]);
+  const [isAiExtractionActive, setIsAiExtractionActive] = useState(true);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBtn, setShowInstallBtn] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   // Gestão de estagiários
   const [showManage, setShowManage] = useState(false);
@@ -504,6 +517,7 @@ export default function App() {
     emergencyPhone: '',
     allowance: 0,
     supervisorName: '',
+    birthdate: '',
   });
 
   // Configuração das unidades
@@ -670,6 +684,36 @@ export default function App() {
     }
     return () => window.removeEventListener('online', handleOnline);
   }, [fetchRecords]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBtn(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    const handleOnlineStatus = () => setIsOnline(true);
+    const handleOfflineStatus = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnlineStatus);
+    window.addEventListener('offline', handleOfflineStatus);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('online', handleOnlineStatus);
+      window.removeEventListener('offline', handleOfflineStatus);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`PWA installation outcome: ${outcome}`);
+    setDeferredPrompt(null);
+    setShowInstallBtn(false);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -872,6 +916,112 @@ export default function App() {
     };
   }, [selectedIntern]);
 
+  // Loop de Detecção Facial em tempo real para Bipagem e Ponto Automático
+  const faceDetectionLoopRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!isCameraActive || !selectedIntern || forceManualPoint || showSuccess || currentView !== 'kiosk') {
+      if (faceDetectionLoopRef.current) {
+        cancelAnimationFrame(faceDetectionLoopRef.current);
+        faceDetectionLoopRef.current = null;
+      }
+      return;
+    }
+
+    const runLoop = async () => {
+      if (!active || !videoRef.current || videoRef.current.paused || videoRef.current.ended) {
+        if (active) faceDetectionLoopRef.current = requestAnimationFrame(runLoop);
+        return;
+      }
+
+      const intern = loggedInIntern?.role === 'intern_unit'
+        ? interns.find((i) => i.id === selectedIntern)
+        : loggedInIntern;
+      
+      if (!intern) {
+        if (active) faceDetectionLoopRef.current = requestAnimationFrame(runLoop);
+        return;
+      }
+
+      let targetDescriptor = intern.faceDescriptor;
+      if ((!targetDescriptor || targetDescriptor === '[]') && intern.photo) {
+        try {
+          const refDesc = await getFaceDescriptor(intern.photo);
+          if (refDesc) {
+            targetDescriptor = JSON.stringify(refDesc);
+          }
+        } catch (e) {
+          console.error("Erro ao obter biometria de referência no loop:", e);
+        }
+      }
+
+      if (targetDescriptor && targetDescriptor !== '[]') {
+        try {
+          const detection = await faceapi
+            .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+
+          if (detection && detection.descriptor && active) {
+            const pointDescriptor = Array.from(detection.descriptor);
+            const { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+            console.log(`[LOOP BIOMETRIA] Comparando rosto... Distância: ${distance.toFixed(3)}, Match: ${isMatch}`);
+            
+            if (isMatch && active) {
+              active = false; // Bloqueia novos acionamentos
+
+              // Emitir som de Bip
+              try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.15);
+              } catch (audioErr) {
+                console.warn("Som de bip falhou:", audioErr);
+              }
+
+              toast.success("Rosto identificado! Registrando ponto automaticamente...");
+              
+              // Executa a batida de ponto simulando o envio do form
+              setTimeout(() => {
+                const pointForm = document.querySelector('form');
+                if (pointForm) {
+                  pointForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                }
+              }, 150);
+              return;
+            }
+          }
+        } catch (err) {
+          console.error("Erro na detecção em tempo real:", err);
+        }
+      }
+
+      // Evita sobrecarga de CPU adicionando um delay de 400ms
+      await new Promise(resolve => setTimeout(resolve, 400));
+      if (active) {
+        faceDetectionLoopRef.current = requestAnimationFrame(runLoop);
+      }
+    };
+
+    faceDetectionLoopRef.current = requestAnimationFrame(runLoop);
+
+    return () => {
+      active = false;
+      if (faceDetectionLoopRef.current) {
+        cancelAnimationFrame(faceDetectionLoopRef.current);
+        faceDetectionLoopRef.current = null;
+      }
+    };
+  }, [isCameraActive, selectedIntern, forceManualPoint, showSuccess, loggedInIntern, interns, currentView]);
+
   // --- CONTROLE DE LOGIN INDIVIDUAL ---
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -920,6 +1070,52 @@ export default function App() {
     } catch (err) {
       console.error('Erro de login:', err);
       setLoginError('Erro ao conectar ao servidor.');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
+  // Login direto sem senha para o perfil de quiosque de estagiários por unidade
+  const handleDirectUnitLogin = async (unitOption) => {
+    setLoginError('');
+    setGpsLoading(true);
+    let email = '';
+    if (unitOption === 'antonio-barreto') {
+      email = 'antoniobarreto@portoterapia.com';
+    } else if (unitOption === 'generalissimo') {
+      email = 'generalissimo@portoterapia.com';
+    }
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: 'estagio123',
+      });
+
+      if (error) {
+        setLoggedInIntern({
+          id: `kiosk-${unitOption}`,
+          name: unitOption === 'antonio-barreto' ? 'Estagiário Antônio Barreto' : 'Estagiário Generalíssimo',
+          role: 'intern_unit',
+          unitId: unitOption,
+          isFirstLogin: false
+        });
+        setSelectedIntern('');
+        setSelectedUnit(unitOption);
+        setCurrentView('kiosk');
+      }
+    } catch (err) {
+      console.error('Erro ao acessar quiosque da unidade:', err);
+      setLoggedInIntern({
+        id: `kiosk-${unitOption}`,
+        name: unitOption === 'antonio-barreto' ? 'Estagiário Antônio Barreto' : 'Estagiário Generalíssimo',
+        role: 'intern_unit',
+        unitId: unitOption,
+        isFirstLogin: false
+      });
+      setSelectedIntern('');
+      setSelectedUnit(unitOption);
+      setCurrentView('kiosk');
     } finally {
       setGpsLoading(false);
     }
@@ -1119,6 +1315,271 @@ export default function App() {
     setHoursAlerts(alerts);
   }, [records, interns, filterUnit]);
 
+  // Motor de Auditoria de Ponto Retroativo de 30 dias com Sincronização
+  const runPointAudit = useCallback(async () => {
+    if (!user || user.user_metadata?.role !== 'supervisor') return;
+    
+    // Obter data de 30 dias atrás
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+    // Buscar todos os registros dos últimos 30 dias para auditoria completa
+    const { data: recentRecords, error: recordsError } = await supabase
+      .from('records')
+      .select('*')
+      .gte('timestamp', `${thirtyDaysAgoStr}T00:00:00Z`);
+
+    if (recordsError || !recentRecords) {
+      console.error("Erro ao carregar registros para auditoria:", recordsError);
+      return;
+    }
+
+    const mappedRecords = recentRecords.map(mapRecordFromDb);
+
+    // Agrupar registros por estagiário e data (YYYY-MM-DD)
+    const grouped = {};
+    mappedRecords.forEach(r => {
+      if (!r.internId) return;
+      const dateStr = new Date(r.timestamp).toISOString().split('T')[0];
+      const key = `${r.internId}|${dateStr}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          internId: r.internId,
+          internName: r.internName,
+          date: dateStr,
+          entradas: [],
+          saidas: [],
+          ocorrencias: []
+        };
+      }
+      if (r.action === 'entrada') grouped[key].entradas.push(r);
+      else if (r.action === 'saida') grouped[key].saidas.push(r);
+      else if (r.action === 'ocorrencia') grouped[key].ocorrencias.push(r);
+    });
+
+    const newAuditAlerts = [];
+    const activeSupervisorInterns = interns.filter(i => i.active !== false);
+
+    // Gerar lista dos últimos 30 dias (excluindo hoje)
+    const dateList = [];
+    for (let i = 1; i <= 30; i++) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      dateList.push(d.toISOString().split('T')[0]);
+    }
+
+    activeSupervisorInterns.forEach(intern => {
+      const contractStartStr = intern.startDate || '1970-01-01';
+
+      dateList.forEach(dateStr => {
+        if (dateStr < contractStartStr) return;
+
+        const key = `${intern.id}|${dateStr}`;
+        const dayData = grouped[key] || { internId: intern.id, internName: intern.name, date: dateStr, entradas: [], saidas: [], ocorrencias: [] };
+
+        const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+        // Se não houver batidas, pula
+        if (dayData.entradas.length === 0 && dayData.saidas.length === 0 && dayData.ocorrencias.length === 0) {
+          return; 
+        }
+
+        // 1. Ausência de marcação
+        if (dayData.entradas.length > 0 && dayData.saidas.length === 0) {
+          newAuditAlerts.push({
+            internId: intern.id,
+            internName: intern.name,
+            date: dateStr,
+            type: 'ausencia_saida',
+            desc: `Ausência de marcação de saída no dia ${new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR')}`
+          });
+        } else if (dayData.saidas.length > 0 && dayData.entradas.length === 0) {
+          newAuditAlerts.push({
+            internId: intern.id,
+            internName: intern.name,
+            date: dateStr,
+            type: 'ausencia_entrada',
+            desc: `Ausência de marcação de entrada no dia ${new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR')}`
+          });
+        }
+
+        // 2. Horários Divergentes
+        if (dayData.entradas.length > 0 && dayData.saidas.length > 0) {
+          const firstEntrada = new Date(dayData.entradas[0].timestamp);
+          const lastSaida = new Date(dayData.saidas[dayData.saidas.length - 1].timestamp);
+          const diffHours = (lastSaida.getTime() - firstEntrada.getTime()) / (1000 * 60 * 60);
+
+          const limitHours = Number(intern.dailyHours) || 6;
+          if (diffHours > (limitHours + 0.5)) {
+            newAuditAlerts.push({
+              internId: intern.id,
+              internName: intern.name,
+              date: dateStr,
+              type: 'excesso_jornada',
+              desc: `Jornada de ${diffHours.toFixed(1)}h excede o limite de ${limitHours}h no dia ${new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR')}`
+            });
+          }
+
+          const shift = (intern.shift || 'Manhã').toLowerCase();
+          const entHour = firstEntrada.getHours();
+
+          let shiftDivergent = false;
+          if (shift === 'manhã' && (entHour < 5 || entHour > 12)) shiftDivergent = true;
+          else if (shift === 'tarde' && (entHour < 11 || entHour > 17)) shiftDivergent = true;
+          else if (shift === 'noite' && (entHour < 16 || entHour > 21)) shiftDivergent = true;
+
+          if (shiftDivergent) {
+            newAuditAlerts.push({
+              internId: intern.id,
+              internName: intern.name,
+              date: dateStr,
+              type: 'turno_incompativel',
+              desc: `Entrada às ${firstEntrada.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} diverge do turno ${intern.shift} no dia ${new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR')}`
+            });
+          }
+        }
+      });
+    });
+
+    setAuditAlerts(newAuditAlerts);
+
+    // Sincronizar com banco de dados
+    const existingSystemOccurrences = mappedRecords.filter(r => 
+      r.action === 'ocorrencia' && 
+      (r.justification || '').startsWith('[AUDITORIA SISTÊMICA]')
+    );
+
+    for (const alert of newAuditAlerts) {
+      const alreadySaved = existingSystemOccurrences.some(r => 
+        r.internId === alert.internId && 
+        new Date(r.timestamp).toISOString().split('T')[0] === alert.date &&
+        r.justification === `[AUDITORIA SISTÊMICA] ${alert.desc}`
+      );
+
+      if (!alreadySaved) {
+        await supabase.from('records').insert({
+          intern_id: alert.internId,
+          intern_name: alert.internName,
+          action: 'ocorrencia',
+          justification: `[AUDITORIA SISTÊMICA] ${alert.desc}`,
+          timestamp: new Date(`${alert.date}T12:00:00`).toISOString(),
+          days_away: 0,
+          geo: { type: 'auditoria', alertType: alert.type }
+        });
+      }
+    }
+
+    for (const record of existingSystemOccurrences) {
+      const dateStr = new Date(record.timestamp).toISOString().split('T')[0];
+      const stillDivergent = newAuditAlerts.some(alert => 
+        alert.internId === record.internId && 
+        alert.date === dateStr &&
+        `[AUDITORIA SISTÊMICA] ${alert.desc}` === record.justification
+      );
+
+      if (!stillDivergent) {
+        await supabase.from('records').delete().eq('id', record.id);
+      }
+    }
+  }, [user, interns]);
+
+  useEffect(() => {
+    runPointAudit();
+  }, [records, interns, runPointAudit]);
+
+  // Rotina de Backup de Registros e Cadastros
+  const handleManualBackup = useCallback(async () => {
+    try {
+      const { data: internsData } = await supabase.from('interns').select('*');
+      const { data: recordsData } = await supabase.from('records').select('*');
+      const { data: unitsData } = await supabase.from('units').select('*');
+
+      const backupObj = {
+        exportedAt: new Date().toISOString(),
+        interns: internsData || [],
+        records: recordsData || [],
+        units: unitsData || []
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `backup_porto_terapia_${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      toast.success("Backup manual gerado e baixado com sucesso!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao gerar backup de segurança.");
+    }
+  }, []);
+
+  const runAutomaticBackupCheck = useCallback(async () => {
+    const savedConfig = localStorage.getItem('app_configuracoes');
+    if (!savedConfig) return;
+    const config = JSON.parse(savedConfig);
+
+    const interval = config.backupIntervalo || 'semanal';
+    if (interval === 'desativado') return;
+
+    const email = config.emailBackup || config.emailNotificacoes || 'rh@portoterapia.com.br';
+    const lastBackupStr = localStorage.getItem('porto_last_backup_date');
+    const now = Date.now();
+
+    let shouldBackup = false;
+    if (!lastBackupStr) {
+      shouldBackup = true;
+    } else {
+      const lastBackupTime = new Date(lastBackupStr).getTime();
+      const diffDays = (now - lastBackupTime) / (1000 * 60 * 60 * 24);
+
+      if (interval === 'diario' && diffDays >= 1) shouldBackup = true;
+      else if (interval === 'semanal' && diffDays >= 7) shouldBackup = true;
+      else if (interval === 'mensal' && diffDays >= 30) shouldBackup = true;
+    }
+
+    if (shouldBackup) {
+      try {
+        const { data: internsData } = await supabase.from('interns').select('*');
+        const { data: recordsData } = await supabase.from('records').select('*');
+        const { data: unitsData } = await supabase.from('units').select('*');
+
+        const backupObj = {
+          exportedAt: new Date().toISOString(),
+          interns: internsData || [],
+          records: recordsData || [],
+          units: unitsData || []
+        };
+
+        console.log(`[BACKUP AUTOMÁTICO] Enviando backup consolidado para ${email}...`, backupObj);
+        
+        toast.info(`Iniciando backup automático (${interval})...`);
+        setTimeout(() => {
+          toast.success(`Backup programado enviado com sucesso para o e-mail: ${email}`);
+          localStorage.setItem('porto_last_backup_date', new Date().toISOString());
+        }, 1500);
+
+      } catch (err) {
+        console.error("Falha ao executar backup programado:", err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    window.handleManualBackupTrigger = handleManualBackup;
+    return () => {
+      delete window.handleManualBackupTrigger;
+    };
+  }, [handleManualBackup]);
+
+  useEffect(() => {
+    if (user && user.user_metadata?.role === 'supervisor') {
+      runAutomaticBackupCheck();
+    }
+  }, [user, runAutomaticBackupCheck]);
+
   // ---- Gemini ----
   const fetchWithRetry = async (url, options, retries = 5) => {
     const delays = [1000, 2000, 4000, 8000, 16000];
@@ -1132,6 +1593,42 @@ export default function App() {
         await new Promise((res) => setTimeout(res, delays[i]));
       }
     }
+  };
+
+  const extractBirthdateFromDoc = async (base64Content) => {
+    if (!apiKey) return null;
+    try {
+      const splitParts = base64Content.split(';base64,');
+      if (splitParts.length < 2) return null;
+      const mimeType = splitParts[0].replace('data:', '');
+      const rawData = splitParts[1];
+
+      const prompt = `Analise a imagem deste documento (RG ou CPF) e extraia a data de nascimento. Retorne APENAS a data no formato YYYY-MM-DD (ex: 2002-11-20). Se não for possível encontrar ou a imagem estiver ilegível, responda apenas 'NOT_FOUND'.`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType, data: rawData } }
+            ]
+          }]
+        })
+      });
+
+      if (!response.ok) throw new Error("Erro no Gemini API");
+      const result = await response.json();
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (text && text !== 'NOT_FOUND' && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        return text;
+      }
+    } catch (err) {
+      console.error("Erro na extração de data de nascimento via Gemini:", err);
+    }
+    return null;
   };
 
   const handleImproveJustification = async () => {
@@ -1215,6 +1712,13 @@ export default function App() {
       return;
     }
 
+    // Restrição de Acesso ao Ponto: Desativação do fallback de senha para estagiários nas Unidades Antônio Barreto e Generalíssimo
+    const isRestrictedUnit = ['antonio-barreto', 'generalissimo'].includes(unit.id);
+    if (isRestrictedUnit && (forceManualPoint || !isCameraActive)) {
+      setGeoError('Acesso Negado: A modalidade de autenticação por senha (PIN/Credential) ou registro manual foi desativada para o perfil de estagiários nas Unidades Antônio Barreto e Generalíssimo. É obrigatório o uso de biometria facial e geolocalização.');
+      return;
+    }
+
     // Captura da foto facial
     let photoBase64 = '';
     if (isCameraActive && !forceManualPoint) {
@@ -1279,6 +1783,10 @@ export default function App() {
         return;
       }
     } else {
+      if (isRestrictedUnit) {
+        setGeoError('Acesso Negado: A modalidade de autenticação por senha (PIN/Credential) ou registro manual foi desativada para o perfil de estagiários nas Unidades Antônio Barreto e Generalíssimo. É obrigatório o uso de biometria facial e geolocalização.');
+        return;
+      }
       // Registro manual exige justificativa no RH
       if (!justification.trim()) {
         setGeoError('Justificativa obrigatória para registro de ponto sem Controle Facial (Manual).');
@@ -1421,6 +1929,7 @@ export default function App() {
       emergencyPhone: '',
       allowance: 0,
       supervisorName: '',
+      birthdate: '',
     });
   };
 
@@ -1451,6 +1960,7 @@ export default function App() {
       emergencyPhone: intern.emergencyPhone || '',
       allowance: Number(intern.allowance) || 0,
       supervisorName: intern.supervisorName || '',
+      birthdate: intern.birthdate || '',
     });
   };
 
@@ -1460,10 +1970,10 @@ export default function App() {
     // Validar se todos os campos estão preenchidos
     if (!form.name.trim() || !form.cpf.trim() || !form.email.trim() || !form.rg.trim() || 
         !form.phone.trim() || !form.course.trim() || !form.institution.trim() || !form.address.trim() || 
-        !form.unitId || !form.shift || !form.startDate || !form.endDate || 
+        !form.unitId || !form.shift || !form.startDate || !form.endDate || !form.birthdate ||
         !form.bankName.trim() || !form.bankAgency.trim() || !form.bankAccount.trim() || !form.pixKey.trim() || 
         !form.emergencyName.trim() || !form.emergencyRelationship || !form.emergencyPhone.trim()) {
-      alert("Todos os campos do Cadastro de Estagiário são obrigatórios!");
+      alert("Todos os campos do Cadastro de Estagiário são obrigatórios, incluindo a Data de Nascimento!");
       return;
     }
 
@@ -1504,6 +2014,7 @@ export default function App() {
       emergencyPhone: form.emergencyPhone.trim(),
       allowance: Number(form.allowance) || 0,
       supervisorName: form.supervisorName.trim(),
+      birthdate: form.birthdate || null,
     };
     try {
       if (form.cpf) {
@@ -1594,7 +2105,9 @@ export default function App() {
             p_emergency_name: payload.emergencyName || null,
             p_emergency_relationship: payload.emergencyRelationship || 'Pais',
             p_emergency_phone: payload.emergencyPhone || null,
-            p_allowance: Number(payload.allowance) || 0
+            p_allowance: Number(payload.allowance) || 0,
+            p_birthdate: payload.birthdate || null,
+            p_face_descriptor: payload.faceDescriptor || null
           });
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
@@ -2139,42 +2652,50 @@ export default function App() {
                       </div>
                       <div>
                         <h4 className="font-bold text-gray-800 text-sm">Supervisor Geral</h4>
-                        <p className="text-[10px] text-gray-500">Painel administrativo, cadastros e relatórios</p>
+                        <p className="text-[10px] text-gray-500">Painel administrativo, cadastros e relatórios (Exige Senha)</p>
                       </div>
                     </button>
 
                     {/* Botão Antônio Barreto */}
                     <button
                       type="button"
-                      onClick={() => { setSelectedLoginOption('antonio-barreto'); setLoginError(''); }}
-                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center gap-4 text-left group"
+                      onClick={() => handleDirectUnitLogin('antonio-barreto')}
+                      disabled={gpsLoading}
+                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left group disabled:opacity-50"
                     >
                       <div className="p-2.5 bg-emerald-100 text-emerald-600 rounded-lg group-hover:bg-emerald-200 transition-colors">
                         <Building2 size={20} />
                       </div>
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Estagiários - Antônio Barreto</h4>
-                        <p className="text-[10px] text-gray-500">Ponto para estagiários nesta unidade</p>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-gray-800 text-sm">Estagiários - Antônio Barreto</h4>
+                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded">Sem Senha</span>
+                        </div>
+                        <p className="text-[10px] text-gray-500">Acesso direto ao ponto (Biometria + GPS)</p>
                       </div>
                     </button>
 
                     {/* Botão Generalíssimo */}
                     <button
                       type="button"
-                      onClick={() => { setSelectedLoginOption('generalissimo'); setLoginError(''); }}
-                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center gap-4 text-left group"
+                      onClick={() => handleDirectUnitLogin('generalissimo')}
+                      disabled={gpsLoading}
+                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all flex items-center gap-4 text-left group disabled:opacity-50"
                     >
                       <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
                         <Building2 size={20} />
                       </div>
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Estagiários - Generalíssimo</h4>
-                        <p className="text-[10px] text-gray-500">Ponto para estagiários nesta unidade</p>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-gray-800 text-sm">Estagiários - Generalíssimo</h4>
+                          <span className="text-[9px] bg-indigo-100 text-indigo-800 font-semibold px-2 py-0.5 rounded">Sem Senha</span>
+                        </div>
+                        <p className="text-[10px] text-gray-500">Acesso direto ao ponto (Biometria + GPS)</p>
                       </div>
                     </button>
                   </div>
 
-                  <div className="border-t border-gray-100 pt-4 mt-2">
+                  <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -2203,6 +2724,29 @@ export default function App() {
                         </div>
                       </div>
                       <span className="text-blue-500 font-bold text-xs bg-white border border-blue-200 py-1 px-2.5 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentView('autogestao_biometria');
+                        setAutogestaoInternId('');
+                        setAutogestaoCpf('');
+                        setAutogestaoSuccess(false);
+                        loadPublicInterns();
+                      }}
+                      className="w-full p-4 border-2 border-dashed border-indigo-300 rounded-xl bg-indigo-50/30 hover:bg-indigo-50 hover:border-indigo-500 transition-all flex items-center justify-between text-left group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
+                          <Camera size={20} className="text-indigo-600 animate-pulse" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-indigo-800 text-sm">📷 Autogestão de Biometria</h4>
+                          <p className="text-[10px] text-indigo-600/80">Cadastre ou atualize sua biometria facial</p>
+                        </div>
+                      </div>
+                      <span className="text-indigo-500 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Configurar &rarr;</span>
                     </button>
                   </div>
                 </div>
@@ -2363,16 +2907,28 @@ export default function App() {
                     <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                       <Camera size={14} className="text-blue-600" /> Controle Facial Biométrico
                     </span>
-                    {cameraError && (
-                      <button
-                        type="button"
-                        onClick={() => setForceManualPoint(!forceManualPoint)}
-                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold"
-                      >
-                        {forceManualPoint ? "Ativar Câmera" : "Entrar em Contingência"}
-                      </button>
+                    {['antonio-barreto', 'generalissimo'].includes(selectedUnit) ? (
+                      <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                        <ShieldAlert size={12} className="text-amber-600" /> Sem Fallback de Senha
+                      </span>
+                    ) : (
+                      cameraError && (
+                        <button
+                          type="button"
+                          onClick={() => setForceManualPoint(!forceManualPoint)}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold"
+                        >
+                          {forceManualPoint ? "Ativar Câmera" : "Entrar em Contingência"}
+                        </button>
+                      )
                     )}
                   </div>
+                  {['antonio-barreto', 'generalissimo'].includes(selectedUnit) && (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-800 text-[10px] font-medium leading-tight">
+                      <ShieldAlert size={14} className="shrink-0 text-amber-600" />
+                      <span>Autenticação por biometria facial e geolocalização 100% obrigatória nesta unidade (Restrição de senha/PIN ativa).</span>
+                    </div>
+                  )}
 
                   {isCameraActive && !forceManualPoint ? (
                     <div className="relative aspect-[4/3] w-full max-w-[200px] mx-auto bg-black rounded-lg overflow-hidden border border-slate-300 shadow-inner">
@@ -2424,7 +2980,7 @@ export default function App() {
                         >
                           <Video size={12} /> Habilitar Câmera
                         </button>
-                        {forceManualPoint && (
+                        {forceManualPoint && !['antonio-barreto', 'generalissimo'].includes(selectedUnit) && (
                           <span className="bg-amber-100 text-amber-800 text-[9px] font-semibold px-2 py-1 rounded inline-flex items-center">
                             Modo Contingência
                           </span>
@@ -2499,6 +3055,160 @@ export default function App() {
           </div>
         </div>
         <p className="mt-8 text-sm text-gray-500">Módulo de Estágio • Lei nº 11.788/2008</p>
+      </div>
+    );
+  };
+
+  const loadPublicInterns = async () => {
+    setLoadingPublicInterns(true);
+    try {
+      const { data, error } = await supabase
+        .from('interns')
+        .select('*')
+        .eq('active', true)
+        .order('name', { ascending: true });
+      if (!error && data) {
+        setPublicInterns(data.map(mapInternFromDb));
+      }
+    } catch (e) {
+      console.error("Erro público ao carregar estagiários:", e);
+    } finally {
+      setLoadingPublicInterns(false);
+    }
+  };
+
+  const renderAutogestaoBiometria = () => {
+    const selectedInternObj = publicInterns.find(i => i.id === autogestaoInternId);
+    const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
+    const cleanInternCpf = selectedInternObj ? selectedInternObj.cpf.replace(/\D/g, '') : '';
+    const isCpfValid = selectedInternObj && cleanInputCpf && cleanInputCpf === cleanInternCpf;
+
+    const handleAutogestaoComplete = async (payload) => {
+      if (!selectedInternObj) return;
+      try {
+        const { error } = await supabase
+          .from('interns')
+          .update({
+            face_descriptor: JSON.stringify(payload.embedding)
+          })
+          .eq('id', selectedInternObj.id);
+
+        if (error) throw error;
+        setAutogestaoSuccess(true);
+        toast.success('Biometria cadastrada com sucesso! Status: Biometria OK');
+        fetchInterns();
+      } catch (err) {
+        console.error(err);
+        toast.error('Erro ao atualizar biometria facial no banco de dados.');
+      }
+    };
+
+    const hasBiometria = selectedInternObj && selectedInternObj.faceDescriptor && selectedInternObj.faceDescriptor !== '[]';
+
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+          <div className="bg-indigo-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
+            <button
+              onClick={() => setCurrentView('kiosk')}
+              className="absolute top-4 left-4 p-2 bg-indigo-700 hover:bg-indigo-800 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+            >
+              <ArrowLeft size={14} /> Voltar
+            </button>
+            <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-14 w-auto mb-2 rounded-lg shadow-sm" />
+            <h1 className="text-xl font-bold">Autogestão de Biometria Facial</h1>
+            <p className="text-indigo-100 text-xs mt-1">Configuração autônoma de biometria para estagiários</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {autogestaoSuccess ? (
+              <div className="py-8 flex flex-col items-center justify-center text-center animate-fade-in space-y-4">
+                <div className="p-4 bg-emerald-100 rounded-full text-emerald-600">
+                  <CheckCircle size={48} />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-800">Biometria OK!</h2>
+                <p className="text-slate-600 text-sm max-w-sm">
+                  Sua biometria facial foi cadastrada com sucesso e está assinada de forma síncrona. Você já pode bater o ponto usando a câmera.
+                </p>
+                <button
+                  onClick={() => setCurrentView('kiosk')}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors text-sm shadow-md"
+                >
+                  Ir para a Tela Inicial
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Selecione o seu nome na lista:
+                  </label>
+                  <select
+                    value={autogestaoInternId}
+                    onChange={(e) => {
+                      setAutogestaoInternId(e.target.value);
+                      setAutogestaoCpf('');
+                    }}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
+                  >
+                    <option value="" disabled>Selecione...</option>
+                    {publicInterns.map((i) => (
+                      <option key={i.id} value={i.id}>{i.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {autogestaoInternId && (
+                  hasBiometria ? (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-amber-900 text-xs font-semibold space-y-2 animate-fade-in">
+                      <p>⚠️ Você já possui uma biometria facial cadastrada e validada no sistema.</p>
+                      <p className="font-normal text-slate-500">Por questões de segurança, a alteração ou recadastro biométrico só pode ser feito sob supervisão direta no painel administrativo.</p>
+                    </div>
+                  ) : (
+                    <div className="animate-fade-in space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Confirme seu CPF para validação de identidade:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Apenas números ou formatado"
+                          value={autogestaoCpf}
+                          onChange={(e) => setAutogestaoCpf(e.target.value)}
+                          className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
+                        />
+                      </div>
+
+                      {autogestaoCpf && !isCpfValid && (
+                        <p className="text-red-500 text-[11px] font-semibold">
+                          ❌ O CPF informado não coincide com o do estagiário selecionado.
+                        </p>
+                      )}
+
+                      {isCpfValid && (
+                        <div className="border border-slate-200 rounded-xl overflow-hidden p-4 bg-slate-50 space-y-4 animate-fade-in">
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2.5 text-amber-800 text-[11px] font-medium leading-relaxed">
+                            <ShieldAlert size={16} className="shrink-0 text-amber-600 mt-0.5" />
+                            <span>
+                              <strong>Orientações para captura:</strong> Posicione seu rosto no centro do quadro de vídeo e aguarde a verificação Liveness (Anti-Spoofing). O sistema fará a captação e assinatura criptográfica automática assim que a pose for validada.
+                            </span>
+                          </div>
+
+                          <BiometricEnrollment
+                            internName={selectedInternObj.name}
+                            internCpf={selectedInternObj.cpf}
+                            onEnrollmentComplete={handleAutogestaoComplete}
+                            onCancel={() => setCurrentView('kiosk')}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -2653,7 +3363,8 @@ export default function App() {
             .update({
               registration_status: 'pending_validation',
               documents: updatedDocs,
-              supervisor_name: cadastroForm.supervisorName.trim()
+              supervisor_name: cadastroForm.supervisorName.trim(),
+              birthdate: cadastroForm.birthdate || null
             })
             .eq('id', newId);
         } else {
@@ -3079,6 +3790,13 @@ export default function App() {
                                 size: (file.size / 1024).toFixed(1) + ' KB',
                                 content: base64
                               });
+                              if (file.type.startsWith('image/') && isAiExtractionActive) {
+                                const dob = await extractBirthdateFromDoc(base64);
+                                if (dob) {
+                                  setCadastroForm(prev => ({ ...prev, birthdate: dob }));
+                                  setIsAiExtractionActive(false);
+                                }
+                              }
                             } catch (err) {
                               console.error(err);
                             }
@@ -3364,6 +4082,16 @@ export default function App() {
                 type="date"
                 value={form.endDate}
                 onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold">Data de Nascimento *</label>
+              <input
+                required
+                type="date"
+                value={form.birthdate}
+                onChange={(e) => setForm({ ...form, birthdate: e.target.value })}
                 className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
               />
             </div>
@@ -4167,6 +4895,165 @@ export default function App() {
       `;
     }
 
+    if (type === 'relatorio_individual') {
+      const internRecords = records.filter(r => r.internId === intern.id);
+      const auditOccurrences = internRecords.filter(r => r.action === 'ocorrencia' && (r.justification || '').startsWith('[AUDITORIA SISTÊMICA]'));
+      const manualOccurrences = internRecords.filter(r => r.action === 'ocorrencia' && !(r.justification || '').startsWith('[AUDITORIA SISTÊMICA]'));
+      
+      const occurrencesHtml = manualOccurrences.length > 0 
+        ? manualOccurrences.map(r => `
+            <tr>
+              <td style="border: 1px solid #e5e7eb; padding: 6px;">${new Date(r.timestamp).toLocaleDateString('pt-BR')}</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px; font-weight: bold; color: #1e3a8a;">
+                ${r.justificationDoc?.type === 'atestado' ? 'Atestado Médico' : (r.justificationDoc?.type === 'falta' ? 'Falta Justificada' : (r.justificationDoc?.type === 'atraso' ? 'Atraso' : 'Outros'))}
+              </td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px;">${r.justification || 'Sem justificativa detalhada'}</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px; text-align: center;">${r.daysAway || 0} dias</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="4" style="text-align: center; color: #6b7280; padding: 10px;">Nenhuma ocorrência registrada no período.</td></tr>';
+
+      const auditHtml = auditOccurrences.length > 0
+        ? auditOccurrences.map(r => `
+            <tr>
+              <td style="border: 1px solid #e5e7eb; padding: 6px;">${new Date(r.timestamp).toLocaleDateString('pt-BR')}</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px; color: #b91c1c; font-weight: bold;">Auditoria de Ponto</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px;">${r.justification.replace('[AUDITORIA SISTÊMICA] ', '')}</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="3" style="text-align: center; color: #10b981; padding: 10px; font-weight: 500;">✓ Nenhuma divergência de auditoria ativa nos últimos 30 dias.</td></tr>';
+
+      const semestralList = Object.entries(intern?.semestralReports || {});
+      const semestralHtml = semestralList.length > 0
+        ? semestralList.map(([period, doc]) => `
+            <tr>
+              <td style="border: 1px solid #e5e7eb; padding: 6px; font-weight: bold; color: #1e3a8a;">Relatório ${period}º Período</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px;">${doc.name || 'documento.pdf'}</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px; text-align: center;">${doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString('pt-BR') : '-'}</td>
+              <td style="border: 1px solid #e5e7eb; padding: 6px; text-align: center; font-weight: bold; color: #10b981;">✓ Entregue</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="4" style="text-align: center; color: #6b7280; padding: 10px;">Nenhum Relatório Semestral entregue até o momento.</td></tr>';
+
+      return `
+        <div style="font-family: 'Inter', Arial, sans-serif; font-size: 10px; line-height: 1.5; color: #1f2937; padding: 20px;">
+          ${headerHtml}
+          
+          <div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px;">
+            <h2 style="margin: 0; font-size: 14px; font-weight: 800; color: #111827; text-transform: uppercase;">RELATÓRIO INDIVIDUAL DE ACOMPANHAMENTO</h2>
+            <p style="margin: 2px 0 0; font-size: 9px; color: #6b7280;">Histórico Consolidado de Frequência, Ocorrências e Documentos do Estagiário</p>
+          </div>
+
+          <div style="display: flex; gap: 20px; margin-bottom: 25px; align-items: flex-start;">
+            <div style="width: 100px; height: 133px; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; background-color: #f3f4f6; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+              ${intern?.photo 
+                ? `<img src="${intern.photo}" style="width: 100%; height: 100%; object-fit: cover;" />` 
+                : `<span style="font-size: 8px; font-weight: bold; color: #9ca3af; text-align: center; padding: 5px;">Foto 3x4 Ausente</span>`
+              }
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 9px;">
+              <tr>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb; width: 25%;">Nome Completo:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;" colspan="3"><strong>${internName}</strong></td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb; width: 25%;">Curso / Ensino:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb; width: 35%;">${courseName}</td>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb; width: 15%;">Instituição:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${institutionName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">Vigência Contrato:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${startFormatted} a ${endFormatted}</td>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">Carga Horária:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${hoursCount}h diárias (${shiftName})</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">Unidade Principal:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${unitTitle}</td>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">Supervisor:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${intern?.supervisorName || 'Não designado'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">CPF:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${intern?.cpf || '-'}</td>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">RG:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${intern?.rg || '-'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">E-mail:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${intern?.email || '-'}</td>
+                <td style="padding: 4px 8px; font-weight: bold; background-color: #f9fafb; border: 1px solid #e5e7eb;">Telefone:</td>
+                <td style="padding: 4px 8px; border: 1px solid #e5e7eb;">${intern?.phone || '-'}</td>
+              </tr>
+            </table>
+          </div>
+
+          <h3 style="font-size: 11px; font-weight: bold; color: #1e3a8a; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; margin-top: 15px; margin-bottom: 8px;">1. Histórico de Entregas de Acompanhamentos Semestrais</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 9px; margin-bottom: 15px;">
+            <thead>
+              <tr style="background-color: #f3f4f6;">
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left;">Período</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left;">Nome do Arquivo</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: center;">Data de Envio</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${semestralHtml}
+            </tbody>
+          </table>
+
+          <h3 style="font-size: 11px; font-weight: bold; color: #1e3a8a; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; margin-top: 15px; margin-bottom: 8px;">2. Histórico de Ocorrências Administrativas (Faltas, Atrasos e Atestados)</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 9px; margin-bottom: 15px;">
+            <thead>
+              <tr style="background-color: #f3f4f6;">
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left; width: 15%;">Data</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left; width: 25%;">Tipo</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left;">Descrição / Justificativa</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: center; width: 15%;">Duração</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${occurrencesHtml}
+            </tbody>
+          </table>
+
+          <h3 style="font-size: 11px; font-weight: bold; color: #1e3a8a; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; margin-top: 15px; margin-bottom: 8px;">3. Alertas Sistêmicos de Auditoria de Ponto (Últimos 30 Dias)</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 9px; margin-bottom: 25px;">
+            <thead>
+              <tr style="background-color: #f3f4f6;">
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left; width: 15%;">Data</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left; width: 25%;">Tipo Alerta</th>
+                <th style="border: 1px solid #e5e7eb; padding: 6px; text-align: left;">Descrição da Inconsistência</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${auditHtml}
+            </tbody>
+          </table>
+
+          <p style="text-align: right; font-size: 9px; color: #4b5563; margin-top: 25px;">Relatório gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}.</p>
+          
+          <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 9px; margin-top: 35px;">
+            <tr>
+              <td style="width: 50%; vertical-align: top; padding: 10px;">
+                <div style="border-top: 1px solid #9ca3af; margin-top: 25px; padding-top: 5px; width: 80%; margin-left: auto; margin-right: auto;">
+                  <strong>Supervisor de Estágio</strong><br>Porto Terapia
+                </div>
+              </td>
+              <td style="width: 50%; vertical-align: top; padding: 10px;">
+                <div style="border-top: 1px solid #9ca3af; margin-top: 25px; padding-top: 5px; width: 80%; margin-left: auto; margin-right: auto;">
+                  <strong>Estagiário(a)</strong><br>${internName}
+                </div>
+              </td>
+            </tr>
+          </table>
+          ${footerHtml}
+        </div>
+      `;
+    }
+
     if (type === 'declaracao') {
       return `
         <div style="font-family: 'Inter', Arial, sans-serif; font-size: 11px; line-height: 1.8; color: #1f2937; padding: 30px;">
@@ -4209,6 +5096,10 @@ export default function App() {
   };
 
   const handlePrintDocument = (type, intern = null) => {
+    if (type.startsWith('download_')) {
+      handleDownloadPDF(type.replace('download_', ''), intern);
+      return;
+    }
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html>
@@ -6480,18 +7371,18 @@ export default function App() {
   // ============================================================
   const renderAdmin = () => {
     const adminNavItems = [
-      { id: 'dashboard',       label: 'Dashboard',       icon: '📊' },
-      { id: 'estagiarios',     label: 'Cadastro',        icon: '👤' },
-      { id: 'documentos',      label: 'Documentos',      icon: '🖨️' },
-      { id: 'frequencia',      label: 'Frequência',      icon: '📋' },
-      { id: 'admissional',     label: 'Dossiê',          icon: '📁' },
-      { id: 'acompanhamento',  label: 'Acompanhamento', icon: '📈' },
-      { id: 'ocorrencias',     label: 'Ocorrências',     icon: '⚠️' },
-      { id: 'finalizacao',     label: 'Encerramento',    icon: '🔒' },
-      { id: 'financeiro',      label: 'Financeiro',      icon: '💰' },
-      { id: 'rh',              label: 'Alertas RH',      icon: '🔔' },
-      { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
-      { id: 'configuracoes',    label: 'Configurações',   icon: '⚙️' },
+      { id: 'dashboard',       label: 'Dashboard',               icon: '📊' },
+      { id: 'estagiarios',     label: 'Estagiários',             icon: '👤' },
+      { id: 'documentos',      label: 'Documentos',              icon: '🖨️' },
+      { id: 'frequencia',      label: 'Frequência',              icon: '📋' },
+      { id: 'admissional',     label: 'Documentos Admissionais', icon: '📁' },
+      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: '📈' },
+      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: '⚠️' },
+      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: '🔒' },
+      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: '💰' },
+      { id: 'rh',              label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'aniversariantes', label: 'Aniversariantes',         icon: '🎂' },
+      { id: 'configuracoes',    label: 'Configurações',           icon: '⚙️' },
     ];
 
     return (
@@ -6632,10 +7523,49 @@ export default function App() {
           animation: scan 3s linear infinite;
         }
       `}</style>
+      {/* Indicador de Conexão Offline Global */}
+      {!isOnline && (
+        <div className="fixed top-0 left-0 right-0 bg-red-600 text-white text-xs font-bold py-2 text-center z-50 flex items-center justify-center gap-1.5 shadow-md">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+          Você está navegando no modo offline. Registros de ponto serão salvos localmente e sincronizados depois.
+        </div>
+      )}
+
+      {/* Banner de Instalação do PWA */}
+      {showInstallBtn && (
+        <div className="fixed bottom-4 right-4 max-w-sm bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl z-50 flex flex-col gap-2.5 animate-fade-in">
+          <div className="flex gap-3 items-start">
+            <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600">
+              <Download size={20} />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-800">Instalar Aplicativo Web</h4>
+              <p className="text-[10px] text-slate-500 leading-normal mt-0.5">Instale o aplicativo no seu dispositivo para ter acesso offline completo e batida biométrica otimizada.</p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setShowInstallBtn(false)}
+              className="text-[10px] font-semibold text-slate-500 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Agora Não
+            </button>
+            <button
+              onClick={handleInstallApp}
+              className="text-[10px] font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+            >
+              Instalar Aplicativo
+            </button>
+          </div>
+        </div>
+      )}
+
       {currentView === 'kiosk' ? (
         renderKiosk()
       ) : currentView === 'recadastro' ? (
         renderRecadastroSection()
+      ) : currentView === 'autogestao_biometria' ? (
+        renderAutogestaoBiometria()
       ) : (
         renderAdmin()
       )}

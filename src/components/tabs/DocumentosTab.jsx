@@ -212,6 +212,30 @@ export default function DocumentosTab({ filterUnit, onPrintDocument }) {
               <Printer size={13} /> Imprimir Ficha Cadastral
             </button>
           </div>
+
+          {/* Relatório Individual Consolidado */}
+          <div className="border border-gray-200 rounded-xl p-4 bg-slate-50 flex flex-col justify-between h-40 shadow-sm">
+            <div>
+              <h3 className="font-bold text-gray-800 text-xs mb-1">Relatório Individual</h3>
+              <p className="text-[10px] text-gray-400 leading-snug">Relatório consolidado contendo dados cadastrais, foto, acompanhamentos e ocorrências desde o início.</p>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              <button
+                type="button"
+                onClick={() => onPrintDocument('relatorio_individual', selectedInternData)}
+                className="flex-1 py-2 px-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-[10px] flex items-center justify-center gap-1 shadow transition-colors"
+              >
+                <Printer size={12} /> Imprimir
+              </button>
+              <button
+                type="button"
+                onClick={() => onPrintDocument('download_relatorio_individual', selectedInternData)}
+                className="flex-1 py-2 px-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-[10px] flex items-center justify-center gap-1 shadow transition-colors"
+              >
+                📥 PDF
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 text-center text-slate-400 text-xs italic">
