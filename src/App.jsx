@@ -494,6 +494,13 @@ export default function App() {
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
+  // Chat Estagiário-Supervisor
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInternId, setChatInternId] = useState('');
+  const [chatMessage, setChatMessage] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [chatFeedback, setChatFeedback] = useState('');
+
   // Gestão de estagiários
   const [showManage, setShowManage] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1579,6 +1586,138 @@ export default function App() {
       runAutomaticBackupCheck();
     }
   }, [user, runAutomaticBackupCheck]);
+
+  // Chat Estagiário-Supervisor (Fale com a Supervisão)
+  const handleSendChatMessage = async () => {
+    if (!chatInternId) {
+      toast.error("Por favor, selecione seu nome.");
+      return;
+    }
+    if (!chatMessage.trim()) {
+      toast.error("Por favor, digite uma mensagem.");
+      return;
+    }
+
+    const selectedIntern = interns.find(i => i.id === chatInternId);
+    if (!selectedIntern) return;
+
+    setIsSendingChat(true);
+    try {
+      const { error } = await supabase.from('records').insert({
+        intern_id: selectedIntern.id,
+        intern_name: selectedIntern.name,
+        action: 'supervisor_chat',
+        justification: chatMessage.trim(),
+        timestamp: new Date().toISOString(),
+        geo: {
+          type: 'chat',
+          status: 'pending',
+          internEmail: selectedIntern.email,
+          reply: null,
+          repliedAt: null
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success("Mensagem enviada com sucesso!");
+      setChatMessage('');
+      setChatFeedback(`Sua mensagem foi enviada! O retorno será enviado para o e-mail: ${selectedIntern.email}`);
+      fetchRecords();
+    } catch (err) {
+      console.error(err);
+      toast.error("Falha ao enviar mensagem. Tente novamente.");
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const renderChatWidget = () => {
+    return (
+      <div className="fixed bottom-4 right-4 z-40">
+        {!isChatOpen && (
+          <button
+            onClick={() => {
+              setIsChatOpen(true);
+              setChatFeedback('');
+            }}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-3.5 shadow-2xl flex items-center justify-center gap-2 transition-all hover:scale-105 duration-200 border border-indigo-500/20"
+            title="Fale com a Supervisão"
+          >
+            <MessageSquare size={20} />
+            <span className="text-xs font-bold pr-1">Fale com a Supervisão</span>
+          </button>
+        )}
+
+        {isChatOpen && (
+          <div className="bg-white border border-slate-200 rounded-2xl w-80 shadow-2xl overflow-hidden flex flex-col max-h-[420px] animate-fade-in">
+            <div className="bg-indigo-600 p-4 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <MessageSquare size={16} />
+                <span className="text-xs font-bold">Fale com a Supervisão</span>
+              </div>
+              <button
+                onClick={() => setIsChatOpen(false)}
+                className="text-white hover:text-slate-200 text-sm font-bold p-1 leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto flex-1">
+              {chatFeedback ? (
+                <div className="text-center py-6 space-y-3">
+                  <div className="text-3xl">✉️</div>
+                  <p className="text-[11px] font-semibold text-slate-800 leading-normal">{chatFeedback}</p>
+                  <button
+                    onClick={() => setChatFeedback('')}
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
+                  >
+                    Enviar outra mensagem
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Selecione seu nome:</label>
+                    <select
+                      value={chatInternId}
+                      onChange={(e) => setChatInternId(e.target.value)}
+                      className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                    >
+                      <option value="" disabled>Selecione...</option>
+                      {interns.filter(i => i.active !== false).map(i => (
+                        <option key={i.id} value={i.id}>{i.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sua Mensagem ou Dúvida:</label>
+                    <textarea
+                      rows={4}
+                      placeholder="Descreva aqui sua solicitação de ajuste, dúvida ou problema..."
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      className="w-full p-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSendChatMessage}
+                    disabled={isSendingChat}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-xs transition-all shadow flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isSendingChat ? 'Enviando...' : 'Enviar Mensagem'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ---- Gemini ----
   const fetchWithRetry = async (url, options, retries = 5) => {
@@ -7570,6 +7709,7 @@ export default function App() {
         renderAdmin()
       )}
 
+      {renderChatWidget()}
       {renderRecordPhotoModal()}
       {renderDocumentViewModal()}
       {renderTemplateModal()}
