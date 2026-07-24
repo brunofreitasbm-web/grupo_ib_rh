@@ -26,6 +26,7 @@ import AlertasRhTab from './components/tabs/AlertasRhTab';
 import AniversariantesTab from './components/tabs/AniversariantesTab';
 import ConfiguracoesTab from './components/tabs/ConfiguracoesTab';
 import LandingPage from './components/LandingPage';
+import BiometricEnrollment from './components/BiometricEnrollment';
 
 
 
