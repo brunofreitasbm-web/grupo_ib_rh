@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage } from '../../utils/mappings';
+import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
@@ -514,7 +514,7 @@ export default function EstagiariosTab({ filterUnit }) {
       fetchData();
     } catch (error) {
       console.error('Erro ao salvar estagiário:', error);
-      toast.error('Erro ao salvar estagiário: ' + (error.message || error));
+      toast.error('Erro ao salvar estagiário: ' + getFriendlyDbErrorMessage(error));
     }
   };
 

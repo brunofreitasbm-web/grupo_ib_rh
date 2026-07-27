@@ -50,6 +50,26 @@ export const compressImage = (file, maxWidth = 300, maxHeight = 400, quality = 0
   });
 };
 
+export const getFriendlyDbErrorMessage = (err) => {
+  const rawMessage = String(err?.message || err || '');
+  const isDuplicateKey = err?.code === '23505' || /duplicate key value violates unique constraint/i.test(rawMessage);
+
+  if (isDuplicateKey) {
+    if (/username_key/i.test(rawMessage)) {
+      return 'Já existe um estagiário cadastrado com um nome de usuário igual (gerado a partir do nome completo). Verifique se este cadastro já não foi feito antes ou ajuste o nome informado.';
+    }
+    if (/cpf_key/i.test(rawMessage)) {
+      return 'Já existe um estagiário cadastrado com este CPF. Verifique se este cadastro já não foi feito antes.';
+    }
+    if (/email_key/i.test(rawMessage)) {
+      return 'Já existe um estagiário cadastrado com este e-mail. Verifique se este cadastro já não foi feito antes.';
+    }
+    return 'Este cadastro já existe nos registros. Verifique se as informações já não foram cadastradas anteriormente.';
+  }
+
+  return rawMessage;
+};
+
 export const generateUsername = (fullName) => {
   const clean = fullName.trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")

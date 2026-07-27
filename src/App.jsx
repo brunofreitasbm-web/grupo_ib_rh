@@ -8,6 +8,7 @@ import {
   ScanFace, RefreshCw, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
+import { getFriendlyDbErrorMessage } from './utils/mappings';
 import * as faceapi from 'face-api.js';
 
 // Supabase Client Integration
@@ -2341,7 +2342,7 @@ export default function App() {
       resetForm();
     } catch (error) {
       console.error('Erro ao salvar estagiário:', error);
-      alert('Erro ao salvar estagiário: ' + (error.message || error));
+      alert('Erro ao salvar estagiário: ' + getFriendlyDbErrorMessage(error));
     }
   };
 
@@ -3615,7 +3616,7 @@ export default function App() {
         fetchInterns();
       } catch (err) {
         console.error("Erro ao realizar cadastro:", err);
-        alert("Erro ao enviar cadastro: " + (err.message || err));
+        alert("Erro ao enviar cadastro: " + getFriendlyDbErrorMessage(err));
       } finally {
         setIsSubmittingCadastro(false);
       }
