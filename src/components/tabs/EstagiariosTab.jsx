@@ -492,20 +492,28 @@ export default function EstagiariosTab({ filterUnit }) {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            await supabase.from('interns').update({ 
+            const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
               face_descriptor: payload.faceDescriptor || null
             }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         } else {
           const newId = createResult.data;
-          if (newId) {
-            await supabase.from('interns').update({ 
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor)) {
+            const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
               face_descriptor: payload.faceDescriptor || null
             }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         }
         toast.success('Estagiário criado com sucesso!');
