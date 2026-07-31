@@ -2330,12 +2330,20 @@ export default function App() {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              alert('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         } else {
           const newId = createResult.data;
-          if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor)) {
+            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              alert('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         }
       }
@@ -3574,9 +3582,9 @@ export default function App() {
           });
           if (fallbackResult.error) throw fallbackResult.error;
           newId = fallbackResult.data;
-          
+
           // No fallback antigo, precisamos forçar o update dos documentos (tentativa)
-          await supabase
+          const { error: fallbackUpdateError } = await supabase
             .from('interns')
             .update({
               registration_status: cadastroForm.registrationStatus || 'pending_validation',
@@ -3585,6 +3593,9 @@ export default function App() {
               birthdate: cadastroForm.birthdate || null
             })
             .eq('id', newId);
+          if (fallbackUpdateError) {
+            console.error('Erro ao gravar dados complementares do cadastro (fallback):', fallbackUpdateError);
+          }
         } else {
           newId = createResult.data;
         }
@@ -3603,7 +3614,7 @@ export default function App() {
             console.error("Erro ao obter descritor facial no envio:", bioError);
           }
         }
-        await supabase
+        const { error: finalUpdateError } = await supabase
           .from('interns')
           .update({
             birthdate: cadastroForm.birthdate || null,
@@ -3611,6 +3622,9 @@ export default function App() {
             registration_status: cadastroForm.registrationStatus || 'pending_validation'
           })
           .eq('id', newId);
+        if (finalUpdateError) {
+          console.error('Erro ao gravar dados complementares do cadastro:', finalUpdateError);
+        }
 
         setCadastroSuccess(true);
         fetchInterns();
