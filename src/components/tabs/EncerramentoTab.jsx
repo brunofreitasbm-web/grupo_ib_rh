@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Save, FileText, Printer, Upload, Eye, Trash, Loader2, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, fileToBase64 } from '../../utils/mappings';
+import { mapInternFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
   const [interns, setInterns] = useState([]);
@@ -22,7 +22,7 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       if (internsData) setInterns(internsData.map(mapInternFromDb));

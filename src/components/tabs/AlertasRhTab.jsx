@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ShieldAlert, FileText, MessageSquare } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb } from '../../utils/mappings';
+import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate, getInternRhMetrics } from '../../utils/helpers';
 
 export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
@@ -16,7 +16,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       if (internsData) setInterns(internsData.map(mapInternFromDb));

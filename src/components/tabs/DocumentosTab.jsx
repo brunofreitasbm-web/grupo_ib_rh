@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Printer } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb } from '../../utils/mappings';
+import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function DocumentosTab({ filterUnit, onPrintDocument }) {
   const [interns, setInterns] = useState([]);
@@ -12,7 +12,7 @@ export default function DocumentosTab({ filterUnit, onPrintDocument }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       if (internsData) setInterns(internsData.map(mapInternFromDb));

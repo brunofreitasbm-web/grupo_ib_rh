@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Timer, Printer, Download, FileText } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function FinanceiroTab({ filterUnit }) {
   const [interns, setInterns] = useState([]);
@@ -14,7 +14,7 @@ export default function FinanceiroTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       const { data: unitsData } = await supabase

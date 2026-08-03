@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Cake, Users, Printer, Calendar, Edit2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapUnitFromDb } from '../../utils/mappings';
+import { mapInternFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -36,7 +36,7 @@ export default function AniversariantesTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
       const { data: unitsData } = await supabase
         .from('units')

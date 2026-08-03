@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage } from '../../utils/mappings';
+import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
@@ -210,7 +210,7 @@ export default function EstagiariosTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       const { data: unitsData } = await supabase

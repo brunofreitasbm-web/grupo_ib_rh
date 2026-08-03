@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Upload, Calendar, X, FileText, Download, Trash, Eye } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64 } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
 export default function OcorrenciasTab({ filterUnit }) {
@@ -28,7 +28,7 @@ export default function OcorrenciasTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       const { data: recordsData } = await supabase

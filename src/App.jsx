@@ -8,7 +8,7 @@ import {
   ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
-import { getFriendlyDbErrorMessage } from './utils/mappings';
+import { getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from './utils/mappings';
 import * as faceapi from 'face-api.js';
 
 // Supabase Client Integration
@@ -798,10 +798,9 @@ export default function App() {
     const role = user.user_metadata?.role;
     if (role !== 'supervisor' && role !== 'intern_unit') return;
     try {
-      // Otimização: Selecionar campos leves, excluindo a coluna de documentos com arquivos Base64 grandes
       const { data, error } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
       if (error) {
         console.error('Erro ao buscar estagiários:', error);
@@ -849,8 +848,13 @@ export default function App() {
           p_end_date: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         })
         .then(({ error }) => {
-          if (error) console.error('Erro ao criar estagiário TEste:', error);
-          else {
+          if (error) {
+            if (error.code === '23505' || error.message?.includes('duplicate key')) {
+              console.log('Estagiário TEste já existe no banco de dados.');
+            } else {
+              console.error('Erro ao criar estagiário TEste:', error);
+            }
+          } else {
             console.log('Estagiário TEste criado automaticamente via RPC.');
             fetchInterns();
           }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, AlertTriangle, Check, Eye, Trash, Upload, Loader2, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapUnitFromDb, fileToBase64 } from '../../utils/mappings';
+import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
 export default function DossieTab({ filterUnit }) {
@@ -31,7 +31,7 @@ export default function DossieTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       if (internsData) setInterns(internsData.map(mapInternFromDb));

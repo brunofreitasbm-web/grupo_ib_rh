@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Timer, Clock, FileText, Cake, CheckCircle2, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function DashboardTab({ filterUnit }) {
   const [interns, setInterns] = useState([]);
@@ -15,7 +15,7 @@ export default function DashboardTab({ filterUnit }) {
       // 1. Fetch interns
       const { data: internsData, error: internsError } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       // 2. Fetch units

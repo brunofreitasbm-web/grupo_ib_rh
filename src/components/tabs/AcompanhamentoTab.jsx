@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Save, Loader2, Upload, Eye, Trash, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapUnitFromDb, fileToBase64 } from '../../utils/mappings';
+import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function AcompanhamentoTab({ filterUnit }) {
   const [interns, setInterns] = useState([]);
@@ -25,7 +25,7 @@ export default function AcompanhamentoTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       const { data: unitsData } = await supabase

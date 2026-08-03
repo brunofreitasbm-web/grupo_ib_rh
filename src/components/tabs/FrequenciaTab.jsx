@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { List, AlertTriangle, LogIn, LogOut, MapPin, FileText, Timer, Camera, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { startOfWeek, formatDistance, formatDate, formatTime } from '../../utils/helpers';
 
 export default function FrequenciaTab({ filterUnit }) {
@@ -47,7 +47,7 @@ export default function FrequenciaTab({ filterUnit }) {
     try {
       const { data: internsData } = await supabase
         .from('interns')
-        .select('*')
+        .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
       const { data: unitsData } = await supabase
