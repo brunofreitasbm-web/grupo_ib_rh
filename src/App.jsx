@@ -5,7 +5,7 @@ import {
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
-  ScanFace, RefreshCw, CheckCircle2, AlertCircle
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
 import { getFriendlyDbErrorMessage } from './utils/mappings';
