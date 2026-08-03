@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Clock, User, FileText, CheckCircle, List, ArrowLeft,
-  LogIn, LogOut, ShieldAlert, Sparkles, Loader2, Bot,
+  LogIn, LogOut, ShieldAlert, Loader2,
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
@@ -491,13 +491,9 @@ export default function App() {
   const [bioCadastroMsg, setBioCadastroMsg] = useState('');
   const [bioCadastroTimeLeft, setBioCadastroTimeLeft] = useState(20);
 
-  // IA (Gemini) e Alertas
-  const [isImproving, setIsImproving] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiSummary, setAiSummary] = useState('');
+  // Alertas
   const [hoursAlerts, setHoursAlerts] = useState([]);
   const [auditAlerts, setAuditAlerts] = useState([]);
-  const [isAiExtractionActive, setIsAiExtractionActive] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -555,9 +551,6 @@ export default function App() {
 
   // Relógio
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  // Chave do Gemini (opcional). Defina VITE_GEMINI_API_KEY no arquivo .env para ativar a IA.
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 
   // 1. Autenticação e Sessão do Supabase
   const handleSession = useCallback(async (session) => {
@@ -671,7 +664,7 @@ export default function App() {
   const fetchRecords = useCallback(async () => {
     if (!user) return;
     const role = user.user_metadata?.role;
-    let query = supabase.from('records').select('*');
+    let query = supabase.from('records').select('id, intern_id, intern_name, action, justification, timestamp, is_manual, justification_doc, geo, days_away, created_at');
     
     if (role === 'intern') {
       query = query.eq('intern_id', user.id);
@@ -1512,12 +1505,13 @@ export default function App() {
 
     setAuditAlerts(newAuditAlerts);
 
-    // Sincronizar com banco de dados
+    // Sincronizar com banco de dados em lote (Batch) para evitar N+1 queries
     const existingSystemOccurrences = mappedRecords.filter(r => 
       r.action === 'ocorrencia' && 
       (r.justification || '').startsWith('[AUDITORIA SISTÊMICA]')
     );
 
+    const recordsToInsert = [];
     for (const alert of newAuditAlerts) {
       const alreadySaved = existingSystemOccurrences.some(r => 
         r.internId === alert.internId && 
@@ -1526,7 +1520,7 @@ export default function App() {
       );
 
       if (!alreadySaved) {
-        await supabase.from('records').insert({
+        recordsToInsert.push({
           intern_id: alert.internId,
           intern_name: alert.internName,
           action: 'ocorrencia',
@@ -1538,6 +1532,11 @@ export default function App() {
       }
     }
 
+    if (recordsToInsert.length > 0) {
+      await supabase.from('records').insert(recordsToInsert);
+    }
+
+    const idsToDelete = [];
     for (const record of existingSystemOccurrences) {
       const dateStr = new Date(record.timestamp).toISOString().split('T')[0];
       const stillDivergent = newAuditAlerts.some(alert => 
@@ -1547,8 +1546,12 @@ export default function App() {
       );
 
       if (!stillDivergent) {
-        await supabase.from('records').delete().eq('id', record.id);
+        idsToDelete.push(record.id);
       }
+    }
+
+    if (idsToDelete.length > 0) {
+      await supabase.from('records').delete().in('id', idsToDelete);
     }
   }, [user, interns]);
 
@@ -1795,106 +1798,6 @@ export default function App() {
         )}
       </div>
     );
-  };
-
-  // ---- Gemini ----
-  const fetchWithRetry = async (url, options, retries = 5) => {
-    const delays = [1000, 2000, 4000, 8000, 16000];
-    for (let i = 0; i < retries; i++) {
-      try {
-        const response = await fetch(url, options);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
-      } catch (error) {
-        if (i === retries - 1) throw error;
-        await new Promise((res) => setTimeout(res, delays[i]));
-      }
-    }
-  };
-
-  const extractBirthdateFromDoc = async (base64Content) => {
-    if (!apiKey) return null;
-    try {
-      const splitParts = base64Content.split(';base64,');
-      if (splitParts.length < 2) return null;
-      const mimeType = splitParts[0].replace('data:', '');
-      const rawData = splitParts[1];
-
-      const prompt = `Analise a imagem deste documento (RG ou CPF) e extraia a data de nascimento. Retorne APENAS a data no formato YYYY-MM-DD (ex: 2002-11-20). Se não for possível encontrar ou a imagem estiver ilegível, responda apenas 'NOT_FOUND'.`;
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inlineData: { mimeType, data: rawData } }
-            ]
-          }]
-        })
-      });
-
-      if (!response.ok) throw new Error("Erro no Gemini API");
-      const result = await response.json();
-      const text = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (text && text !== 'NOT_FOUND' && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
-        return text;
-      }
-    } catch (err) {
-      console.error("Erro na extração de data de nascimento via Gemini:", err);
-    }
-    return null;
-  };
-
-  const handleImproveJustification = async () => {
-    if (!justification.trim()) return;
-    if (!apiKey) { alert('Recurso de IA não configurado (defina VITE_GEMINI_API_KEY no arquivo .env).'); return; }
-    setIsImproving(true);
-    try {
-      const prompt = `Você é um assistente de RH de uma clínica. Reescreva a seguinte justificativa de ponto de um estagiário para que fique mais formal, clara e concisa (máximo 2 frases). Mantenha o motivo original. Texto original: "${justification}"`;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const result = await fetchWithRetry(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      });
-      const improvedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (improvedText) setJustification(improvedText.trim());
-    } catch (error) {
-      console.error('Erro ao melhorar texto:', error);
-    } finally {
-      setIsImproving(false);
-    }
-  };
-
-  const handleAnalyzeRecords = async () => {
-    if (filteredRecords.length === 0) return;
-    if (!apiKey) { setAiSummary('Recurso de IA não configurado (defina VITE_GEMINI_API_KEY no arquivo .env).'); return; }
-    setIsAnalyzing(true);
-    try {
-      const recordsText = JSON.stringify(
-        filteredRecords.slice(0, 50).map((r) => ({
-          nome: r.internName, acao: r.action, dataHora: r.timestamp,
-          unidade: r.geo?.unitName, justificativa: r.justification,
-        }))
-      );
-      const prompt = `Analise os seguintes registros de ponto de estagiários de uma clínica (2 unidades). Faça um breve resumo gerencial destacando padrões, anomalias ou justificativas notáveis. Seja conciso e profissional. Registros: ${recordsText}`;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const result = await fetchWithRetry(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      });
-      const analysis = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (analysis) setAiSummary(analysis);
-    } catch (error) {
-      console.error('Erro ao analisar registros:', error);
-      setAiSummary('Não foi possível gerar a análise no momento.');
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   // ---- Último movimento do dia (evita erros) ----
@@ -4081,26 +3984,6 @@ export default function App() {
                         >
                           <Upload size={12} /> Selecionar CPF/RG *
                         </button>
-                        
-                        {cadastroCpfRgFile && cadastroCpfRgFile.type?.startsWith('image/') && isAiExtractionActive && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              toast.info("Processando documento via IA...");
-                              const dob = await extractBirthdateFromDoc(cadastroCpfRgFile.content);
-                              if (dob) {
-                                setCadastroForm(prev => ({ ...prev, birthdate: dob }));
-                                setIsAiExtractionActive(false);
-                                toast.success("Data de nascimento extraída e preenchida com sucesso!");
-                              } else {
-                                toast.error("Não foi possível extrair a data. Digite-a manualmente.");
-                              }
-                            }}
-                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] py-1.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors shadow"
-                          >
-                            <Sparkles size={12} /> Varredura por IA (Gemini)
-                          </button>
-                        )}
                       </div>
                     </div>
 
@@ -7624,91 +7507,6 @@ export default function App() {
       </div>
     </div>
   );
-
-  // renderResumoGerencial — Aba de IA e Resumo Gerencial
-  const renderResumoGerencial = () => {
-    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
-    const sortedInterns = [...filteredInterns].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    return (
-      <div className="space-y-4">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2">
-              <Bot size={22} className="text-blue-600" /> Resumo Gerencial (IA)
-            </h2>
-            <button
-              onClick={handleAnalyzeRecords}
-              disabled={isAnalyzing || records.length === 0}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
-            >
-              {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              ✨ Gerar Insights Gerenciais
-            </button>
-          </div>
-          <div className="bg-white rounded-lg p-4 text-gray-700 text-sm whitespace-pre-line min-h-[80px] border border-blue-50">
-            {isAnalyzing ? (
-              <div className="flex items-center justify-center h-full text-blue-500 gap-2">
-                <Loader2 size={20} className="animate-spin" /> Analisando padrões de estágio...
-              </div>
-            ) : aiSummary ? aiSummary : (
-              <span className="text-gray-400 italic">Clique no botão para gerar uma análise inteligente com dados de frequência, relatórios e contratos dos estagiários.</span>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
-          <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-              <Users size={20} className="text-blue-600" /> Estagiários (ordem alfabética)
-            </h2>
-            <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
-              {sortedInterns.length} cadastros
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-gray-50 text-gray-600 uppercase tracking-wider border-b border-gray-100">
-                  <th className="p-3 font-semibold">Nome</th>
-                  <th className="p-3 font-semibold">Curso / Instituição</th>
-                  <th className="p-3 font-semibold">Unidade</th>
-                  <th className="p-3 font-semibold">Vigência</th>
-                  <th className="p-3 font-semibold text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {sortedInterns.length === 0 ? (
-                  <tr><td colSpan="5" className="p-4 text-center text-gray-400">Nenhum estagiário cadastrado.</td></tr>
-                ) : sortedInterns.map(intern => (
-                  <tr key={intern.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-3 font-bold text-gray-800">
-                      {intern.name}
-                      {intern.cpf && <div className="text-[10px] text-gray-400 font-normal">CPF: {intern.cpf}</div>}
-                    </td>
-                    <td className="p-3 text-slate-600">
-                      <div>{intern.course || '—'}</div>
-                      <div className="text-[10px] text-gray-400">{intern.institution || ''}</div>
-                    </td>
-                    <td className="p-3 text-slate-600">{intern.unitId ? unitName(intern.unitId) : '—'}</td>
-                    <td className="p-3 text-slate-600">
-                      {formatDate(intern.startDate)} a {formatDate(intern.endDate)}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        intern.active !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        {intern.active !== false ? 'Ativo' : 'Inativo'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // ============================================================
   // PAINEL DA SUPERVISÃO (admin)

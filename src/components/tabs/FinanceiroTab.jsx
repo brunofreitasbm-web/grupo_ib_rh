@@ -24,7 +24,7 @@ export default function FinanceiroTab({ filterUnit }) {
       // Fetch records for the selected month to keep queries lightweight
       const { data: recordsData } = await supabase
         .from('records')
-        .select('*')
+        .select('id, intern_id, intern_name, action, timestamp, justification, is_manual, geo, days_away')
         .gte('timestamp', `${filterFinanceMonth}-01T00:00:00`)
         .order('timestamp', { ascending: false });
 

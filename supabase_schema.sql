@@ -572,3 +572,14 @@ alter publication supabase_realtime add table public.interns;
 alter publication supabase_realtime add table public.records;
 alter publication supabase_realtime add table public.units;
 
+-- =========================================================================
+-- ÍNDICES DE PERFORMANCE (ACELERAR QUERIES E REGRAS RLS)
+-- =========================================================================
+CREATE INDEX IF NOT EXISTS idx_records_intern_id ON public.records(intern_id);
+CREATE INDEX IF NOT EXISTS idx_records_timestamp ON public.records(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_records_action ON public.records(action);
+CREATE INDEX IF NOT EXISTS idx_interns_unit_id ON public.interns(unit_id);
+CREATE INDEX IF NOT EXISTS idx_interns_active ON public.interns(active);
+CREATE INDEX IF NOT EXISTS idx_document_contents_intern ON public.document_contents(intern_id, doc_key);
+
+

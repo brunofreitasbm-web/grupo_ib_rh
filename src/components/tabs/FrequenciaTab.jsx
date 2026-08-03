@@ -15,6 +15,28 @@ export default function FrequenciaTab({ filterUnit }) {
   const [viewDocBase64, setViewDocBase64] = useState(null);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
+  const [photoLoading, setPhotoLoading] = useState(false);
+
+  const handleOpenPhotoModal = async (record) => {
+    if (!record.photo) {
+      setPhotoLoading(true);
+      try {
+        const { data } = await supabase
+          .from('records')
+          .select('photo')
+          .eq('id', record.id)
+          .single();
+        if (data?.photo) {
+          record = { ...record, photo: data.photo };
+        }
+      } catch (e) {
+        console.error('Erro ao carregar foto do registro:', e);
+      } finally {
+        setPhotoLoading(false);
+      }
+    }
+    setSelectedRecordPhoto(record);
+  };
 
   const LABOR = {
     maxDailyHours: 6,
@@ -35,7 +57,7 @@ export default function FrequenciaTab({ filterUnit }) {
 
       const { data: recordsData } = await supabase
         .from('records')
-        .select('*')
+        .select('id, intern_id, intern_name, action, justification, timestamp, is_manual, justification_doc, geo, days_away, created_at')
         .order('timestamp', { ascending: false })
         .limit(250); // limit to recent records for speed
 
@@ -314,14 +336,18 @@ export default function FrequenciaTab({ filterUnit }) {
                 {filteredRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-gray-50 transition-colors text-xs">
                     <td className="p-3 whitespace-nowrap text-center">
-                      {record.photo ? (
+                      {record.photo || record.geo?.type === 'facial' || (!record.isManual && record.action !== 'ocorrencia') ? (
                         <button
                           type="button"
-                          onClick={() => setSelectedRecordPhoto(record)}
+                          onClick={() => handleOpenPhotoModal(record)}
                           className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all flex items-center justify-center bg-slate-100 mx-auto"
                           title="Clique para ampliar foto de biometria"
                         >
-                          <img src={record.photo} alt="Face check" className="w-full h-full object-cover" />
+                          {record.photo ? (
+                            <img src={record.photo} alt="Face check" className="w-full h-full object-cover" />
+                          ) : (
+                            <Camera size={16} className="text-slate-400" />
+                          )}
                         </button>
                       ) : record.isManual ? (
                         <span
@@ -466,14 +492,18 @@ export default function FrequenciaTab({ filterUnit }) {
                           </div>
 
                           <div className="shrink-0 flex items-center gap-2 ml-auto sm:ml-0">
-                            {record.photo ? (
+                            {record.photo || record.geo?.type === 'facial' || (!record.isManual && record.action !== 'ocorrencia') ? (
                               <button
                                 type="button"
-                                onClick={() => setSelectedRecordPhoto(record)}
+                                onClick={() => handleOpenPhotoModal(record)}
                                 className="relative w-12 h-16 rounded-lg overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all flex items-center justify-center bg-slate-50 shadow-sm"
                                 title="Visualizar Foto Facial"
                               >
-                                <img src={record.photo} alt="Face check" className="w-full h-full object-cover" />
+                                {record.photo ? (
+                                  <img src={record.photo} alt="Face check" className="w-full h-full object-cover" />
+                                ) : (
+                                  <Camera size={18} className="text-slate-400" />
+                                )}
                                 <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
                                   <Camera size={12} className="text-white" />
                                 </div>

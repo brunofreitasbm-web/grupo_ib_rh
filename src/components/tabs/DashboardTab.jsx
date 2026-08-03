@@ -28,7 +28,7 @@ export default function DashboardTab({ filterUnit }) {
       const currentMonthPrefix = new Date().toISOString().substring(0, 7);
       const { data: recordsData, error: recordsError } = await supabase
         .from('records')
-        .select('*')
+        .select('id, intern_id, intern_name, action, timestamp, justification, is_manual, geo, days_away')
         .gte('timestamp', `${currentMonthPrefix}-01T00:00:00`)
         .order('timestamp', { ascending: false });
 

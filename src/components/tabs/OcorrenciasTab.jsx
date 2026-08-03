@@ -33,7 +33,7 @@ export default function OcorrenciasTab({ filterUnit }) {
 
       const { data: recordsData } = await supabase
         .from('records')
-        .select('*')
+        .select('id, intern_id, intern_name, action, justification, timestamp, is_manual, justification_doc, geo, days_away, created_at')
         .order('timestamp', { ascending: false })
         .limit(300);
 

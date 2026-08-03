@@ -28,6 +28,14 @@ export default function EstagiariosTab({ filterUnit }) {
   const [isBioUploadModalOpen, setIsBioUploadModalOpen] = useState(false);
   const [bioUploadStatus, setBioUploadStatus] = useState('processing'); // 'processing', 'success', 'error'
   const [bioUploadMsg, setBioUploadMsg] = useState('');
+
+  // State da Varredura em Lote de Biometria
+  const [isBatchScanOpen, setIsBatchScanOpen] = useState(false);
+  const [batchScanRunning, setBatchScanRunning] = useState(false);
+  const [batchScanTotal, setBatchScanTotal] = useState(0);
+  const [batchScanCurrent, setBatchScanCurrent] = useState(0);
+  const [batchScanCurrentName, setBatchScanCurrentName] = useState('');
+  const [batchScanResults, setBatchScanResults] = useState([]); // [{name, status:'ok'|'no_face'|'error'}]
   const [bioUploadTimeLeft, setBioUploadTimeLeft] = useState(20);
 
   const bioVideoRef = useRef(null);
@@ -555,6 +563,69 @@ export default function EstagiariosTab({ filterUnit }) {
     }
   };
 
+  // ============================================================
+  // VARREDURA EM LOTE — Extração biométrica de todas as fotos
+  // ============================================================
+  const handleBatchBioScan = async () => {
+    // Alvo: estagiários com foto 3x4 mas sem face_descriptor ainda
+    const targets = interns.filter(i => i.photo && !i.faceDescriptor);
+    if (targets.length === 0) {
+      toast.info('Nenhum estagiário pendente de extração biométrica.');
+      return;
+    }
+
+    setIsBatchScanOpen(true);
+    setBatchScanRunning(true);
+    setBatchScanTotal(targets.length);
+    setBatchScanCurrent(0);
+    setBatchScanResults([]);
+
+    const results = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const intern = targets[i];
+      setBatchScanCurrent(i + 1);
+      setBatchScanCurrentName(intern.name);
+
+      try {
+        // Timeout de 25s por estagiário
+        const descriptorPromise = getFaceDescriptor(intern.photo);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('TIMEOUT')), 25000)
+        );
+        const descriptor = await Promise.race([descriptorPromise, timeoutPromise]);
+
+        if (descriptor && descriptor.length === 128) {
+          const descriptorStr = JSON.stringify(Array.from(descriptor));
+          const { error } = await supabase
+            .from('interns')
+            .update({
+              face_descriptor: descriptorStr,
+              registration_status: 'biometria ok'
+            })
+            .eq('id', intern.id);
+
+          if (error) throw error;
+          results.push({ name: intern.name, status: 'ok' });
+        } else {
+          results.push({ name: intern.name, status: 'no_face' });
+        }
+      } catch (err) {
+        const isTimeout = err.message === 'TIMEOUT';
+        results.push({ name: intern.name, status: isTimeout ? 'timeout' : 'error' });
+        console.warn(`Erro na varredura de ${intern.name}:`, err.message);
+      }
+
+      setBatchScanResults([...results]);
+    }
+
+    setBatchScanRunning(false);
+    fetchData(); // Recarrega a lista com os status atualizados
+
+    const successCount = results.filter(r => r.status === 'ok').length;
+    toast.success(`Varredura concluída: ${successCount} de ${targets.length} biometria(s) extraída(s) com sucesso.`);
+  };
+
   const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
 
@@ -587,12 +658,22 @@ export default function EstagiariosTab({ filterUnit }) {
           <Users size={20} className="text-blue-600" /> Gestão de Estagiários
         </h2>
         {!showManage && (
-          <button
-            onClick={() => setShowManage(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors inline-flex items-center gap-1"
-          >
-            <Plus size={14} /> Novo Estagiário
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBatchBioScan}
+              disabled={batchScanRunning}
+              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Extrair biometria de todos os estagiários com foto mas sem biodados"
+            >
+              <ScanFace size={14} /> Varredura em Lote
+            </button>
+            <button
+              onClick={() => setShowManage(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors inline-flex items-center gap-1"
+            >
+              <Plus size={14} /> Novo Estagiário
+            </button>
+          </div>
         )}
       </div>
 
@@ -1138,6 +1219,109 @@ export default function EstagiariosTab({ filterUnit }) {
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {bioUploadStatus === 'processing' ? 'Aguardando...' : 'Fechar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL DE VARREDURA EM LOTE */}
+      {isBatchScanOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-100 flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ScanFace size={20} className="text-indigo-400" />
+                <div>
+                  <p className="text-sm font-bold">Varredura Biométrica em Lote</p>
+                  <p className="text-[10px] text-slate-400">Extração de biodados faciais de todas as fotos 3x4</p>
+                </div>
+              </div>
+              {!batchScanRunning && (
+                <button
+                  onClick={() => setIsBatchScanOpen(false)}
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {batchScanRunning && (
+              <div className="px-5 pt-4 pb-2">
+                <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                  <span className="font-semibold truncate max-w-[70%]">Processando: {batchScanCurrentName}</span>
+                  <span>{batchScanCurrent} / {batchScanTotal}</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${batchScanTotal > 0 ? (batchScanCurrent / batchScanTotal) * 100 : 0}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-indigo-600 mt-1.5 font-semibold flex items-center gap-1">
+                  <RefreshCw size={10} className="animate-spin" /> Aguarde, processando estagi&aacute;rios...
+                </p>
+              </div>
+            )}
+
+            {!batchScanRunning && batchScanResults.length > 0 && (
+              <div className="px-5 pt-3 pb-1">
+                <div className="flex gap-3 text-xs font-bold">
+                  <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    ✅ {batchScanResults.filter(r => r.status === 'ok').length} validados
+                  </span>
+                  <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    ⚠️ {batchScanResults.filter(r => r.status === 'no_face').length} sem rosto
+                  </span>
+                  <span className="text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                    ❌ {batchScanResults.filter(r => r.status === 'error' || r.status === 'timeout').length} falha
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Results list */}
+            <div className="flex-1 overflow-y-auto max-h-72 px-5 py-3 space-y-1.5">
+              {batchScanResults.length === 0 && batchScanRunning && (
+                <p className="text-xs text-slate-400 italic text-center py-4">Iniciando análise...</p>
+              )}
+              {batchScanResults.map((r, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs border border-slate-100 rounded-lg px-3 py-2 bg-slate-50">
+                  <span className="font-medium text-slate-700 truncate max-w-[70%]">{r.name}</span>
+                  {r.status === 'ok' && (
+                    <span className="flex items-center gap-1 text-emerald-700 font-bold text-[10px]">
+                      <CheckCircle2 size={12} /> Biometria OK
+                    </span>
+                  )}
+                  {r.status === 'no_face' && (
+                    <span className="flex items-center gap-1 text-amber-700 font-bold text-[10px]">
+                      <AlertCircle size={12} /> Rosto não detectado
+                    </span>
+                  )}
+                  {r.status === 'timeout' && (
+                    <span className="flex items-center gap-1 text-rose-600 font-bold text-[10px]">
+                      <AlertCircle size={12} /> Tempo esgotado
+                    </span>
+                  )}
+                  {r.status === 'error' && (
+                    <span className="flex items-center gap-1 text-rose-600 font-bold text-[10px]">
+                      <AlertCircle size={12} /> Erro
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="px-5 py-3 border-t flex justify-end">
+              <button
+                type="button"
+                disabled={batchScanRunning}
+                onClick={() => setIsBatchScanOpen(false)}
+                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {batchScanRunning ? 'Processando...' : 'Fechar'}
               </button>
             </div>
           </div>
