@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage } from '../../utils/mappings';
+import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
@@ -500,20 +500,28 @@ export default function EstagiariosTab({ filterUnit }) {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            await supabase.from('interns').update({ 
+            const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
               face_descriptor: payload.faceDescriptor || null
             }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         } else {
           const newId = createResult.data;
-          if (newId) {
-            await supabase.from('interns').update({ 
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor)) {
+            const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
               face_descriptor: payload.faceDescriptor || null
             }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         }
         toast.success('Estagiário criado com sucesso!');
@@ -522,7 +530,7 @@ export default function EstagiariosTab({ filterUnit }) {
       fetchData();
     } catch (error) {
       console.error('Erro ao salvar estagiário:', error);
-      toast.error('Erro ao salvar estagiário: ' + (error.message || error));
+      toast.error('Erro ao salvar estagiário: ' + getFriendlyDbErrorMessage(error));
     }
   };
 

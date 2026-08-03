@@ -8,6 +8,7 @@ import {
   ScanFace, RefreshCw, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
+import { getFriendlyDbErrorMessage } from './utils/mappings';
 import * as faceapi from 'face-api.js';
 
 // Supabase Client Integration
@@ -2232,19 +2233,27 @@ export default function App() {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              alert('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         } else {
           const newId = createResult.data;
-          if (newId) {
-            await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor)) {
+            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            if (updateError) {
+              console.error('Erro ao gravar dados complementares do estagiário:', updateError);
+              alert('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+            }
           }
         }
       }
       resetForm();
     } catch (error) {
       console.error('Erro ao salvar estagiário:', error);
-      alert('Erro ao salvar estagiário: ' + (error.message || error));
+      alert('Erro ao salvar estagiário: ' + getFriendlyDbErrorMessage(error));
     }
   };
 
@@ -3476,9 +3485,9 @@ export default function App() {
           });
           if (fallbackResult.error) throw fallbackResult.error;
           newId = fallbackResult.data;
-          
+
           // No fallback antigo, precisamos forçar o update dos documentos (tentativa)
-          await supabase
+          const { error: fallbackUpdateError } = await supabase
             .from('interns')
             .update({
               registration_status: cadastroForm.registrationStatus || 'pending_validation',
@@ -3487,6 +3496,9 @@ export default function App() {
               birthdate: cadastroForm.birthdate || null
             })
             .eq('id', newId);
+          if (fallbackUpdateError) {
+            console.error('Erro ao gravar dados complementares do cadastro (fallback):', fallbackUpdateError);
+          }
         } else {
           newId = createResult.data;
         }
@@ -3505,7 +3517,7 @@ export default function App() {
             console.error("Erro ao obter descritor facial no envio:", bioError);
           }
         }
-        await supabase
+        const { error: finalUpdateError } = await supabase
           .from('interns')
           .update({
             birthdate: cadastroForm.birthdate || null,
@@ -3513,12 +3525,15 @@ export default function App() {
             registration_status: cadastroForm.registrationStatus || 'pending_validation'
           })
           .eq('id', newId);
+        if (finalUpdateError) {
+          console.error('Erro ao gravar dados complementares do cadastro:', finalUpdateError);
+        }
 
         setCadastroSuccess(true);
         fetchInterns();
       } catch (err) {
         console.error("Erro ao realizar cadastro:", err);
-        alert("Erro ao enviar cadastro: " + (err.message || err));
+        alert("Erro ao enviar cadastro: " + getFriendlyDbErrorMessage(err));
       } finally {
         setIsSubmittingCadastro(false);
       }
