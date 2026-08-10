@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ShieldAlert, FileText, MessageSquare } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
@@ -25,7 +25,8 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
         .from('records')
         .select('*')
         .eq('action', 'supervisor_chat')
-        .order('timestamp', { ascending: false });
+        .order('timestamp', { ascending: false })
+        .limit(300);
 
       if (chatData) setChatRecords(chatData);
     } catch (err) {
@@ -111,15 +112,27 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
     };
   }, [fetchData]);
 
-  const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
-  const internsRhData = filteredInterns.map(intern => {
-    const metrics = getInternRhMetrics(intern);
-    return { intern, metrics };
-  });
+  const filteredInterns = useMemo(
+    () => interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit),
+    [interns, filterUnit]
+  );
+  const internsRhData = useMemo(
+    () => filteredInterns.map(intern => ({ intern, metrics: getInternRhMetrics(intern) })),
+    [filteredInterns]
+  );
 
-  const activeInternsRh = internsRhData.filter(d => d.intern.active !== false);
-  const overdueReports = activeInternsRh.filter(d => d.metrics.reportOverdue);
-  const contractAlerts = activeInternsRh.filter(d => d.metrics.isExceededLegalLimit || d.metrics.timeRemainingDays < 90);
+  const activeInternsRh = useMemo(
+    () => internsRhData.filter(d => d.intern.active !== false),
+    [internsRhData]
+  );
+  const overdueReports = useMemo(
+    () => activeInternsRh.filter(d => d.metrics.reportOverdue),
+    [activeInternsRh]
+  );
+  const contractAlerts = useMemo(
+    () => activeInternsRh.filter(d => d.metrics.isExceededLegalLimit || d.metrics.timeRemainingDays < 90),
+    [activeInternsRh]
+  );
 
   if (loading) {
     return (

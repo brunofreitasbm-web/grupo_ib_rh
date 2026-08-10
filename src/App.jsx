@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
 import {
   Clock, User, FileText, CheckCircle, List, ArrowLeft,
   LogIn, LogOut, ShieldAlert, Loader2,
@@ -16,18 +16,20 @@ import { supabase } from './supabase';
 
 import Omnibar from './components/Omnibar';
 import { toast } from 'sonner';
-import DashboardTab from './components/tabs/DashboardTab';
-import FrequenciaTab from './components/tabs/FrequenciaTab';
-import EstagiariosTab from './components/tabs/EstagiariosTab';
-import AcompanhamentoTab from './components/tabs/AcompanhamentoTab';
-import FinanceiroTab from './components/tabs/FinanceiroTab';
-import OcorrenciasTab from './components/tabs/OcorrenciasTab';
-import EncerramentoTab from './components/tabs/EncerramentoTab';
-import DocumentosTab from './components/tabs/DocumentosTab';
-import DossieTab from './components/tabs/DossieTab';
-import AlertasRhTab from './components/tabs/AlertasRhTab';
-import AniversariantesTab from './components/tabs/AniversariantesTab';
-import ConfiguracoesTab from './components/tabs/ConfiguracoesTab';
+// Abas administrativas carregadas sob demanda (code-splitting): reduz o bundle
+// inicial para usuários que só usam o quiosque de ponto (ex.: estagiários).
+const DashboardTab = lazy(() => import('./components/tabs/DashboardTab'));
+const FrequenciaTab = lazy(() => import('./components/tabs/FrequenciaTab'));
+const EstagiariosTab = lazy(() => import('./components/tabs/EstagiariosTab'));
+const AcompanhamentoTab = lazy(() => import('./components/tabs/AcompanhamentoTab'));
+const FinanceiroTab = lazy(() => import('./components/tabs/FinanceiroTab'));
+const OcorrenciasTab = lazy(() => import('./components/tabs/OcorrenciasTab'));
+const EncerramentoTab = lazy(() => import('./components/tabs/EncerramentoTab'));
+const DocumentosTab = lazy(() => import('./components/tabs/DocumentosTab'));
+const DossieTab = lazy(() => import('./components/tabs/DossieTab'));
+const AlertasRhTab = lazy(() => import('./components/tabs/AlertasRhTab'));
+const AniversariantesTab = lazy(() => import('./components/tabs/AniversariantesTab'));
+const ConfiguracoesTab = lazy(() => import('./components/tabs/ConfiguracoesTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 
@@ -341,6 +343,31 @@ const validateCPF = (cpf) => {
   return true;
 };
 
+// Relógio isolado: mantém o tick de 1s fora do estado do App para não
+// re-renderizar a árvore inteira a cada segundo.
+function LiveClock({ showDate = false }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <>
+      <div className="mt-4 text-3xl font-light tracking-wider flex items-center justify-center gap-2">
+        <Clock size={24} className="text-blue-200" />
+        {now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+      </div>
+      {showDate && (
+        <p className="text-blue-200 text-[10px] mt-1">
+          {now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+      )}
+    </>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('kiosk'); // 'landing' | 'kiosk' | 'admin'
@@ -550,9 +577,6 @@ export default function App() {
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [viewingMinutaIntern, setViewingMinutaIntern] = useState(null);
 
-  // Relógio
-  const [currentTime, setCurrentTime] = useState(new Date());
-
   // 1. Autenticação e Sessão do Supabase
   const handleSession = useCallback(async (session) => {
     if (session) {
@@ -700,31 +724,6 @@ export default function App() {
   }, [user, fetchPendingChatCount]);
 
   useEffect(() => {
-    if (!user || user.user_metadata?.role !== 'supervisor') return;
-
-    const channel = supabase
-      .channel('admin-records-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const newRecord = payload.new;
-          if (newRecord.action === 'supervisor_chat') {
-            toast.info(`Novo chamado recebido de ${newRecord.intern_name}: "${newRecord.justification?.substring(0, 30)}..."`, {
-              onClick: () => setActiveAdminTab('rh'),
-              autoClose: 8000
-            });
-          }
-        }
-        fetchRecords();
-        fetchPendingChatCount();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user, fetchRecords, fetchPendingChatCount]);
-
-  useEffect(() => {
     const handleOnline = async () => {
       const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
       if (offlineRecords.length > 0) {
@@ -781,16 +780,24 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     fetchRecords();
+    const isSupervisor = user.user_metadata?.role === 'supervisor';
     const channel = supabase
       .channel('records-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isSupervisor && payload.eventType === 'INSERT' && payload.new?.action === 'supervisor_chat') {
+          toast.info(`Novo chamado recebido de ${payload.new.intern_name}: "${payload.new.justification?.substring(0, 30)}..."`, {
+            onClick: () => setActiveAdminTab('rh'),
+            autoClose: 8000
+          });
+        }
         fetchRecords();
+        if (isSupervisor) fetchPendingChatCount();
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, fetchRecords]);
+  }, [user, fetchRecords, fetchPendingChatCount]);
 
   // 3. Lista de estagiários
   const fetchInterns = useCallback(async () => {
@@ -912,11 +919,6 @@ export default function App() {
   }, [user, fetchUnits]);
 
 
-  // Relógio
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // --- CONTROLE FACIAL & RADAR GEOLOCALIZAÇÃO ---
   const startCamera = async () => {
@@ -985,6 +987,8 @@ export default function App() {
 
   // Loop de Detecção Facial em tempo real para Bipagem e Ponto Automático
   const faceDetectionLoopRef = useRef(null);
+  // Cache do descritor facial de referência calculado a partir da foto (evita reprocessar o mesmo rosto a cada iteração do loop)
+  const referenceDescriptorCacheRef = useRef({});
 
   useEffect(() => {
     let active = true;
@@ -1013,13 +1017,19 @@ export default function App() {
 
       let targetDescriptor = intern.faceDescriptor;
       if ((!targetDescriptor || targetDescriptor === '[]') && intern.photo) {
-        try {
-          const refDesc = await getFaceDescriptor(intern.photo);
-          if (refDesc) {
-            targetDescriptor = JSON.stringify(refDesc);
+        const cached = referenceDescriptorCacheRef.current[intern.id];
+        if (cached) {
+          targetDescriptor = cached;
+        } else {
+          try {
+            const refDesc = await getFaceDescriptor(intern.photo);
+            if (refDesc) {
+              targetDescriptor = JSON.stringify(refDesc);
+              referenceDescriptorCacheRef.current[intern.id] = targetDescriptor;
+            }
+          } catch (e) {
+            console.error("Erro ao obter biometria de referência no loop:", e);
           }
-        } catch (e) {
-          console.error("Erro ao obter biometria de referência no loop:", e);
         }
       }
 
@@ -1567,9 +1577,15 @@ export default function App() {
   // Rotina de Backup de Registros e Cadastros
   const handleManualBackup = useCallback(async () => {
     try {
-      const { data: internsData } = await supabase.from('interns').select('*');
-      const { data: recordsData } = await supabase.from('records').select('*');
-      const { data: unitsData } = await supabase.from('units').select('*');
+      const [
+        { data: internsData },
+        { data: recordsData },
+        { data: unitsData }
+      ] = await Promise.all([
+        supabase.from('interns').select('*'),
+        supabase.from('records').select('*'),
+        supabase.from('units').select('*')
+      ]);
 
       const backupObj = {
         exportedAt: new Date().toISOString(),
@@ -1619,9 +1635,15 @@ export default function App() {
 
     if (shouldBackup) {
       try {
-        const { data: internsData } = await supabase.from('interns').select('*');
-        const { data: recordsData } = await supabase.from('records').select('*');
-        const { data: unitsData } = await supabase.from('units').select('*');
+        const [
+          { data: internsData },
+          { data: recordsData },
+          { data: unitsData }
+        ] = await Promise.all([
+          supabase.from('interns').select('*'),
+          supabase.from('records').select('*'),
+          supabase.from('units').select('*')
+        ]);
 
         const backupObj = {
           exportedAt: new Date().toISOString(),
@@ -2760,13 +2782,7 @@ export default function App() {
               <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-16 w-auto mb-2 rounded-lg shadow-sm" />
               <h1 className="text-2xl font-bold mb-1">Porto Terapia</h1>
               <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
-              <div className="mt-4 text-3xl font-light tracking-wider flex items-center justify-center gap-2">
-                <Clock size={24} className="text-blue-200" />
-                {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-              </div>
-              <p className="text-blue-200 text-[10px] mt-1">
-                {currentTime.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
+              <LiveClock showDate />
             </div>
 
             <div className="p-6">
@@ -2967,10 +2983,7 @@ export default function App() {
                 ? 'Selecione seu nome na listbox abaixo' 
                 : `${loggedInIntern.course} • ${loggedInIntern.shift}`}
             </p>
-            <div className="mt-4 text-3xl font-light tracking-wider flex items-center justify-center gap-2">
-              <Clock size={24} className="text-blue-200" />
-              {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-            </div>
+            <LiveClock />
           </div>
 
           <div className="p-6">
@@ -7656,18 +7669,24 @@ export default function App() {
 
             {/* ── CONTEÚDO DAS ABAS ── */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6">
-              {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-              {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-              {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
-              {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
-              {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
+              <Suspense fallback={
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              }>
+                {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+                {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+                {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
+                {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
+                {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
+              </Suspense>
             </div>
 
           </div>

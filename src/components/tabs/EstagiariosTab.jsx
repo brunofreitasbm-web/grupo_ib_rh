@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
@@ -634,7 +634,10 @@ export default function EstagiariosTab({ filterUnit }) {
     toast.success(`Varredura concluída: ${successCount} de ${targets.length} biometria(s) extraída(s) com sucesso.`);
   };
 
-  const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
+  const filteredInterns = useMemo(
+    () => interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit),
+    [interns, filterUnit]
+  );
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
 
   if (loading) {
