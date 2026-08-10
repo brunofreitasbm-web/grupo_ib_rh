@@ -38,7 +38,27 @@ export default function DocumentosTab({ filterUnit, onPrintDocument }) {
     };
   }, [fetchData]);
 
-  const selectedInternData = interns.find(i => i.id === selectedPrintIntern);
+  const [selectedInternDocuments, setSelectedInternDocuments] = useState({});
+
+  useEffect(() => {
+    if (!selectedPrintIntern) {
+      setSelectedInternDocuments({});
+      return;
+    }
+    supabase
+      .from('interns')
+      .select('documents')
+      .eq('id', selectedPrintIntern)
+      .single()
+      .then(({ data }) => {
+        if (data?.documents) {
+          setSelectedInternDocuments(data.documents);
+        }
+      });
+  }, [selectedPrintIntern]);
+
+  const rawSelectedIntern = interns.find(i => i.id === selectedPrintIntern);
+  const selectedInternData = rawSelectedIntern ? { ...rawSelectedIntern, documents: selectedInternDocuments } : null;
 
   if (loading) {
     return (

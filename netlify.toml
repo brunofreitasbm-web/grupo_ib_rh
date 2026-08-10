@@ -12,8 +12,15 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Evita retornar index.html (MIME text/html) para assets JS/CSS inexistentes (404 real)
+[[redirects]]
+  from = "/assets/*"
+  to = "/assets/:splat"
+  status = 404
+
 # App de página única: qualquer rota cai no index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+

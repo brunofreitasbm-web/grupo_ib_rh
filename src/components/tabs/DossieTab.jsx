@@ -78,7 +78,7 @@ export default function DossieTab({ filterUnit }) {
     setUploadingDoc(true);
     try {
       const base64 = await fileToBase64(file);
-      const currentDocs = intern.documents || {};
+      const currentDocs = selectedInternDocuments || {};
       
       const updatedDocs = {
         ...currentDocs,
@@ -104,6 +104,7 @@ export default function DossieTab({ filterUnit }) {
         });
       if (contentError) throw contentError;
 
+      setSelectedInternDocuments(updatedDocs);
       if (fileInput) fileInput.value = '';
       alert('Documento anexado com sucesso!');
       fetchData();
@@ -174,8 +175,27 @@ export default function DossieTab({ filterUnit }) {
     document.body.removeChild(link);
   };
 
+  const [selectedInternDocuments, setSelectedInternDocuments] = useState({});
+
+  useEffect(() => {
+    if (!selectedAdmissionalIntern) {
+      setSelectedInternDocuments({});
+      return;
+    }
+    supabase
+      .from('interns')
+      .select('documents')
+      .eq('id', selectedAdmissionalIntern)
+      .single()
+      .then(({ data }) => {
+        if (data?.documents) {
+          setSelectedInternDocuments(data.documents);
+        }
+      });
+  }, [selectedAdmissionalIntern]);
+
   const selectedInternData = interns.find(i => i.id === selectedAdmissionalIntern);
-  const documentsMap = selectedInternData?.documents || {};
+  const documentsMap = selectedInternDocuments || {};
   const uploadedDocsCount = Object.keys(documentsMap).filter(key => !key.startsWith('ocorrencia_')).length;
   const progressPercent = Math.round((uploadedDocsCount / ADMISSIONAL_DOCUMENTS.length) * 100);
 

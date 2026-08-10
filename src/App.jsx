@@ -15,21 +15,23 @@ import * as faceapi from 'face-api.js';
 import { supabase } from './supabase';
 
 import Omnibar from './components/Omnibar';
+import ErrorBoundary from './components/ErrorBoundary';
+import lazyWithRetry from './utils/lazyWithRetry';
 import { toast } from 'sonner';
 // Abas administrativas carregadas sob demanda (code-splitting): reduz o bundle
 // inicial para usuários que só usam o quiosque de ponto (ex.: estagiários).
-const DashboardTab = lazy(() => import('./components/tabs/DashboardTab'));
-const FrequenciaTab = lazy(() => import('./components/tabs/FrequenciaTab'));
-const EstagiariosTab = lazy(() => import('./components/tabs/EstagiariosTab'));
-const AcompanhamentoTab = lazy(() => import('./components/tabs/AcompanhamentoTab'));
-const FinanceiroTab = lazy(() => import('./components/tabs/FinanceiroTab'));
-const OcorrenciasTab = lazy(() => import('./components/tabs/OcorrenciasTab'));
-const EncerramentoTab = lazy(() => import('./components/tabs/EncerramentoTab'));
-const DocumentosTab = lazy(() => import('./components/tabs/DocumentosTab'));
-const DossieTab = lazy(() => import('./components/tabs/DossieTab'));
-const AlertasRhTab = lazy(() => import('./components/tabs/AlertasRhTab'));
-const AniversariantesTab = lazy(() => import('./components/tabs/AniversariantesTab'));
-const ConfiguracoesTab = lazy(() => import('./components/tabs/ConfiguracoesTab'));
+const DashboardTab = lazyWithRetry(() => import('./components/tabs/DashboardTab'));
+const FrequenciaTab = lazyWithRetry(() => import('./components/tabs/FrequenciaTab'));
+const EstagiariosTab = lazyWithRetry(() => import('./components/tabs/EstagiariosTab'));
+const AcompanhamentoTab = lazyWithRetry(() => import('./components/tabs/AcompanhamentoTab'));
+const FinanceiroTab = lazyWithRetry(() => import('./components/tabs/FinanceiroTab'));
+const OcorrenciasTab = lazyWithRetry(() => import('./components/tabs/OcorrenciasTab'));
+const EncerramentoTab = lazyWithRetry(() => import('./components/tabs/EncerramentoTab'));
+const DocumentosTab = lazyWithRetry(() => import('./components/tabs/DocumentosTab'));
+const DossieTab = lazyWithRetry(() => import('./components/tabs/DossieTab'));
+const AlertasRhTab = lazyWithRetry(() => import('./components/tabs/AlertasRhTab'));
+const AniversariantesTab = lazyWithRetry(() => import('./components/tabs/AniversariantesTab'));
+const ConfiguracoesTab = lazyWithRetry(() => import('./components/tabs/ConfiguracoesTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 
@@ -810,6 +812,7 @@ export default function App() {
         .order('name', { ascending: true });
       if (error) {
         console.error('Erro ao buscar estagiários:', error);
+        toast.error('Erro de conexão ao carregar estagiários. Tentando novamente...');
       } else {
         setInterns((data || []).map(mapInternFromDb));
       }
@@ -7682,24 +7685,26 @@ export default function App() {
 
             {/* ── CONTEÚDO DAS ABAS ── */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6">
-              <Suspense fallback={
-                <div className="flex justify-center items-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
-              }>
-                {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-                {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-                {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
-                {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
-                {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={
+                  <div className="flex justify-center items-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                }>
+                  {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+                  {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
+                  {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
+                  {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
+                </Suspense>
+              </ErrorBoundary>
             </div>
 
           </div>
