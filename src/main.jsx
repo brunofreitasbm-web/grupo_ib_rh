@@ -1,3 +1,9 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import { Toaster } from 'sonner';
+import './index.css';
+
 // Tratamento global para erros de carregamento de módulos dinâmicos (ex: novos deploys no Netlify)
 window.addEventListener('vite:preloadError', (event) => {
   console.warn('Detectada falha ao pré-carregar módulo estático/dinâmico. Recarregando a aplicação...');
