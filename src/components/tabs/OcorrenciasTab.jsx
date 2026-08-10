@@ -484,7 +484,7 @@ export default function OcorrenciasTab({ filterUnit }) {
                             className="inline-flex items-center gap-1 text-[9px] text-indigo-600 hover:text-indigo-800 font-semibold bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 transition-colors"
                           >
                             <FileText size={10} />
-                            Anexo: {record.justificationDoc.type.toUpperCase()} ({record.justificationDoc.size})
+                            Anexo: {record.justificationDoc?.type ? record.justificationDoc.type.toUpperCase() : 'DOCUMENTO'} ({record.justificationDoc.size || 'Anexo'})
                           </button>
                         </div>
                       )}

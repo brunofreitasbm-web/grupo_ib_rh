@@ -7536,13 +7536,13 @@ export default function App() {
                           onClick={() => {
                             setViewDocBase64(record.justificationDoc.content);
                             setViewDocName(record.justificationDoc.name);
-                            setViewDocType(`Comprovante: ${record.justificationDoc.type.toUpperCase()}`);
+                            setViewDocType(`Comprovante: ${record.justificationDoc?.type ? record.justificationDoc.type.toUpperCase() : 'DOCUMENTO'}`);
                           }}
                           className="inline-flex items-center gap-1 text-[9px] text-indigo-600 hover:text-indigo-800 font-semibold mt-1 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 transition-colors shadow-sm"
                           title="Clique para abrir comprovante de ocorrência"
                         >
                           <FileText size={10} />
-                          Anexo: {record.justificationDoc.type.toUpperCase()} ({record.justificationDoc.size})
+                          Anexo: {record.justificationDoc?.type ? record.justificationDoc.type.toUpperCase() : 'DOCUMENTO'} ({record.justificationDoc?.size || 'Anexo'})
                         </button>
                       )}
                     </td>
