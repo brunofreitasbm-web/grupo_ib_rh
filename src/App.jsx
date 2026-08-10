@@ -771,8 +771,7 @@ export default function App() {
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`PWA installation outcome: ${outcome}`);
+    await deferredPrompt.userChoice;
     setDeferredPrompt(null);
     setShowInstallBtn(false);
   };
@@ -856,13 +855,10 @@ export default function App() {
         })
         .then(({ error }) => {
           if (error) {
-            if (error.code === '23505' || error.message?.includes('duplicate key')) {
-              console.log('Estagiário TEste já existe no banco de dados.');
-            } else {
+            if (error.code !== '23505' && !error.message?.includes('duplicate key')) {
               console.error('Erro ao criar estagiário TEste:', error);
             }
           } else {
-            console.log('Estagiário TEste criado automaticamente via RPC.');
             fetchInterns();
           }
         });
@@ -896,7 +892,6 @@ export default function App() {
           if (upsertError) {
             console.error('Erro ao auto-atualizar unidades para 5km:', upsertError);
           } else {
-            console.log('Unidades auto-atualizadas para 5km com sucesso.');
             setUnits(updated);
           }
         });
@@ -1042,9 +1037,8 @@ export default function App() {
 
           if (detection && detection.descriptor && active) {
             const pointDescriptor = Array.from(detection.descriptor);
-            const { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
-            console.log(`[LOOP BIOMETRIA] Comparando rosto... Distância: ${distance.toFixed(3)}, Match: ${isMatch}`);
-            
+            const { isMatch } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+
             if (isMatch && active) {
               active = false; // Bloqueia novos acionamentos
 
@@ -1635,25 +1629,6 @@ export default function App() {
 
     if (shouldBackup) {
       try {
-        const [
-          { data: internsData },
-          { data: recordsData },
-          { data: unitsData }
-        ] = await Promise.all([
-          supabase.from('interns').select('*'),
-          supabase.from('records').select('*'),
-          supabase.from('units').select('*')
-        ]);
-
-        const backupObj = {
-          exportedAt: new Date().toISOString(),
-          interns: internsData || [],
-          records: recordsData || [],
-          units: unitsData || []
-        };
-
-        console.log(`[BACKUP AUTOMÁTICO] Enviando backup consolidado para ${email}...`, backupObj);
-        
         toast.info(`Iniciando backup automático (${interval})...`);
         setTimeout(() => {
           toast.success(`Backup programado enviado com sucesso para o e-mail: ${email}`);

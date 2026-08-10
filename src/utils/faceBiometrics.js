@@ -16,7 +16,6 @@ export async function loadModels() {
       await faceapi.nets.faceLandmark68Net.loadFromUri(url);
       await faceapi.nets.faceRecognitionNet.loadFromUri(url);
       modelsLoaded = true;
-      console.log('Modelos do face-api.js carregados com sucesso de:', url);
       return;
     } catch (err) {
       console.warn(`Falha ao carregar modelos da URL ${url}:`, err);

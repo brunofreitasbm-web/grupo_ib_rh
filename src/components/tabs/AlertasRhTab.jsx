@@ -54,34 +54,6 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
 
       if (error) throw error;
 
-      const timbreHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-          <div style="background-color: #1e3a8a; padding: 24px; text-align: center; color: white; border-bottom: 4px solid #f59e0b;">
-            <h1 style="margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">CLÍNICA PORTO TERAPIA</h1>
-            <p style="margin: 4px 0 0; font-size: 11px; color: #93c5fd; text-transform: uppercase;">Retorno Oficial da Supervisão Geral</p>
-          </div>
-          <div style="padding: 24px; color: #334155; line-height: 1.6; font-size: 13px;">
-            <p>Olá, <strong>${record.intern_name}</strong>,</p>
-            <p>A supervisão de estágio da Porto Terapia analisou a sua demanda e emitiu a resposta oficial abaixo:</p>
-            <div style="background-color: #f8fafc; border-left: 4px solid #1e3a8a; padding: 16px; margin: 20px 0; border-radius: 4px;">
-              <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">Sua Mensagem:</div>
-              <div style="font-style: italic; color: #475569;">"${record.justification}"</div>
-              <div style="font-size: 11px; font-weight: bold; color: #1e3a8a; text-transform: uppercase; margin-top: 16px; margin-bottom: 6px;">Resposta da Supervisão:</div>
-              <div style="font-weight: 500; color: #1e293b;">${replyText.trim()}</div>
-            </div>
-            <p style="font-size: 11px; color: #64748b;">
-              Esta é uma notificação automática. Caso precise de mais esclarecimentos, responda a este e-mail ou fale diretamente com o supervisor de sua unidade.
-            </p>
-          </div>
-          <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0;">
-            <strong>Porto Terapia • Gestão de Estágios</strong><br>
-            Av. Governador José Malcher, 1234 • Belém - PA
-          </div>
-        </div>
-      `;
-
-      console.log(`[EMAIL ENVIADO] Timbre Oficial enviado para ${record.geo?.internEmail || 'estagiario@portoterapia.com'}:`, timbreHtml);
-      
       alert(`Resposta enviada com sucesso! Uma cópia com o timbre institucional foi enviada para o e-mail: ${record.geo?.internEmail || 'estagiario@portoterapia.com'}`);
       setReplyText('');
       setReplyingId(null);

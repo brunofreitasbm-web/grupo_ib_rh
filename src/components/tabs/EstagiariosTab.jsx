@@ -50,7 +50,7 @@ export default function EstagiariosTab({ filterUnit }) {
       
       if (bioVideoRef.current) {
         bioVideoRef.current.srcObject = stream;
-        bioVideoRef.current.play().catch(e => console.log("Video play error:", e));
+        bioVideoRef.current.play().catch(() => {});
       }
       setBioStatusMsg('Câmera ativa. Centralize seu rosto.');
     } catch (err) {
@@ -1067,7 +1067,7 @@ export default function EstagiariosTab({ filterUnit }) {
                         bioVideoRef.current = node;
                         if (node && bioStreamRef.current && node.srcObject !== bioStreamRef.current) {
                           node.srcObject = bioStreamRef.current;
-                          node.play().catch(e => console.log("Video play error:", e));
+                          node.play().catch(() => {});
                         }
                       }}
                       autoPlay
