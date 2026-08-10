@@ -4776,7 +4776,45 @@ export default function App() {
     return shuffled.slice(0, 5);
   };
 
-  const getDocumentHtml = (type, intern = null) => {
+  const escapeHtmlForDocument = (value) => {
+    if (value === null || value === undefined) return value;
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  // Escapa todos os campos de texto do estagiário antes de interpolá-los no HTML
+  // gerado abaixo (evita XSS armazenado via nome/endereço/CPF/etc., que são
+  // editáveis e depois renderizados via dangerouslySetInnerHTML/innerHTML).
+  const sanitizeInternForDocumentHtml = (rawIntern) => {
+    if (!rawIntern) return rawIntern;
+    const sanitized = { ...rawIntern };
+    const textFields = [
+      'name', 'course', 'institution', 'shift', 'cpf', 'rg', 'phone', 'address', 'email',
+      'bankName', 'bankAgency', 'bankAccount', 'pixKey', 'emergencyName', 'emergencyRelationship',
+      'emergencyPhone', 'supervisorName', 'username',
+    ];
+    textFields.forEach((field) => {
+      if (typeof sanitized[field] === 'string') {
+        sanitized[field] = escapeHtmlForDocument(sanitized[field]);
+      }
+    });
+    if (sanitized.contractTermination && typeof sanitized.contractTermination === 'object') {
+      sanitized.contractTermination = {
+        ...sanitized.contractTermination,
+        motive: typeof sanitized.contractTermination.motive === 'string'
+          ? escapeHtmlForDocument(sanitized.contractTermination.motive)
+          : sanitized.contractTermination.motive,
+      };
+    }
+    return sanitized;
+  };
+
+  const getDocumentHtml = (type, internRaw = null) => {
+    const intern = sanitizeInternForDocumentHtml(internRaw);
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
         <img src="/logo.jpg" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="Logo Porto Terapia" />

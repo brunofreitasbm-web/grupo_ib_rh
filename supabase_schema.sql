@@ -93,7 +93,9 @@ ON CONFLICT (id) DO UPDATE SET
   radius_m = EXCLUDED.radius_m;
 
 -- 6. INSERÇÃO DO SUPERVISOR PADRÃO
--- E-mail: supervisor@portoterapia.com / Senha: admin123
+-- IMPORTANTE: troque o valor abaixo por uma senha forte ANTES de rodar este
+-- script em produção. Não deixe a senha real deste usuário em um arquivo
+-- versionado no repositório.
 -- Limpar supervisor antigo para garantir reconstrução sem conflitos de UUID ou identidades
 DELETE FROM auth.users WHERE email = 'supervisor@portoterapia.com';
 
@@ -119,7 +121,7 @@ INSERT INTO auth.users (
   'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
   '00000000-0000-0000-0000-000000000000',
   'supervisor@portoterapia.com',
-  crypt('admin123', gen_salt('bf')),
+  crypt('TROQUE_ESTA_SENHA_ANTES_DE_RODAR_EM_PRODUCAO', gen_salt('bf')),
   now(),
   '{"provider": "email", "providers": ["email"]}'::jsonb,
   '{"name": "Supervisor Geral", "role": "supervisor"}'::jsonb,
@@ -327,7 +329,25 @@ CREATE OR REPLACE FUNCTION public.create_intern_user(
 ) RETURNS uuid AS $$
 DECLARE
   new_intern_id uuid;
+  caller_role text := (auth.jwt() -> 'user_metadata' ->> 'role');
+  caller_unit text := (auth.jwt() -> 'user_metadata' ->> 'unit_id');
+  final_registration_status text := p_registration_status;
+  final_unit_id text := p_unit_id;
 BEGIN
+  -- Apenas supervisor (cadastro administrativo) ou o login de unidade/quiosque
+  -- (auto-cadastro do estagiário, sempre pendente de validação) podem chamar esta função.
+  IF caller_role IS DISTINCT FROM 'supervisor' AND caller_role IS DISTINCT FROM 'intern_unit' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  -- Um login de unidade só pode se autocadastrar como pendente de validação,
+  -- e apenas na própria unidade (não pode criar estagiário validado/ativo
+  -- nem em outra unidade).
+  IF caller_role = 'intern_unit' THEN
+    final_registration_status := 'pending_validation';
+    final_unit_id := caller_unit;
+  END IF;
+
   -- Gerar novo UUID aleatório para o estagiário
   new_intern_id := gen_random_uuid();
 
@@ -373,7 +393,7 @@ BEGIN
     p_institution,
     p_shift,
     p_daily_hours,
-    p_unit_id,
+    final_unit_id,
     true,
     p_start_date,
     p_end_date,
@@ -395,7 +415,7 @@ BEGIN
     p_emergency_phone,
     p_allowance,
     p_supervisor_name,
-    p_registration_status,
+    final_registration_status,
     '{}'::jsonb,
     '{}'::jsonb,
     p_birthdate,
@@ -404,19 +424,39 @@ BEGIN
 
   RETURN new_intern_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.create_intern_user(
+  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_intern_user(
+  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
+) TO authenticated;
 
 -- Função 2: Excluir estagiário (deleta de auth.users e o cascade limpa public.interns)
+-- Apenas o supervisor pode excluir estagiários.
 CREATE OR REPLACE FUNCTION public.delete_intern_user(p_intern_id uuid) RETURNS void AS $$
 BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
   DELETE FROM public.interns WHERE id = p_intern_id;
   DELETE FROM auth.users WHERE id = p_intern_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.delete_intern_user(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_intern_user(uuid) TO authenticated;
 
 -- Função 3: Resetar senha do estagiário para '0000'
+-- Ação administrativa: apenas o supervisor pode resetar a senha de qualquer estagiário.
 CREATE OR REPLACE FUNCTION public.reset_intern_password(p_intern_id uuid, p_new_password text) RETURNS void AS $$
 BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
   UPDATE auth.users
   SET encrypted_password = crypt(p_new_password, gen_salt('bf')),
       updated_at = now()
@@ -426,11 +466,31 @@ BEGIN
   SET is_first_login = true
   WHERE id = p_intern_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.reset_intern_password(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reset_intern_password(uuid, text) TO authenticated;
 
 -- Função 4: Alterar senha inicial do estagiário no primeiro login
+-- Permitido para o supervisor, ou para o login de unidade/quiosque desde que
+-- o estagiário-alvo pertença à mesma unidade de quem está chamando.
 CREATE OR REPLACE FUNCTION public.change_intern_password(p_intern_id uuid, p_new_password text) RETURNS void AS $$
+DECLARE
+  caller_role text := (auth.jwt() -> 'user_metadata' ->> 'role');
+  caller_unit text := (auth.jwt() -> 'user_metadata' ->> 'unit_id');
+  target_unit text;
 BEGIN
+  IF caller_role = 'supervisor' THEN
+    NULL; -- autorizado
+  ELSIF caller_role = 'intern_unit' THEN
+    SELECT unit_id INTO target_unit FROM public.interns WHERE id = p_intern_id;
+    IF target_unit IS NULL OR target_unit IS DISTINCT FROM caller_unit THEN
+      RAISE EXCEPTION 'not authorized';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
   UPDATE auth.users
   SET encrypted_password = crypt(p_new_password, gen_salt('bf')),
       updated_at = now()
@@ -440,7 +500,10 @@ BEGIN
   SET is_first_login = false
   WHERE id = p_intern_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.change_intern_password(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.change_intern_password(uuid, text) TO authenticated;
 
 
 -- =========================================================================
@@ -477,9 +540,67 @@ CREATE POLICY "Permitir escrita de estagiários apenas para supervisor"
     ON public.interns FOR ALL 
     USING ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor');
 
-CREATE POLICY "Permitir que estagiários atualizem seus próprios documentos ou perfil" 
-    ON public.interns FOR UPDATE 
+CREATE POLICY "Permitir que estagiários atualizem seus próprios documentos ou perfil"
+    ON public.interns FOR UPDATE
     USING (auth.uid() = id);
+
+-- A policy acima permite que o próprio estagiário faça UPDATE na sua linha,
+-- mas o Postgres RLS não restringe COLUNAS — sem o trigger abaixo, um
+-- estagiário autenticado poderia alterar `allowance`, `active`,
+-- `registration_status`, `unit_id`, `face_descriptor` etc. via uma chamada
+-- direta à API, e não só os campos que a UI expõe.
+-- O trigger força que, fora do papel "supervisor", uma auto-atualização só
+-- possa alterar `documents` e `photo` — todas as demais colunas são
+-- reescritas para o valor anterior.
+CREATE OR REPLACE FUNCTION public.enforce_intern_self_update_columns() RETURNS trigger AS $$
+BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor' THEN
+    RETURN NEW;
+  END IF;
+
+  IF auth.uid() = OLD.id THEN
+    NEW.name := OLD.name;
+    NEW.course := OLD.course;
+    NEW.institution := OLD.institution;
+    NEW.shift := OLD.shift;
+    NEW.daily_hours := OLD.daily_hours;
+    NEW.unit_id := OLD.unit_id;
+    NEW.active := OLD.active;
+    NEW.start_date := OLD.start_date;
+    NEW.end_date := OLD.end_date;
+    NEW.last_report_date := OLD.last_report_date;
+    NEW.recess_days_taken := OLD.recess_days_taken;
+    NEW.username := OLD.username;
+    NEW.is_first_login := OLD.is_first_login;
+    NEW.birthdate := OLD.birthdate;
+    NEW.face_descriptor := OLD.face_descriptor;
+    NEW.cpf := OLD.cpf;
+    NEW.email := OLD.email;
+    NEW.rg := OLD.rg;
+    NEW.address := OLD.address;
+    NEW.bank_name := OLD.bank_name;
+    NEW.bank_agency := OLD.bank_agency;
+    NEW.bank_account := OLD.bank_account;
+    NEW.pix_key := OLD.pix_key;
+    NEW.emergency_name := OLD.emergency_name;
+    NEW.emergency_relationship := OLD.emergency_relationship;
+    NEW.emergency_phone := OLD.emergency_phone;
+    NEW.allowance := OLD.allowance;
+    NEW.supervisor_name := OLD.supervisor_name;
+    NEW.registration_status := OLD.registration_status;
+    NEW.semestral_reports := OLD.semestral_reports;
+    NEW.contract_termination := OLD.contract_termination;
+    RETURN NEW;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_restrict_intern_self_update ON public.interns;
+CREATE TRIGGER trg_restrict_intern_self_update
+    BEFORE UPDATE ON public.interns
+    FOR EACH ROW EXECUTE FUNCTION public.enforce_intern_self_update_columns();
 
 -- 3. Políticas de Segurança para 'records'
 CREATE POLICY "Permitir leitura de pontos (supervisor, próprio estagiário ou login de unidade)" 
