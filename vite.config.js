@@ -11,6 +11,8 @@ export default defineConfig({
         enabled: true
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/assets\//],
         maximumFileSizeToCacheInBytes: 5000000,
       },
       manifest: {

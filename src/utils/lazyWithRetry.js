@@ -10,24 +10,27 @@ import { lazy } from 'react';
  */
 export function lazyWithRetry(componentImport) {
   return lazy(async () => {
-    const pageHasBeenRefreshed = JSON.parse(
-      window.sessionStorage.getItem('page_has_been_refreshed') || 'false'
+    const lastRefreshTime = parseInt(
+      window.sessionStorage.getItem('page_last_chunk_refresh_time') || '0',
+      10
     );
+    const now = Date.now();
+    // Permite recarregar automaticamente se a última tentativa foi há mais de 15 segundos
+    const canReload = now - lastRefreshTime > 15000;
 
     try {
       const component = await componentImport();
-      window.sessionStorage.setItem('page_has_been_refreshed', 'false');
       return component;
     } catch (error) {
       console.warn('Falha ao carregar módulo dinâmico (chunk load error):', error);
 
-      if (!pageHasBeenRefreshed) {
-        window.sessionStorage.setItem('page_has_been_refreshed', 'true');
+      if (canReload) {
+        window.sessionStorage.setItem('page_last_chunk_refresh_time', now.toString());
         window.location.reload();
         return new Promise(() => {}); // Manter estado pendente enquanto a página recarrega
       }
 
-      // Se já recarregou uma vez e o erro persiste, lança o erro para ser capturado pelo ErrorBoundary
+      // Se recarregou recentemente e ainda assim o erro persiste, lança para o ErrorBoundary
       throw error;
     }
   });
