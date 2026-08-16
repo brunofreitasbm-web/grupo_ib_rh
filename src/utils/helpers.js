@@ -8,7 +8,12 @@ export function startOfWeek(date = new Date()) {
   return d;
 }
 
-export const formatDistance = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(2)} km`);
+export const formatDistance = (km) => {
+  if (km == null || isNaN(km)) return '—';
+  const numKm = Number(km);
+  if (isNaN(numKm)) return '—';
+  return numKm < 1 ? `${Math.round(numKm * 1000)} m` : `${numKm.toFixed(2)} km`;
+};
 
 export const validateCPF = (cpf) => {
   const clean = cpf.replace(/[^\d]/g, '');

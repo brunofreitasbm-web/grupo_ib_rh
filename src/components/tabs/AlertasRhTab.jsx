@@ -186,8 +186,8 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
                         )}
                       </td>
                       <td className="p-3 text-slate-700">
-                        <div className="font-semibold text-indigo-700">Acumulado: {metrics.recessAccrued.toFixed(1)} dias</div>
-                        <div className="text-[10px] text-slate-400">Gozados: {metrics.recessTaken} dias • <strong>Saldo: {metrics.recessBalance.toFixed(1)} dias</strong></div>
+                        <div className="font-semibold text-indigo-700">Acumulado: {(metrics.recessAccrued ?? 0).toFixed(1)} dias</div>
+                        <div className="text-[10px] text-slate-400">Gozados: {metrics.recessTaken ?? 0} dias • <strong>Saldo: {(metrics.recessBalance ?? 0).toFixed(1)} dias</strong></div>
                       </td>
                       <td className="p-3">
                         <div className="space-y-1">

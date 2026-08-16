@@ -253,10 +253,10 @@ export default function FrequenciaTab({ filterUnit }) {
                       {row.removed && <span className="ml-2 text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">removido</span>}
                     </td>
                     <td className={`p-4 text-sm font-semibold ${overDay ? 'text-red-600' : 'text-gray-700'}`}>
-                      {row.today.toFixed(1)}h {overDay && <AlertTriangle size={12} className="inline mb-0.5" />}
+                      {(row.today ?? 0).toFixed(1)}h {overDay && <AlertTriangle size={12} className="inline mb-0.5" />}
                     </td>
                     <td className={`p-4 text-sm font-semibold ${overWeek ? 'text-red-600' : 'text-gray-700'}`}>
-                      {row.week.toFixed(1)}h / {LABOR.maxWeeklyHours}h
+                      {(row.week ?? 0).toFixed(1)}h / {LABOR.maxWeeklyHours}h
                       {overWeek && <AlertTriangle size={12} className="inline mb-0.5 ml-1" />}
                     </td>
                   </tr>

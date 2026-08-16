@@ -309,7 +309,12 @@ function geoErrorMessage(err) {
   }
 }
 
-const formatDistance = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(2)} km`);
+const formatDistance = (km) => {
+  if (km == null || isNaN(km)) return '—';
+  const numKm = Number(km);
+  if (isNaN(numKm)) return '—';
+  return numKm < 1 ? `${Math.round(numKm * 1000)} m` : `${numKm.toFixed(2)} km`;
+};
 
 // Início da semana (segunda-feira 00:00) — usado no acumulado semanal
 function startOfWeek(date = new Date()) {
