@@ -8,7 +8,22 @@ import {
   ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
-import { getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from './utils/mappings';
+import {
+  getFriendlyDbErrorMessage,
+  INTERN_SELECT_FIELDS,
+  fileToBase64,
+  compressImage,
+  generateUsername,
+  mapInternFromDb,
+  mapInternToDb,
+  mapRecordFromDb,
+  mapRecordToDb,
+  mapUnitFromDb,
+  mapUnitToDb,
+} from './utils/mappings';
+import { formatDistance, startOfWeek, validateCPF } from './utils/helpers';
+import { calculateHoursSummary, calculateHoursAlerts } from './utils/hoursCalculations';
+import useGeolocation from './hooks/useGeolocation';
 import * as faceapi from 'face-api.js';
 
 // Supabase Client Integration
@@ -77,278 +92,6 @@ const ADMISSIONAL_DOCUMENTS = [
   { key: 'ficha', label: 'Ficha Cadastral', desc: 'Ficha com dados bancários e contatos preenchida.' },
 ];
 
-const fileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-  });
-};
-
-const compressImage = (file, maxWidth = 300, maxHeight = 400, quality = 0.7) => {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      // Se não for imagem, apenas converte para base64 diretamente (ex: PDFs)
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-      return;
-    }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (error) => reject(error);
-  });
-};
-
-const generateUsername = (fullName) => {
-  const clean = fullName.trim().toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, '');
-  const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0]}.${parts[parts.length - 1]}`;
-  } else if (parts.length === 1) {
-    return `${parts[0]}.estagio`;
-  }
-  return 'estagiario';
-};
-
-// --- Supabase Mappings ---
-const mapInternFromDb = (i) => ({
-  id: i.id,
-  name: i.name,
-  course: i.course,
-  institution: i.institution,
-  shift: i.shift,
-  dailyHours: i.daily_hours,
-  unitId: i.unit_id,
-  active: i.active,
-  startDate: i.start_date,
-  endDate: i.end_date,
-  lastReportDate: i.last_report_date,
-  recessDaysTaken: i.recess_days_taken,
-  username: i.username,
-  isFirstLogin: i.is_first_login,
-  documents: i.documents || {},
-  photo: i.photo,
-  cpf: i.cpf || '',
-  email: i.email || '',
-  rg: i.rg || '',
-  phone: i.phone || '',
-  address: i.address || '',
-  bankName: i.bank_name || '',
-  bankAgency: i.bank_agency || '',
-  bankAccount: i.bank_account || '',
-  pixKey: i.pix_key || '',
-  emergencyName: i.emergency_name || '',
-  emergencyRelationship: i.emergency_relationship || 'Pais',
-  emergencyPhone: i.emergency_phone || '',
-  allowance: Number(i.allowance) || 0,
-  supervisorName: i.supervisor_name || '',
-  registrationStatus: i.registration_status || 'validated',
-  semestralReports: i.semestral_reports || {},
-  contractTermination: i.contract_termination || {},
-  birthdate: i.birthdate || '',
-});
-
-const mapInternToDb = (i) => ({
-  name: i.name,
-  course: i.course,
-  institution: i.institution,
-  shift: i.shift,
-  daily_hours: i.dailyHours,
-  unit_id: i.unitId,
-  active: i.active !== false,
-  start_date: i.startDate,
-  end_date: i.endDate,
-  last_report_date: i.lastReportDate,
-  recess_days_taken: Number(i.recessDaysTaken) || 0,
-  username: i.username,
-  is_first_login: i.isFirstLogin !== false,
-  documents: i.documents || {},
-  photo: i.photo,
-  cpf: i.cpf || '',
-  email: i.email || '',
-  rg: i.rg || '',
-  phone: i.phone || '',
-  address: i.address || '',
-  bank_name: i.bankName || '',
-  bank_agency: i.bankAgency || '',
-  bank_account: i.bankAccount || '',
-  pix_key: i.pixKey || '',
-  emergency_name: i.emergencyName || '',
-  emergency_relationship: i.emergencyRelationship || 'Pais',
-  emergency_phone: i.emergencyPhone || '',
-  allowance: Number(i.allowance) || 0,
-  supervisor_name: i.supervisorName || '',
-  registration_status: i.registrationStatus || 'validated',
-  semestral_reports: i.semestralReports || {},
-  contract_termination: i.contractTermination || {},
-  birthdate: i.birthdate || null,
-});
-
-const mapRecordFromDb = (r) => ({
-  id: r.id,
-  internId: r.intern_id,
-  internName: r.intern_name,
-  action: r.action,
-  justification: r.justification,
-  timestamp: r.timestamp,
-  photo: r.photo,
-  isManual: r.is_manual,
-  justificationDoc: r.justification_doc,
-  geo: r.geo,
-  daysAway: r.days_away || 0,
-});
-
-const mapRecordToDb = (r) => ({
-  intern_id: r.internId,
-  intern_name: r.internName,
-  action: r.action,
-  justification: r.justification,
-  timestamp: r.timestamp,
-  photo: r.photo,
-  is_manual: r.isManual,
-  justification_doc: r.justificationDoc,
-  geo: r.geo,
-  days_away: Number(r.daysAway) || 0,
-});
-
-const mapUnitFromDb = (u) => ({
-  id: u.id,
-  name: u.name,
-  address: u.address,
-  lat: Number(u.lat),
-  lng: Number(u.lng),
-  radiusKm: Number(u.radius_km),
-  radiusM: Number(u.radius_m),
-});
-
-const mapUnitToDb = (u) => ({
-  id: u.id,
-  name: u.name,
-  address: u.address,
-  lat: Number(u.lat),
-  lng: Number(u.lng),
-  radius_km: Number(u.radiusKm),
-  radius_m: Number(u.radiusM),
-});
-
-
-// ============================================================
-// UTILITÁRIOS DE GEOLOCALIZAÇÃO
-// ============================================================
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function getCurrentPosition() {
-  return new Promise((resolve, reject) => {
-    if (!('geolocation' in navigator)) {
-      reject(new Error('SEM_SUPORTE'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(pos),
-      (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  });
-}
-
-function geoErrorMessage(err) {
-  if (err && err.message === 'SEM_SUPORTE') {
-    return 'Este dispositivo não permite localização. Use um celular com GPS.';
-  }
-  switch (err && err.code) {
-    case 1:
-      return 'Você bloqueou o acesso à localização. Toque no cadeado do navegador, permita a localização e tente de novo.';
-    case 2:
-      return 'Não foi possível obter o sinal de GPS. Vá para um local aberto e tente novamente.';
-    case 3:
-      return 'A localização demorou demais para responder. Verifique o GPS e tente de novo.';
-    default:
-      return 'Não foi possível obter sua localização. Verifique se o GPS está ligado.';
-  }
-}
-
-const formatDistance = (km) => {
-  if (km == null || isNaN(km)) return '—';
-  const numKm = Number(km);
-  if (isNaN(numKm)) return '—';
-  return numKm < 1 ? `${Math.round(numKm * 1000)} m` : `${numKm.toFixed(2)} km`;
-};
-
-// Início da semana (segunda-feira 00:00) — usado no acumulado semanal
-function startOfWeek(date = new Date()) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay(); // 0 domingo ... 6 sábado
-  const diff = day === 0 ? 6 : day - 1;
-  d.setDate(d.getDate() - diff);
-  return d;
-}
-
-const validateCPF = (cpf) => {
-  const clean = cpf.replace(/[^\d]/g, '');
-  if (clean.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(clean)) return false;
-  
-  let sum = 0;
-  for (let i = 0; i < 9; i++) {
-    sum += parseInt(clean.charAt(i)) * (10 - i);
-  }
-  let rev = 11 - (sum % 11);
-  if (rev === 10 || rev === 11) rev = 0;
-  if (rev !== parseInt(clean.charAt(9))) return false;
-  
-  sum = 0;
-  for (let i = 0; i < 10; i++) {
-    sum += parseInt(clean.charAt(i)) * (11 - i);
-  }
-  rev = 11 - (sum % 11);
-  if (rev === 10 || rev === 11) rev = 0;
-  if (rev !== parseInt(clean.charAt(10))) return false;
-  
-  return true;
-};
 
 // Relógio isolado: mantém o tick de 1s fora do estado do App para não
 // re-renderizar a árvore inteira a cada segundo.
@@ -419,9 +162,18 @@ export default function App() {
   const [uploadingJustificationDoc, setUploadingJustificationDoc] = useState(false);
   const [daysAway, setDaysAway] = useState(0);
 
-  // Geolocalização (registro de ponto)
-  const [isLocating, setIsLocating] = useState(false);
-  const [geoError, setGeoError] = useState('');
+  // Geolocalização (registro de ponto, radar de calibração de unidade e loading de login) — src/hooks/useGeolocation.js
+  const {
+    isLocating, setIsLocating,
+    geoError, setGeoError,
+    currentGPS, setCurrentGPS,
+    gpsLoading, setGpsLoading,
+    gpsRadarError, setGpsRadarError,
+    fetchGpsForRadar,
+    getCurrentPosition,
+    geoErrorMessage,
+    haversineKm,
+  } = useGeolocation();
 
   // Controle Facial & Câmera
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -431,11 +183,6 @@ export default function App() {
   const [forceManualPoint, setForceManualPoint] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-
-  // Cerca Virtual / GPS Radar em tempo real
-  const [currentGPS, setCurrentGPS] = useState(null);
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [gpsRadarError, setGpsRadarError] = useState('');
 
   // Filtro por unidade (histórico + exportação)
   const [filterUnit, setFilterUnit] = useState('all');
@@ -451,6 +198,40 @@ export default function App() {
   // Visualização de foto de ponto histórico
   const [selectedRecordPhoto, setSelectedRecordPhoto] = useState(null);
   const [showOccurrenceModal, setShowOccurrenceModal] = useState(false);
+
+  // Modal de confirmação genérico (substitui window.confirm, que é bloqueante e inconsistente com o resto da UI)
+  const [confirmModalState, setConfirmModalState] = useState(null); // { message, resolve }
+  const askConfirm = (message) => new Promise((resolve) => setConfirmModalState({ message, resolve }));
+  const renderConfirmModal = () => {
+    if (!confirmModalState) return null;
+    const handle = (result) => {
+      confirmModalState.resolve(result);
+      setConfirmModalState(null);
+    };
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+        <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5">
+          <p className="text-sm text-slate-800 whitespace-pre-line">{confirmModalState.message}</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => handle(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => handle(true)}
+              className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+            >
+              Confirmar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Estados dos novos módulos (Acompanhamento, Financeiro, Impressão, Encerramento de Vínculo)
   const [selectedActivityIntern, setSelectedActivityIntern] = useState('');
@@ -502,6 +283,10 @@ export default function App() {
   const [autogestaoInternId, setAutogestaoInternId] = useState('');
   const [autogestaoCpf, setAutogestaoCpf] = useState('');
   const [autogestaoSuccess, setAutogestaoSuccess] = useState(false);
+  // Rate limiting client-side para tentativas de CPF na autogestão de biometria (LGPD/segurança:
+  // CPF não é segredo forte, então limitamos tentativas de força bruta contra o campo).
+  const [autogestaoCpfAttempts, setAutogestaoCpfAttempts] = useState(0);
+  const [autogestaoLockedUntil, setAutogestaoLockedUntil] = useState(0);
   const [publicInterns, setPublicInterns] = useState([]);
   const [loadingPublicInterns, setLoadingPublicInterns] = useState(false);
 
@@ -519,6 +304,7 @@ export default function App() {
   const [cadastroMatriculaFile, setCadastroMatriculaFile] = useState(null);
   const [isSubmittingCadastro, setIsSubmittingCadastro] = useState(false);
   const [cadastroSuccess, setCadastroSuccess] = useState(false);
+  const [cadastroConsentAccepted, setCadastroConsentAccepted] = useState(false);
 
   // State do Pop-up de Processamento de Upload de Foto no Auto-cadastro
   const [isBioCadastroModalOpen, setIsBioCadastroModalOpen] = useState(false);
@@ -956,21 +742,6 @@ export default function App() {
     setIsCameraActive(false);
   };
 
-  const fetchGpsForRadar = async () => {
-    setGpsLoading(true);
-    setGpsRadarError('');
-    try {
-      const pos = await getCurrentPosition();
-      const { latitude, longitude, accuracy } = pos.coords;
-      setCurrentGPS({ lat: latitude, lng: longitude, accuracy });
-    } catch (err) {
-      console.error("Radar GPS error:", err);
-      setGpsRadarError(geoErrorMessage(err));
-    } finally {
-      setGpsLoading(false);
-    }
-  };
-
   // Efeito para ativar câmera e GPS ao selecionar estagiário
   useEffect(() => {
     if (selectedIntern) {
@@ -1171,7 +942,7 @@ export default function App() {
         password: 'estagio123',
       });
 
-      if (error) {
+      if (!error) {
         setLoggedInIntern({
           id: `kiosk-${unitOption}`,
           name: unitOption === 'antonio-barreto' ? 'Estagiário Antônio Barreto' : 'Estagiário Generalíssimo',
@@ -1182,19 +953,13 @@ export default function App() {
         setSelectedIntern('');
         setSelectedUnit(unitOption);
         setCurrentView('kiosk');
+      } else {
+        console.error('Erro ao acessar quiosque da unidade:', error);
+        toast.error('Não foi possível acessar o quiosque desta unidade. Tente novamente ou contate o supervisor.');
       }
     } catch (err) {
       console.error('Erro ao acessar quiosque da unidade:', err);
-      setLoggedInIntern({
-        id: `kiosk-${unitOption}`,
-        name: unitOption === 'antonio-barreto' ? 'Estagiário Antônio Barreto' : 'Estagiário Generalíssimo',
-        role: 'intern_unit',
-        unitId: unitOption,
-        isFirstLogin: false
-      });
-      setSelectedIntern('');
-      setSelectedUnit(unitOption);
-      setCurrentView('kiosk');
+      toast.error('Não foi possível acessar o quiosque desta unidade. Verifique sua conexão e tente novamente.');
     } finally {
       setGpsLoading(false);
     }
@@ -1253,7 +1018,7 @@ export default function App() {
       setLoggedInIntern(updated);
       setNewPassword('');
       setConfirmNewPassword('');
-      alert('Senha alterada com sucesso! Você já pode bater o seu ponto.');
+      toast.success('Senha alterada com sucesso! Você já pode bater o seu ponto.');
     } catch (err) {
       console.error("Erro ao alterar senha:", err);
       setPasswordChangeError('Erro ao salvar nova senha no banco de dados.');
@@ -1261,7 +1026,7 @@ export default function App() {
   };
 
   const handleResetPassword = async (intern) => {
-    const ok = window.confirm(`Deseja realmente resetar a senha do estagiário "${intern.name}" para a inicial "0000"?`);
+    const ok = await askConfirm(`Deseja realmente resetar a senha do estagiário "${intern.name}" para a inicial "0000"?`);
     if (!ok) return;
 
     try {
@@ -1270,10 +1035,10 @@ export default function App() {
         p_new_password: '0000'
       });
       if (error) throw error;
-      alert('Senha resetada com sucesso! A nova senha inicial é 0000.');
+      toast.success('Senha resetada com sucesso! A nova senha inicial é 0000.');
     } catch (err) {
       console.error("Erro ao resetar senha:", err);
-      alert('Erro ao resetar senha.');
+      toast.error('Erro ao resetar senha.');
     }
   };
 
@@ -1284,114 +1049,16 @@ export default function App() {
 
   // ============================================================
   // CÁLCULO DE HORAS (acumulado diário / semanal por estagiário)
+  // Lógica pura extraída para src/utils/hoursCalculations.js (testável sem React/Supabase).
   // ============================================================
-  const hoursSummary = useMemo(() => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const weekStart = startOfWeek();
-
-    // Filtra estagiários por unidade primeiro
-    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
-    const filteredInternNames = new Set(filteredInterns.map(i => i.name));
-
-    // Agrupa por estagiário + dia
-    const daily = {};
-    records.forEach((r) => {
-      // Se estiver filtrando, apenas processa registros de estagiários daquela unidade
-      const matchesUnit = filterUnit === 'all' || r.geo?.unitId === filterUnit || filteredInternNames.has(r.internName);
-      if (!matchesUnit) return;
-
-      const d = new Date(r.timestamp);
-      const dateKey = d.toLocaleDateString('pt-BR');
-      const key = `${r.internName}|${dateKey}`;
-      if (!daily[key]) daily[key] = { name: r.internName, day: new Date(d), events: [] };
-      daily[key].events.push({ action: r.action, time: d.getTime() });
-    });
-
-    const per = {}; // nome -> { today, week }
-    Object.values(daily).forEach((g) => {
-      g.events.sort((a, b) => a.time - b.time);
-      let totalMs = 0;
-      let lastEntradaTime = null;
-      g.events.forEach((e) => {
-        if (e.action === 'entrada') {
-          if (lastEntradaTime === null) {
-            lastEntradaTime = e.time;
-          }
-        } else if (e.action === 'saida') {
-          if (lastEntradaTime !== null) {
-            totalMs += (e.time - lastEntradaTime);
-            lastEntradaTime = null;
-          }
-        }
-      });
-      const hrs = totalMs / (1000 * 60 * 60);
-      if (hrs <= 0) return;
-      const dayStart = new Date(g.day);
-      dayStart.setHours(0, 0, 0, 0);
-      if (!per[g.name]) per[g.name] = { today: 0, week: 0 };
-      if (dayStart.getTime() === todayStart.getTime()) per[g.name].today += hrs;
-      if (dayStart >= weekStart) per[g.name].week += hrs;
-    });
-
-    // Monta a partir da lista de estagiários filtrados (inclui quem tem 0h)
-    const rows = filteredInterns.map((i) => ({
-      name: i.name,
-      today: per[i.name]?.today || 0,
-      week: per[i.name]?.week || 0,
-    }));
-    
-    // Se filterUnit === 'all', incluir nomes que aparecem em registros mas não estão mais cadastrados
-    if (filterUnit === 'all') {
-      Object.keys(per).forEach((name) => {
-        if (!rows.find((r) => r.name === name)) {
-          rows.push({ name, today: per[name].today, week: per[name].week, removed: true });
-        }
-      });
-    }
-    rows.sort((a, b) => b.week - a.week);
-    return rows;
-  }, [records, interns, filterUnit]);
+  const hoursSummary = useMemo(
+    () => calculateHoursSummary(records, interns, filterUnit),
+    [records, interns, filterUnit]
+  );
 
   // Alertas de carga horária diária (> 6h)
   useEffect(() => {
-    const grouped = {};
-    const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
-    const filteredInternNames = new Set(filteredInterns.map(i => i.name));
-
-    records.forEach((r) => {
-      // Filtra por unidade se selecionada
-      if (filterUnit !== 'all' && !filteredInternNames.has(r.internName)) return;
-
-      const d = new Date(r.timestamp);
-      const dateKey = d.toLocaleDateString('pt-BR');
-      const key = `${r.internName}|${dateKey}`;
-      if (!grouped[key]) grouped[key] = { internName: r.internName, date: dateKey, events: [] };
-      grouped[key].events.push({ action: r.action, time: d.getTime() });
-    });
-    const alerts = [];
-    Object.values(grouped).forEach((group) => {
-      group.events.sort((a, b) => a.time - b.time);
-      let totalMs = 0;
-      let lastEntradaTime = null;
-      group.events.forEach((e) => {
-        if (e.action === 'entrada') {
-          if (lastEntradaTime === null) {
-            lastEntradaTime = e.time;
-          }
-        } else if (e.action === 'saida') {
-          if (lastEntradaTime !== null) {
-            totalMs += (e.time - lastEntradaTime);
-            lastEntradaTime = null;
-          }
-        }
-      });
-      const diffHours = totalMs / (1000 * 60 * 60);
-      if (diffHours > LABOR.maxDailyHours) {
-        alerts.push({ internName: group.internName, date: group.date, hours: diffHours.toFixed(1) });
-      }
-    });
-    setHoursAlerts(alerts);
+    setHoursAlerts(calculateHoursAlerts(records, interns, filterUnit, LABOR.maxDailyHours));
   }, [records, interns, filterUnit]);
 
   // Motor de Auditoria de Ponto Retroativo de 30 dias com Sincronização
@@ -2016,7 +1683,7 @@ export default function App() {
     } catch (error) {
       console.error('Erro ao salvar:', error);
       if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('Network') || error.message.includes('fetch'))) {
-        alert('O ponto foi salvo offline e será sincronizado quando houver internet.');
+        toast.info('O ponto foi salvo offline e será sincronizado quando houver internet.');
         const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
         offlineRecords.push(newRecord);
         localStorage.setItem('offline_records', JSON.stringify(offlineRecords));
@@ -2103,19 +1770,19 @@ export default function App() {
         !form.unitId || !form.shift || !form.startDate || !form.endDate || !form.birthdate ||
         !form.bankName.trim() || !form.bankAgency.trim() || !form.bankAccount.trim() || !form.pixKey.trim() || 
         !form.emergencyName.trim() || !form.emergencyRelationship || !form.emergencyPhone.trim()) {
-      alert("Todos os campos do Cadastro de Estagiário são obrigatórios, incluindo a Data de Nascimento!");
+      toast.error("Todos os campos do Cadastro de Estagiário são obrigatórios, incluindo a Data de Nascimento!");
       return;
     }
 
     // Foto obrigatória
     if (!form.photo) {
-      alert("Por favor, adicione uma foto de cadastro (3x4).");
+      toast.error("Por favor, adicione uma foto de cadastro (3x4).");
       return;
     }
 
     // Validar CPF
     if (!validateCPF(form.cpf)) {
-      alert("Por favor, insira um CPF válido.");
+      toast.error("Por favor, insira um CPF válido.");
       return;
     }
 
@@ -2163,7 +1830,7 @@ export default function App() {
           return cleanDbCpf === cleanCpf && intern.id !== editingId;
         });
         if (duplicate) {
-          alert(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+          toast.error(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
           return;
         }
       }
@@ -2245,7 +1912,7 @@ export default function App() {
             const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
-              alert('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+              toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
             }
           }
         } else {
@@ -2254,7 +1921,7 @@ export default function App() {
             const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
-              alert('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
+              toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
             }
           }
         }
@@ -2262,12 +1929,12 @@ export default function App() {
       resetForm();
     } catch (error) {
       console.error('Erro ao salvar estagiário:', error);
-      alert('Erro ao salvar estagiário: ' + getFriendlyDbErrorMessage(error));
+      toast.error('Erro ao salvar estagiário: ' + getFriendlyDbErrorMessage(error));
     }
   };
 
   const handleDeleteIntern = async (intern) => {
-    const ok = window.confirm(
+    const ok = await askConfirm(
       `Excluir o estagiário "${intern.name}"?\n\n` +
       `Os registros de ponto já feitos serão mantidos no histórico. Esta ação não pode ser desfeita.`
     );
@@ -2280,12 +1947,12 @@ export default function App() {
       if (editingId === intern.id) resetForm();
     } catch (error) {
       console.error('Erro ao excluir estagiário:', error);
-      alert('Erro ao excluir estagiário.');
+      toast.error('Erro ao excluir estagiário.');
     }
   };
 
   const handleApproveRegistration = async (internId) => {
-    const ok = window.confirm("Deseja realmente aprovar e validar o recadastro deste estagiário?");
+    const ok = await askConfirm("Deseja realmente aprovar e validar o recadastro deste estagiário?");
     if (!ok) return;
     try {
       const { error } = await supabase
@@ -2293,11 +1960,11 @@ export default function App() {
         .update({ registration_status: 'validated' })
         .eq('id', internId);
       if (error) throw error;
-      alert("Cadastro validado com sucesso!");
+      toast.success("Cadastro validado com sucesso!");
       fetchInterns();
     } catch (err) {
       console.error("Erro ao aprovar cadastro:", err);
-      alert("Erro ao validar cadastro: " + err.message);
+      toast.error("Erro ao validar cadastro: " + err.message);
     }
   };
 
@@ -2374,7 +2041,7 @@ export default function App() {
       setViewDocType(docLabel || 'Documento');
     } catch (err) {
       console.error(err);
-      alert(err.message);
+      toast.error(err.message);
     }
   };
 
@@ -2388,12 +2055,12 @@ export default function App() {
     const fileInput = document.getElementById('admissional-file-input');
     const file = fileInput?.files?.[0];
     if (!file) {
-      alert('Selecione um arquivo antes de enviar.');
+      toast.error('Selecione um arquivo antes de enviar.');
       return;
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      alert('O arquivo excede o tamanho máximo de 2MB. Compacte-o ou selecione um arquivo menor.');
+      toast.error('O arquivo excede o tamanho máximo de 2MB. Compacte-o ou selecione um arquivo menor.');
       return;
     }
 
@@ -2430,17 +2097,17 @@ export default function App() {
       if (contentError) throw contentError;
 
       if (fileInput) fileInput.value = '';
-      alert('Documento anexado com sucesso!');
+      toast.success('Documento anexado com sucesso!');
     } catch (err) {
       console.error("Erro no upload do documento:", err);
-      alert('Ocorreu um erro ao processar o upload do documento.');
+      toast.error('Ocorreu um erro ao processar o upload do documento.');
     } finally {
       setUploadingDoc(false);
     }
   };
 
   const handleDeleteDocument = async (internId, docKey) => {
-    const ok = window.confirm('Deseja realmente remover este documento físico?');
+    const ok = await askConfirm('Deseja realmente remover este documento físico?');
     if (!ok) return;
 
     const intern = interns.find(i => i.id === internId);
@@ -2465,26 +2132,26 @@ export default function App() {
         .eq('doc_key', docKey);
       if (contentError) throw contentError;
 
-      alert('Documento removido com sucesso!');
+      toast.success('Documento removido com sucesso!');
     } catch (err) {
       console.error("Erro ao deletar documento:", err);
-      alert('Erro ao excluir documento.');
+      toast.error('Erro ao excluir documento.');
     }
   };
 
   const handleSaveOcorrencia = async (e) => {
     e.preventDefault();
     if (!selectedOcorrenciaIntern) {
-      alert('Selecione um estagiário.');
+      toast.error('Selecione um estagiário.');
       return;
     }
     const intern = interns.find(i => i.id === selectedOcorrenciaIntern);
     if (!intern) {
-      alert('Estagiário não encontrado.');
+      toast.error('Estagiário não encontrado.');
       return;
     }
     if (!ocorrenciaDesc.trim()) {
-      alert('Justificativa/Descrição é obrigatória.');
+      toast.error('Justificativa/Descrição é obrigatória.');
       return;
     }
 
@@ -2496,7 +2163,7 @@ export default function App() {
     try {
       if (justFile) {
         if (justFile.size > 2 * 1024 * 1024) {
-          alert('O arquivo de comprovante excede o limite de 2MB.');
+          toast.error('O arquivo de comprovante excede o limite de 2MB.');
           setOcorrenciaLoading(false);
           return;
         }
@@ -2576,21 +2243,21 @@ export default function App() {
         if (contentError) throw contentError;
       }
 
-      alert('Ocorrência registrada com sucesso!');
+      toast.success('Ocorrência registrada com sucesso!');
       setOcorrenciaDesc('');
       if (docInput) docInput.value = '';
       fetchRecords();
       fetchInterns();
     } catch (err) {
       console.error('Erro ao salvar ocorrência:', err);
-      alert('Erro ao registrar ocorrência.');
+      toast.error('Erro ao registrar ocorrência.');
     } finally {
       setOcorrenciaLoading(false);
     }
   };
 
   const handleDeleteOcorrencia = async (recordId, internId) => {
-    const ok = window.confirm('Deseja realmente remover esta ocorrência?');
+    const ok = await askConfirm('Deseja realmente remover esta ocorrência?');
     if (!ok) return;
 
     try {
@@ -2621,12 +2288,12 @@ export default function App() {
           .eq('doc_key', `ocorrencia_${recordId}`);
       }
 
-      alert('Ocorrência removida com sucesso!');
+      toast.success('Ocorrência removida com sucesso!');
       fetchRecords();
       fetchInterns();
     } catch (err) {
       console.error('Erro ao deletar ocorrência:', err);
-      alert('Erro ao excluir ocorrência.');
+      toast.error('Erro ao excluir ocorrência.');
     }
   };
 
@@ -3210,7 +2877,20 @@ export default function App() {
     const selectedInternObj = publicInterns.find(i => i.id === autogestaoInternId);
     const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
     const cleanInternCpf = selectedInternObj ? selectedInternObj.cpf.replace(/\D/g, '') : '';
-    const isCpfValid = selectedInternObj && cleanInputCpf && cleanInputCpf === cleanInternCpf;
+    const isAutogestaoLocked = Date.now() < autogestaoLockedUntil;
+    const isCpfValid = !isAutogestaoLocked && selectedInternObj && cleanInputCpf && cleanInputCpf === cleanInternCpf;
+    const AUTOGESTAO_MAX_ATTEMPTS = 5;
+    const AUTOGESTAO_LOCK_MS = 60000;
+
+    const handleCpfBlur = () => {
+      if (isAutogestaoLocked || !selectedInternObj || cleanInputCpf.length !== 11 || cleanInputCpf === cleanInternCpf) return;
+      const nextAttempts = autogestaoCpfAttempts + 1;
+      setAutogestaoCpfAttempts(nextAttempts);
+      if (nextAttempts >= AUTOGESTAO_MAX_ATTEMPTS) {
+        setAutogestaoLockedUntil(Date.now() + AUTOGESTAO_LOCK_MS);
+        toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+      }
+    };
 
     const handleAutogestaoComplete = async (payload) => {
       if (!selectedInternObj) return;
@@ -3223,6 +2903,14 @@ export default function App() {
           .eq('id', selectedInternObj.id);
 
         if (error) throw error;
+        // Log de auditoria (LGPD): registra quem/quando a biometria foi cadastrada via autogestão.
+        // Não há tabela de auditoria dedicada no schema atual — mantido no console para rastreabilidade mínima.
+        console.info('[Auditoria] Biometria cadastrada via autogestão', {
+          internId: selectedInternObj.id,
+          internName: selectedInternObj.name,
+          timestamp: new Date().toISOString(),
+        });
+        setAutogestaoCpfAttempts(0);
         setAutogestaoSuccess(true);
         toast.success('Biometria cadastrada com sucesso! Status: Biometria OK');
         fetchInterns();
@@ -3277,6 +2965,8 @@ export default function App() {
                     onChange={(e) => {
                       setAutogestaoInternId(e.target.value);
                       setAutogestaoCpf('');
+                      setAutogestaoCpfAttempts(0);
+                      setAutogestaoLockedUntil(0);
                     }}
                     className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
                   >
@@ -3293,6 +2983,10 @@ export default function App() {
                       <p>⚠️ Você já possui uma biometria facial cadastrada e validada no sistema.</p>
                       <p className="font-normal text-slate-500">Por questões de segurança, a alteração ou recadastro biométrico só pode ser feito sob supervisão direta no painel administrativo.</p>
                     </div>
+                  ) : isAutogestaoLocked ? (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center text-red-800 text-xs font-semibold animate-fade-in">
+                      ⛔ Muitas tentativas de CPF incorretas. Aguarde um minuto antes de tentar novamente.
+                    </div>
                   ) : (
                     <div className="animate-fade-in space-y-4">
                       <div>
@@ -3304,6 +2998,7 @@ export default function App() {
                           placeholder="Apenas números ou formatado"
                           value={autogestaoCpf}
                           onChange={(e) => setAutogestaoCpf(e.target.value)}
+                          onBlur={handleCpfBlur}
                           className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
                         />
                       </div>
@@ -3353,29 +3048,35 @@ export default function App() {
           !cadastroForm.bankName.trim() || !cadastroForm.bankAgency.trim() || !cadastroForm.bankAccount.trim() || !cadastroForm.pixKey.trim() || 
           !cadastroForm.emergencyName.trim() || !cadastroForm.emergencyRelationship || !cadastroForm.emergencyPhone.trim() ||
           !cadastroForm.birthdate) {
-        alert("Todos os campos do Cadastro de Estagiário são obrigatórios, incluindo a Data de Nascimento!");
+        toast.error("Todos os campos do Cadastro de Estagiário são obrigatórios, incluindo a Data de Nascimento!");
         return;
       }
 
       // Foto obrigatória
       if (!cadastroForm.photo) {
-        alert("Por favor, adicione uma foto de cadastro (3x4).");
+        toast.error("Por favor, adicione uma foto de cadastro (3x4).");
         return;
       }
 
       // CPF/RG e comprovante de matrícula obrigatórios
       if (!cadastroCpfRgFile) {
-        alert("Por favor, envie o documento de identidade (CPF/RG) em anexo.");
+        toast.error("Por favor, envie o documento de identidade (CPF/RG) em anexo.");
         return;
       }
       if (!cadastroMatriculaFile) {
-        alert("Por favor, envie o comprovante de matrícula em anexo.");
+        toast.error("Por favor, envie o comprovante de matrícula em anexo.");
         return;
       }
 
       // Validar CPF
       if (!validateCPF(cadastroForm.cpf)) {
-        alert("Por favor, insira um CPF válido.");
+        toast.error("Por favor, insira um CPF válido.");
+        return;
+      }
+
+      // Consentimento LGPD obrigatório (dados pessoais e, futuramente, biometria facial)
+      if (!cadastroConsentAccepted) {
+        toast.error("É necessário aceitar o termo de consentimento para o processamento dos seus dados pessoais.");
         return;
       }
 
@@ -3396,7 +3097,7 @@ export default function App() {
           return cleanDbCpf === cleanCpf;
         });
         if (duplicate) {
-          alert(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+          toast.error(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
           setIsSubmittingCadastro(false);
           return;
         }
@@ -3533,7 +3234,7 @@ export default function App() {
         fetchInterns();
       } catch (err) {
         console.error("Erro ao realizar cadastro:", err);
-        alert("Erro ao enviar cadastro: " + getFriendlyDbErrorMessage(err));
+        toast.error("Erro ao enviar cadastro: " + getFriendlyDbErrorMessage(err));
       } finally {
         setIsSubmittingCadastro(false);
       }
@@ -3974,7 +3675,7 @@ export default function App() {
                           const file = e.target.files?.[0];
                           if (file) {
                             if (file.size > 2 * 1024 * 1024) {
-                              alert("O arquivo excede o limite de 2MB!");
+                              toast.error("O arquivo excede o limite de 2MB!");
                               return;
                             }
                              try {
@@ -4023,7 +3724,7 @@ export default function App() {
                           const file = e.target.files?.[0];
                           if (file) {
                             if (file.size > 2 * 1024 * 1024) {
-                              alert("O arquivo excede o limite de 2MB!");
+                              toast.error("O arquivo excede o limite de 2MB!");
                               return;
                             }
                             try {
@@ -4051,11 +3752,26 @@ export default function App() {
                 </div>
               </div>
 
+              <label className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={cadastroConsentAccepted}
+                  onChange={(e) => setCadastroConsentAccepted(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-indigo-600 shrink-0"
+                />
+                <span>
+                  Li e concordo com o processamento dos meus <strong>dados pessoais</strong> (incluindo documentos e
+                  dados bancários) para fins de cadastro e controle de estágio, conforme a Lei Geral de Proteção de
+                  Dados (LGPD - Lei nº 13.709/2018).
+                </span>
+              </label>
+
               <div className="flex gap-2 pt-4 border-t border-gray-100">
                 <button
                   type="submit"
-                  disabled={isSubmittingCadastro}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md text-xs flex items-center justify-center gap-1.5"
+                  disabled={isSubmittingCadastro || !cadastroConsentAccepted}
+                  title={!cadastroConsentAccepted ? 'Aceite o termo de consentimento acima para continuar.' : undefined}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmittingCadastro ? (
                     <>
@@ -4181,7 +3897,7 @@ export default function App() {
                           setForm({ ...form, photo: base64 });
                         } catch (err) {
                           console.error("Erro ao converter foto:", err);
-                          alert("Erro ao processar foto.");
+                          toast.error("Erro ao processar foto.");
                         }
                       }
                     }}
@@ -5929,10 +5645,10 @@ export default function App() {
           })
           .eq('id', selectedInternData.id);
         if (error) throw error;
-        alert('Dados de acompanhamento atualizados com sucesso!');
+        toast.success('Dados de acompanhamento atualizados com sucesso!');
       } catch (err) {
         console.error('Erro ao salvar dados de acompanhamento:', err);
-        alert('Erro ao salvar alterações.');
+        toast.error('Erro ao salvar alterações.');
       }
     };
 
@@ -5942,15 +5658,15 @@ export default function App() {
       const fileInput = document.getElementById('semestral-file-input');
       const file = fileInput?.files?.[0];
       if (!file) {
-        alert('Por favor, selecione um arquivo.');
+        toast.error('Por favor, selecione um arquivo.');
         return;
       }
       if (file.type !== 'application/pdf') {
-        alert('Apenas arquivos no formato PDF são permitidos para o Relatório Semestral.');
+        toast.error('Apenas arquivos no formato PDF são permitidos para o Relatório Semestral.');
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert('O arquivo excede o limite de 5MB.');
+        toast.error('O arquivo excede o limite de 5MB.');
         return;
       }
       setUploadingSemestralReport(true);
@@ -5983,10 +5699,10 @@ export default function App() {
         if (contentError) throw contentError;
 
         if (fileInput) fileInput.value = '';
-        alert(`Relatório Semestral do ${semestralReportPeriod}º período anexado com sucesso!`);
+        toast.success(`Relatório Semestral do ${semestralReportPeriod}º período anexado com sucesso!`);
       } catch (err) {
         console.error("Erro no upload do relatório semestral:", err);
-        alert('Erro ao enviar relatório semestral.');
+        toast.error('Erro ao enviar relatório semestral.');
       } finally {
         setUploadingSemestralReport(false);
       }
@@ -5994,7 +5710,7 @@ export default function App() {
 
     const handleDeleteSemestral = async (period) => {
       if (!selectedInternData) return;
-      const ok = window.confirm(`Deseja realmente remover o Relatório Semestral do ${period}º período?`);
+      const ok = await askConfirm(`Deseja realmente remover o Relatório Semestral do ${period}º período?`);
       if (!ok) return;
 
       try {
@@ -6015,10 +5731,10 @@ export default function App() {
           .eq('intern_id', selectedInternData.id)
           .eq('doc_key', `semestral_report_${period}`);
 
-        alert('Relatório removido com sucesso!');
+        toast.success('Relatório removido com sucesso!');
       } catch (err) {
         console.error("Erro ao deletar relatório semestral:", err);
-        alert('Erro ao excluir documento.');
+        toast.error('Erro ao excluir documento.');
       }
     };
 
@@ -6389,10 +6105,10 @@ export default function App() {
           .update({ contract_termination: updatedTermination })
           .eq('id', selectedInternData.id);
         if (error) throw error;
-        alert('Informações de desligamento salvas com sucesso!');
+        toast.success('Informações de desligamento salvas com sucesso!');
       } catch (err) {
         console.error('Erro ao salvar encerramento de vínculo:', err);
-        alert('Erro ao salvar alterações.');
+        toast.error('Erro ao salvar alterações.');
       }
     };
 
@@ -6402,7 +6118,7 @@ export default function App() {
       const fileInput = document.getElementById('termination-file-input');
       const file = fileInput?.files?.[0];
       if (!file) {
-        alert('Por favor, selecione um arquivo.');
+        toast.error('Por favor, selecione um arquivo.');
         return;
       }
       setUploadingTerminationLetter(true);
@@ -6426,10 +6142,10 @@ export default function App() {
           .eq('id', selectedInternData.id);
         if (error) throw error;
         if (fileInput) fileInput.value = '';
-        alert('Carta de encerramento de vínculo assinada anexada com sucesso!');
+        toast.success('Carta de encerramento de vínculo assinada anexada com sucesso!');
       } catch (err) {
         console.error("Erro no upload da carta de encerramento de vínculo:", err);
-        alert('Erro ao enviar documento.');
+        toast.error('Erro ao enviar documento.');
       } finally {
         setUploadingTerminationLetter(false);
       }
@@ -6437,7 +6153,7 @@ export default function App() {
 
     const handleDeleteTerminationLetter = async () => {
       if (!selectedInternData) return;
-      const ok = window.confirm('Deseja realmente excluir a carta de encerramento de vínculo assinada arquivada?');
+      const ok = await askConfirm('Deseja realmente excluir a carta de encerramento de vínculo assinada arquivada?');
       if (!ok) return;
 
       try {
@@ -6449,10 +6165,10 @@ export default function App() {
           .update({ contract_termination: updatedTermination })
           .eq('id', selectedInternData.id);
         if (error) throw error;
-        alert('Documento excluído com sucesso!');
+        toast.success('Documento excluído com sucesso!');
       } catch (err) {
         console.error("Erro ao deletar documento de encerramento de vínculo:", err);
-        alert('Erro ao excluir documento.');
+        toast.error('Erro ao excluir documento.');
       }
     };
 
@@ -6653,7 +6369,7 @@ export default function App() {
 
     const handleExportOcorrenciasJSON = () => {
       if (ocorrenciasList.length === 0) {
-        alert('Nenhuma ocorrência para exportar.');
+        toast.info('Nenhuma ocorrência para exportar.');
         return;
       }
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(ocorrenciasList, null, 2));
@@ -7785,6 +7501,7 @@ export default function App() {
       {renderDocumentViewModal()}
       {renderTemplateModal()}
       {renderOccurrenceModal()}
+      {renderConfirmModal()}
       {currentView === 'admin' && (
         <Omnibar 
           isOpen={isOmnibarOpen} 

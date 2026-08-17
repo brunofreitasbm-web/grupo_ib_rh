@@ -1,4 +1,7 @@
-export const INTERN_SELECT_FIELDS = 'id, name, course, institution, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate';
+// Inclui photo e face_descriptor: necessários para a comparação biométrica no
+// quiosque (login de unidade compartilhado), que lê intern.faceDescriptor/intern.photo
+// a partir desta mesma lista de estagiários.
+export const INTERN_SELECT_FIELDS = 'id, name, course, institution, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, photo, face_descriptor';
 
 export const fileToBase64 = (file) => {
   return new Promise((resolve, reject) => {

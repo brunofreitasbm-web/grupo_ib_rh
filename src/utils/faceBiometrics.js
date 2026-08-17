@@ -1,29 +1,20 @@
 import * as faceapi from 'face-api.js';
 
-const MODEL_URLS = [
-  'https://cdn.jsdelivr.net/gh/cshao/face-api.js-models/weights',
-  'https://justadudewhohacks.github.io/face-api.js/weights',
-  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights'
-];
+// Modelos hospedados localmente em public/models (sem dependência de CDNs de terceiros).
+const MODEL_URL = '/models';
 let modelsLoaded = false;
 
 export async function loadModels() {
   if (modelsLoaded) return;
-  let lastErr = null;
-  for (const url of MODEL_URLS) {
-    try {
-      await faceapi.nets.tinyFaceDetector.loadFromUri(url);
-      await faceapi.nets.faceLandmark68Net.loadFromUri(url);
-      await faceapi.nets.faceRecognitionNet.loadFromUri(url);
-      modelsLoaded = true;
-      return;
-    } catch (err) {
-      console.warn(`Falha ao carregar modelos da URL ${url}:`, err);
-      lastErr = err;
-    }
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    modelsLoaded = true;
+  } catch (err) {
+    console.error('Falha ao carregar modelos de biometria facial:', err);
+    throw new Error('Falha ao carregar modelos de biometria facial.');
   }
-  console.error('Todas as tentativas de carregar modelos falharam:', lastErr);
-  throw new Error('Falha ao carregar modelos de biometria facial.');
 }
 
 export async function getFaceDescriptor(base64Image) {

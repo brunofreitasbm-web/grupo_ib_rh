@@ -11,6 +11,7 @@ export default function BiometricEnrollment({ internName = '', internCpf = '', o
   const [isExtracting, setIsExtracting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Inicie a câmera para o cadastro biométrico.');
   const [securePayload, setSecurePayload] = useState(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -202,6 +203,23 @@ export default function BiometricEnrollment({ internName = '', internCpf = '', o
         <span className="truncate">{statusMessage}</span>
       </div>
 
+      {/* Consentimento LGPD */}
+      {!isCameraActive && (
+        <label className="mt-4 flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={consentAccepted}
+            onChange={(e) => setConsentAccepted(e.target.checked)}
+            className="mt-0.5 w-4 h-4 accent-indigo-600 shrink-0"
+          />
+          <span>
+            Li e concordo com o processamento da minha <strong>biometria facial</strong> (imagem do rosto e vetor
+            facial derivado) para fins de identificação no registro de ponto, conforme a Lei Geral de Proteção de
+            Dados (LGPD).
+          </span>
+        </label>
+      )}
+
       {/* Actions */}
       <div className="mt-5 flex items-center justify-end gap-3">
         {onCancel && (
@@ -218,7 +236,9 @@ export default function BiometricEnrollment({ internName = '', internCpf = '', o
           <button
             type="button"
             onClick={startCamera}
-            className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md transition flex items-center gap-2"
+            disabled={!consentAccepted}
+            title={!consentAccepted ? 'Aceite o termo de consentimento acima para continuar.' : undefined}
+            className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-slate-300 disabled:cursor-not-allowed disabled:hover:bg-slate-300 rounded-xl shadow-md transition flex items-center gap-2"
           >
             <Camera className="w-4 h-4" />
             Iniciar Captura de Biometria

@@ -441,6 +441,11 @@ BEGIN
     RAISE EXCEPTION 'not authorized';
   END IF;
 
+  -- LGPD: anonimiza as fotos biométricas dos registros de ponto antes de excluir o
+  -- estagiário, para que não fiquem órfãs indefinidamente no banco (records.intern_id
+  -- é ON DELETE SET NULL, então a foto sobreviveria sem vínculo ao titular dos dados).
+  UPDATE public.records SET photo = NULL WHERE intern_id = p_intern_id;
+
   DELETE FROM public.interns WHERE id = p_intern_id;
   DELETE FROM auth.users WHERE id = p_intern_id;
 END;

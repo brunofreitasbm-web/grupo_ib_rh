@@ -10,6 +10,9 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
+      // Modelos do face-api.js (public/models) não têm extensão de arquivo reconhecida
+      // pelo glob padrão do workbox, então precisam ser incluídos explicitamente.
+      includeAssets: ['models/**/*'],
       workbox: {
         cleanupOutdatedCaches: true,
         navigateFallbackDenylist: [/^\/assets\//],
@@ -51,5 +54,9 @@ export default defineConfig({
         }
       }
     }
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/__tests__/**/*.test.js'],
   }
 });
