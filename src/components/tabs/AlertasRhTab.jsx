@@ -4,7 +4,7 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate, getInternRhMetrics } from '../../utils/helpers';
 
-export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
+export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chatRecords, setChatRecords] = useState([]);
@@ -19,7 +19,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
         .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
 
       const { data: chatData } = await supabase
         .from('records')
@@ -28,13 +28,22 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta }) {
         .order('timestamp', { ascending: false })
         .limit(300);
 
-      if (chatData) setChatRecords(chatData);
+      // Chats ("Chamados & Dúvidas") não têm um filtro de unidade próprio hoje —
+      // cruzamos pelo intern_id cru contra os estagiários de unidades restritas
+      // (a partir do fetch de interns não filtrado) para não vazar chats de
+      // Faça Amigos / Unidade A para o Supervisor Geral.
+      if (chatData) {
+        const restrictedInternIds = new Set(
+          (internsData || []).filter(i => restrictedUnitIds.includes(i.unit_id)).map(i => i.id)
+        );
+        setChatRecords(chatData.filter(c => !restrictedInternIds.has(c.intern_id)));
+      }
     } catch (err) {
       console.error('Erro ao buscar dados do RH:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   const handleSendReply = async (record) => {
     if (!replyText.trim()) return;

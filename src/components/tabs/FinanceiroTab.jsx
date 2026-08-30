@@ -3,7 +3,7 @@ import { Timer, Printer, Download, FileText } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
-export default function FinanceiroTab({ filterUnit }) {
+export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [records, setRecords] = useState([]);
   const [units, setUnits] = useState([]);
@@ -28,15 +28,15 @@ export default function FinanceiroTab({ filterUnit }) {
         .gte('timestamp', `${filterFinanceMonth}-01T00:00:00`)
         .order('timestamp', { ascending: false });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
-      if (unitsData) setUnits(unitsData.map(mapUnitFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
       if (recordsData) setRecords(recordsData.map(mapRecordFromDb));
     } catch (err) {
       console.error('Erro ao carregar dados do financeiro:', err);
     } finally {
       setLoading(false);
     }
-  }, [filterFinanceMonth]);
+  }, [filterFinanceMonth, restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

@@ -92,6 +92,17 @@ ON CONFLICT (id) DO UPDATE SET
   radius_km = EXCLUDED.radius_km,
   radius_m = EXCLUDED.radius_m;
 
+-- 5b. INSERÇÃO DE UNIDADES ADICIONAIS (workspaces administrativos vazios,
+-- visíveis apenas para os admins nomeados Guimelly/Bruno/Isabella).
+-- lat/lng ficam como placeholder (0,0) — sem geofencing/quiosque configurado
+-- ainda para estas unidades — e não são sobrescritos em re-execuções, para não
+-- apagar uma calibração real feita depois pelo painel.
+INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m) VALUES
+('faca-amigos', 'Faça Amigos', NULL, 0, 0, 5, 5000),
+('unidade-a',   'A',           NULL, 0, 0, 5, 5000)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name;
+
 -- 6. INSERÇÃO DO SUPERVISOR PADRÃO
 -- IMPORTANTE: troque o valor abaixo por uma senha forte ANTES de rodar este
 -- script em produção. Não deixe a senha real deste usuário em um arquivo
@@ -153,6 +164,191 @@ INSERT INTO auth.identities (
   '{"sub":"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11","email":"supervisor@portoterapia.com"}'::jsonb,
   'email',
   'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+  now(),
+  now(),
+  now()
+);
+
+-- 6b. INSERÇÃO DE ADMINISTRADORES NOMEADOS (mesmo papel 'supervisor')
+-- Guimelly: guimelly@portoterapia.com / Senha: admin321
+-- Bruno: bruno@portoterapia.com / Senha: admin321
+-- Isabella: isabella@portoterapia.com / Senha: admin321
+-- IMPORTANTE: troque estas senhas por senhas fortes assim que possível.
+
+DELETE FROM auth.users WHERE email IN ('guimelly@portoterapia.com', 'bruno@portoterapia.com', 'isabella@portoterapia.com');
+
+-- Guimelly
+INSERT INTO auth.users (
+  id,
+  instance_id,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  aud,
+  role,
+  created_at,
+  updated_at,
+  confirmation_token,
+  recovery_token,
+  email_change_token_new,
+  email_change,
+  is_sso_user,
+  is_anonymous
+) VALUES (
+  'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44',
+  '00000000-0000-0000-0000-000000000000',
+  'guimelly@portoterapia.com',
+  crypt('admin321', gen_salt('bf')),
+  now(),
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  '{"name": "Guimelly", "role": "supervisor"}'::jsonb,
+  'authenticated',
+  'authenticated',
+  now(),
+  now(),
+  '',
+  '',
+  '',
+  '',
+  false,
+  false
+);
+
+INSERT INTO auth.identities (
+  id,
+  user_id,
+  identity_data,
+  provider,
+  provider_id,
+  last_sign_in_at,
+  created_at,
+  updated_at
+) VALUES (
+  gen_random_uuid(),
+  'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44',
+  '{"sub":"d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44","email":"guimelly@portoterapia.com"}'::jsonb,
+  'email',
+  'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44',
+  now(),
+  now(),
+  now()
+);
+
+-- Bruno
+INSERT INTO auth.users (
+  id,
+  instance_id,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  aud,
+  role,
+  created_at,
+  updated_at,
+  confirmation_token,
+  recovery_token,
+  email_change_token_new,
+  email_change,
+  is_sso_user,
+  is_anonymous
+) VALUES (
+  'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55',
+  '00000000-0000-0000-0000-000000000000',
+  'bruno@portoterapia.com',
+  crypt('admin321', gen_salt('bf')),
+  now(),
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  '{"name": "Bruno", "role": "supervisor"}'::jsonb,
+  'authenticated',
+  'authenticated',
+  now(),
+  now(),
+  '',
+  '',
+  '',
+  '',
+  false,
+  false
+);
+
+INSERT INTO auth.identities (
+  id,
+  user_id,
+  identity_data,
+  provider,
+  provider_id,
+  last_sign_in_at,
+  created_at,
+  updated_at
+) VALUES (
+  gen_random_uuid(),
+  'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55',
+  '{"sub":"e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55","email":"bruno@portoterapia.com"}'::jsonb,
+  'email',
+  'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55',
+  now(),
+  now(),
+  now()
+);
+
+-- Isabella
+INSERT INTO auth.users (
+  id,
+  instance_id,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  aud,
+  role,
+  created_at,
+  updated_at,
+  confirmation_token,
+  recovery_token,
+  email_change_token_new,
+  email_change,
+  is_sso_user,
+  is_anonymous
+) VALUES (
+  'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66',
+  '00000000-0000-0000-0000-000000000000',
+  'isabella@portoterapia.com',
+  crypt('admin321', gen_salt('bf')),
+  now(),
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  '{"name": "Isabella", "role": "supervisor"}'::jsonb,
+  'authenticated',
+  'authenticated',
+  now(),
+  now(),
+  '',
+  '',
+  '',
+  '',
+  false,
+  false
+);
+
+INSERT INTO auth.identities (
+  id,
+  user_id,
+  identity_data,
+  provider,
+  provider_id,
+  last_sign_in_at,
+  created_at,
+  updated_at
+) VALUES (
+  gen_random_uuid(),
+  'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66',
+  '{"sub":"f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66","email":"isabella@portoterapia.com"}'::jsonb,
+  'email',
+  'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66',
   now(),
   now(),
   now()

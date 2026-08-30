@@ -4,7 +4,7 @@ import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, B
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
-export default function DashboardTab({ filterUnit }) {
+export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [records, setRecords] = useState([]);
   const [units, setUnits] = useState([]);
@@ -36,15 +36,15 @@ export default function DashboardTab({ filterUnit }) {
       if (unitsError) console.error('Erro ao buscar unidades:', unitsError);
       if (recordsError) console.error('Erro ao buscar registros:', recordsError);
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
-      if (unitsData) setUnits(unitsData.map(mapUnitFromDb));
-      if (recordsData) setRecords(recordsData.map(mapRecordFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
+      if (recordsData) setRecords(recordsData.map(mapRecordFromDb).filter(r => !restrictedUnitIds.includes(r.geo?.unitId)));
     } catch (err) {
       console.error('Erro geral ao carregar dados do dashboard:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

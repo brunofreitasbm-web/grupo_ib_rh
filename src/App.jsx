@@ -56,6 +56,29 @@ import BiometricEnrollment from './components/BiometricEnrollment';
 // CONFIGURAÇÕES GERAIS
 // ============================================================
 
+// Administradores com acesso ao painel de supervisão (role 'supervisor').
+// Cada um possui sua própria conta em auth.users (ver supabase_schema.sql).
+const ADMIN_USERS = {
+  supervisor: { label: 'Supervisor Geral', email: 'supervisor@portoterapia.com' },
+  guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
+  bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
+  isabella: { label: 'Isabella', email: 'isabella@portoterapia.com' },
+};
+
+// Resolve o texto digitado no login (nome, e-mail ou em branco) para uma
+// chave de ADMIN_USERS. Não há lista visível nessa tela — só quem já sabe o
+// nome/e-mail correto consegue acessar como Guimelly/Bruno/Isabella; qualquer
+// outro texto (ou campo vazio) cai no Supervisor Geral genérico.
+const resolveAdminKey = (typed) => {
+  const t = (typed || '').trim().toLowerCase();
+  if (!t) return 'supervisor';
+  const match = Object.keys(ADMIN_USERS).find((key) => {
+    const { label, email } = ADMIN_USERS[key];
+    return key === t || label.toLowerCase() === t || email.toLowerCase() === t;
+  });
+  return match || 'supervisor';
+};
+
 // Unidades da Porto Terapia. Coordenadas APROXIMADAS — use o botão
 // "Calibrar" no painel (estando fisicamente na unidade) para fixar o ponto exato.
 const UNITS_DEFAULT = [
@@ -73,6 +96,22 @@ const UNITS_DEFAULT = [
     address: 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA',
     lat: -1.4456511159378498,
     lng: -48.48304674431182,
+    radiusKm: 5,
+  },
+  {
+    id: 'faca-amigos',
+    name: 'Faça Amigos',
+    address: '',
+    lat: 0,
+    lng: 0,
+    radiusKm: 5,
+  },
+  {
+    id: 'unidade-a',
+    name: 'A',
+    address: '',
+    lat: 0,
+    lng: 0,
     radiusKm: 5,
   },
 ];
@@ -151,6 +190,9 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [selectedLoginOption, setSelectedLoginOption] = useState(null); // null | 'supervisor' | 'antonio-barreto' | 'generalissimo'
+  // Identificação do administrador é DIGITADA (nunca listada/salva), para que
+  // ninguém que observe o quiosque saiba quais nomes de admin existem no sistema.
+  const [loginAdminName, setLoginAdminName] = useState('');
 
   // Estados de Alteração de Senha Inicial
   const [newPassword, setNewPassword] = useState('');
@@ -186,6 +228,41 @@ export default function App() {
 
   // Filtro por unidade (histórico + exportação)
   const [filterUnit, setFilterUnit] = useState('all');
+
+  // Workspace administrativo (visível apenas para os admins nomeados: Guimelly, Bruno, Isabella)
+  const [adminWorkspace, setAdminWorkspace] = useState('porto-terapia'); // 'porto-terapia' | 'faca-amigos' | 'unidade-a'
+
+  const isNamedAdmin = useMemo(() => {
+    const email = user?.email;
+    if (!email) return false;
+    return [ADMIN_USERS.guimelly.email, ADMIN_USERS.bruno.email, ADMIN_USERS.isabella.email].includes(email);
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (!isNamedAdmin && adminWorkspace !== 'porto-terapia') {
+      setAdminWorkspace('porto-terapia');
+    }
+  }, [isNamedAdmin, adminWorkspace]);
+
+  const effectiveFilterUnit = adminWorkspace === 'porto-terapia' ? filterUnit : adminWorkspace;
+
+  // Unidades "extras" (Faça Amigos / A) só existem para quem já é um admin
+  // nomeado. Para Supervisor Geral, estagiários e o fluxo público de
+  // autocadastro, elas simplesmente não aparecem em nenhuma lista/seletor.
+  const visibleUnits = useMemo(
+    () => (isNamedAdmin ? units : units.filter((u) => u.id !== 'faca-amigos' && u.id !== 'unidade-a')),
+    [units, isNamedAdmin]
+  );
+
+  // IDs de unidade que devem ser tratados como inexistentes para quem não é
+  // admin nomeado — inclusive dentro de cada aba administrativa, que busca
+  // seus próprios dados direto do Supabase (não deriva de `visibleUnits`).
+  // "Todas as unidades" (filterUnit === 'all') nunca deve incluir estes IDs
+  // para o Supervisor Geral.
+  const restrictedUnitIds = useMemo(
+    () => (isNamedAdmin ? [] : ['faca-amigos', 'unidade-a']),
+    [isNamedAdmin]
+  );
 
   // Fluxo Admissional (Upload de Documentos)
   const [selectedAdmissionalIntern, setSelectedAdmissionalIntern] = useState('');
@@ -888,7 +965,7 @@ export default function App() {
 
     let email = '';
     if (selectedLoginOption === 'supervisor') {
-      email = 'supervisor@portoterapia.com';
+      email = ADMIN_USERS[resolveAdminKey(loginAdminName)].email;
     } else if (selectedLoginOption === 'antonio-barreto') {
       email = 'antoniobarreto@portoterapia.com';
     } else if (selectedLoginOption === 'generalissimo') {
@@ -916,6 +993,7 @@ export default function App() {
 
       setLoginUsername('');
       setLoginPassword('');
+      setLoginAdminName('');
       setSelectedLoginOption(null);
     } catch (err) {
       console.error('Erro de login:', err);
@@ -1058,8 +1136,8 @@ export default function App() {
 
   // Alertas de carga horária diária (> 6h)
   useEffect(() => {
-    setHoursAlerts(calculateHoursAlerts(records, interns, filterUnit, LABOR.maxDailyHours));
-  }, [records, interns, filterUnit]);
+    setHoursAlerts(calculateHoursAlerts(records, interns, effectiveFilterUnit, LABOR.maxDailyHours));
+  }, [records, interns, effectiveFilterUnit]);
 
   // Motor de Auditoria de Ponto Retroativo de 30 dias com Sincronização
   const runPointAudit = useCallback(async () => {
@@ -2413,7 +2491,9 @@ export default function App() {
       const getOptionDetails = () => {
         switch (selectedLoginOption) {
           case 'supervisor':
-            return { name: 'Supervisor Geral', email: 'supervisor@portoterapia.com' };
+            // Nome genérico proposital: não revela qual administrador vai
+            // acessar, mesmo depois de digitado (evita "shoulder surfing").
+            return { name: 'Painel Administrativo' };
           case 'antonio-barreto':
             return { name: 'Estagiário - Unidade Antônio Barreto', email: 'antoniobarreto@portoterapia.com' };
           case 'generalissimo':
@@ -2554,7 +2634,7 @@ export default function App() {
                   <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-2">
                     <button
                       type="button"
-                      onClick={() => { setSelectedLoginOption(null); setLoginError(''); setLoginPassword(''); }}
+                      onClick={() => { setSelectedLoginOption(null); setLoginError(''); setLoginPassword(''); setLoginAdminName(''); }}
                       className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                     >
                       <ArrowLeft size={16} />
@@ -2564,12 +2644,30 @@ export default function App() {
 
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1.5">
+                      <User size={14} /> Usuário (deixe em branco se não souber)
+                    </label>
+                    <input
+                      type="text"
+                      autoFocus
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
+                      placeholder="Nome de usuário"
+                      value={loginAdminName}
+                      onChange={(e) => { setLoginAdminName(e.target.value); setLoginError(''); }}
+                      className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1.5">
                       <Lock size={14} /> Senha de Acesso
                     </label>
                     <input
                       type="password"
                       required
-                      autoFocus
+                      autoComplete="off"
                       placeholder="Senha de acesso"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
@@ -2684,7 +2782,7 @@ export default function App() {
                     onChange={(e) => { setSelectedUnit(e.target.value); setGeoError(''); }}
                     className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 transition-all text-xs disabled:opacity-75 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
-                    {units.map((u) => (
+                    {visibleUnits.map((u) => (
                       <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
@@ -3497,7 +3595,7 @@ export default function App() {
                     onChange={(e) => setCadastroForm({ ...cadastroForm, unitId: e.target.value })}
                     className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
                   >
-                    {units.map((u) => (
+                    {visibleUnits.map((u) => (
                       <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
@@ -7306,10 +7404,40 @@ export default function App() {
               <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />
               <div>
                 <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">Porto Terapia</h1>
-                <p className="text-[11px] text-slate-500 font-medium">Painel da Supervisão</p>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Painel da Supervisão{adminWorkspace !== 'porto-terapia' ? ` — ${adminWorkspace === 'faca-amigos' ? 'Faça Amigos' : 'A'}` : ''}
+                </p>
               </div>
             </div>
           </div>
+
+          {isNamedAdmin && (
+            <div className="p-3 bg-white/40 border-b border-slate-200/80">
+              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                Workspace
+              </label>
+              <div className="flex gap-1">
+                {[
+                  { id: 'porto-terapia', label: 'Porto Terapia' },
+                  { id: 'faca-amigos',   label: 'Faça Amigos' },
+                  { id: 'unidade-a',     label: 'A' },
+                ].map(ws => (
+                  <button
+                    key={ws.id}
+                    type="button"
+                    onClick={() => setAdminWorkspace(ws.id)}
+                    className={`flex-1 text-[10px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                      adminWorkspace === ws.id
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {ws.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Filtro de Unidade & Ações Rápidas */}
           <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
@@ -7317,17 +7445,24 @@ export default function App() {
               <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
                 Unidade Selecionada
               </label>
-              <select
-                value={filterUnit}
-                onChange={(e) => setFilterUnit(e.target.value)}
-                title="Filtrar por unidade"
-                className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
-              >
-                <option value="all">Todas as unidades</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
+              {adminWorkspace === 'porto-terapia' ? (
+                <select
+                  value={filterUnit}
+                  onChange={(e) => setFilterUnit(e.target.value)}
+                  title="Filtrar por unidade"
+                  className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
+                >
+                  <option value="all">Todas as unidades</option>
+                  {visibleUnits.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1.5 text-xs font-medium">
+                  {units.find(u => u.id === adminWorkspace)?.name || (adminWorkspace === 'faca-amigos' ? 'Faça Amigos' : 'A')}
+                  <span className="ml-1 text-slate-400">(fixo)</span>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-1">
@@ -7368,7 +7503,7 @@ export default function App() {
                     <span className="text-base leading-none">{tab.icon}</span>
                     <span>{tab.label}</span>
                   </div>
-                  {tab.id === 'rh' && pendingChatCount > 0 && (
+                  {tab.id === 'rh' && adminWorkspace === 'porto-terapia' && pendingChatCount > 0 && (
                     <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                       {pendingChatCount}
                     </span>
@@ -7412,17 +7547,17 @@ export default function App() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 }>
-                  {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-                  {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={filterUnit} onPrintDocument={handlePrintDocument} />}
-                  {activeAdminTab === 'admissional'    && <DossieTab filterUnit={filterUnit} />}
-                  {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={filterUnit} onGenerateMinuta={setViewingMinutaIntern} />}
-                  {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={filterUnit} />}
+                  {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />}
+                  {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />}
+                  {activeAdminTab === 'admissional'    && <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
+                  {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />}
+                  {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
                   {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
                 </Suspense>
               </ErrorBoundary>

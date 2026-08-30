@@ -4,7 +4,7 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { startOfWeek, formatDistance, formatDate, formatTime } from '../../utils/helpers';
 
-export default function FrequenciaTab({ filterUnit }) {
+export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [records, setRecords] = useState([]);
   const [units, setUnits] = useState([]);
@@ -61,15 +61,15 @@ export default function FrequenciaTab({ filterUnit }) {
         .order('timestamp', { ascending: false })
         .limit(250); // limit to recent records for speed
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
-      if (unitsData) setUnits(unitsData.map(mapUnitFromDb));
-      if (recordsData) setRecords(recordsData.map(mapRecordFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
+      if (recordsData) setRecords(recordsData.map(mapRecordFromDb).filter(r => !restrictedUnitIds.includes(r.geo?.unitId)));
     } catch (err) {
       console.error('Erro ao carregar frequencias:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();
@@ -125,11 +125,15 @@ export default function FrequenciaTab({ filterUnit }) {
     const wStart = startOfWeek();
 
     const filteredInterns = interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit);
-    const filteredInternNames = new Set(filteredInterns.map(i => i.name));
+    // Usado apenas como fallback para registros legados sem geo.unitId — casamento por ID
+    // (nunca por nome, para evitar que um nome duplicado em outra unidade "vaze" horas indevidas).
+    const filteredInternIds = new Set(filteredInterns.map(i => i.id));
 
     const daily = {};
     records.forEach((r) => {
-      const matchesUnit = filterUnit === 'all' || r.geo?.unitId === filterUnit || filteredInternNames.has(r.internName);
+      const matchesUnit = filterUnit === 'all'
+        || r.geo?.unitId === filterUnit
+        || (!r.geo?.unitId && filteredInternIds.has(r.internId));
       if (!matchesUnit) return;
 
       const d = new Date(r.timestamp);

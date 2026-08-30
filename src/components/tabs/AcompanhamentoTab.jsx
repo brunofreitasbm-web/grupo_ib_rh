@@ -3,7 +3,7 @@ import { FileText, Save, Loader2, Upload, Eye, Trash, X, Download } from 'lucide
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
-export default function AcompanhamentoTab({ filterUnit }) {
+export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,14 +32,14 @@ export default function AcompanhamentoTab({ filterUnit }) {
         .from('units')
         .select('*');
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
-      if (unitsData) setUnits(unitsData.map(mapUnitFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
     } catch (err) {
       console.error('Erro ao carregar dados de acompanhamento:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

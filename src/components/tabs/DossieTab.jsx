@@ -4,7 +4,7 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
-export default function DossieTab({ filterUnit }) {
+export default function DossieTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,13 +34,13 @@ export default function DossieTab({ filterUnit }) {
         .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
     } catch (err) {
       console.error('Erro ao buscar dados do dossiê:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

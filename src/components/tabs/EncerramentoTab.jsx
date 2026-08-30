@@ -3,7 +3,7 @@ import { Lock, Save, FileText, Printer, Upload, Eye, Trash, Loader2, X, Download
 import { supabase } from '../../supabase';
 import { mapInternFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
-export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
+export default function EncerramentoTab({ filterUnit, onPrintDocument, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,13 +25,13 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument }) {
         .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
     } catch (err) {
       console.error('Erro ao buscar estagiários para encerramento:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

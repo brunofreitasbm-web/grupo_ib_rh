@@ -23,7 +23,7 @@ const MONTH_COLORS = [
   'from-amber-400 to-orange-500',
 ];
 
-export default function AniversariantesTab({ filterUnit }) {
+export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,14 +41,14 @@ export default function AniversariantesTab({ filterUnit }) {
       const { data: unitsData } = await supabase
         .from('units')
         .select('*');
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
-      if (unitsData) setUnits(unitsData.map(mapUnitFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
     } catch (err) {
       console.error('Erro ao carregar aniversariantes:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

@@ -4,7 +4,7 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
-export default function OcorrenciasTab({ filterUnit }) {
+export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,14 +37,22 @@ export default function OcorrenciasTab({ filterUnit }) {
         .order('timestamp', { ascending: false })
         .limit(300);
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
-      if (recordsData) setRecords(recordsData.map(mapRecordFromDb));
+      // Ocorrências (records) não carregam unit_id próprio — precisamos do mapa
+      // cru intern_id -> unit_id (a partir do fetch de interns não filtrado) para
+      // excluir também os registros ligados a estagiários de unidades restritas,
+      // já que ocorrenciasList só cruza contra `interns` quando filterUnit !== 'all'.
+      const restrictedInternIds = new Set(
+        (internsData || []).filter(i => restrictedUnitIds.includes(i.unit_id)).map(i => i.id)
+      );
+
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (recordsData) setRecords(recordsData.map(mapRecordFromDb).filter(r => !restrictedInternIds.has(r.internId)));
     } catch (err) {
       console.error('Erro ao buscar dados das ocorrências:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

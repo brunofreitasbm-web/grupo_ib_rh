@@ -3,7 +3,7 @@ import { Printer } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
-export default function DocumentosTab({ filterUnit, onPrintDocument }) {
+export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPrintIntern, setSelectedPrintIntern] = useState('');
@@ -15,13 +15,13 @@ export default function DocumentosTab({ filterUnit, onPrintDocument }) {
         .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
     } catch (err) {
       console.error('Erro ao buscar estagiários para documentos:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();

@@ -7,10 +7,17 @@ import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
 import { toast } from 'sonner';
 
-export default function EstagiariosTab({ filterUnit }) {
+export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Quando o workspace está travado numa única unidade (filterUnit !== 'all'),
+  // todo novo/editado estagiário deve nascer preso a essa unidade.
+  const defaultUnitId = useCallback(
+    (fallbackUnits) => (filterUnit !== 'all' ? filterUnit : (fallbackUnits?.[0]?.id || '')),
+    [filterUnit]
+  );
 
   // CRUD States
   const [showManage, setShowManage] = useState(false);
@@ -218,9 +225,9 @@ export default function EstagiariosTab({ filterUnit }) {
         .select('*')
         .order('name', { ascending: true });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb));
+      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
       if (unitsData) {
-        const mappedUnits = unitsData.map(mapUnitFromDb);
+        const mappedUnits = unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id));
         setUnits(mappedUnits);
         // Inicializa unitId apenas se ainda não foi definido (sem dependência no callback)
         setForm(f => f.unitId ? f : { ...f, unitId: mappedUnits[0]?.id || '' });
@@ -230,7 +237,7 @@ export default function EstagiariosTab({ filterUnit }) {
     } finally {
       setLoading(false);
     }
-  }, []); // sem dependências — evita loop infinito de re-fetch
+  }, [restrictedUnitIds]);
 
   useEffect(() => {
     fetchData();
@@ -247,11 +254,19 @@ export default function EstagiariosTab({ filterUnit }) {
     };
   }, [fetchData]);
 
+  // Workspace travado numa única unidade: mantém o formulário sempre preso a ela,
+  // mesmo ao trocar de workspace com o formulário já aberto.
+  useEffect(() => {
+    if (filterUnit !== 'all') {
+      setForm(f => (f.unitId === filterUnit ? f : { ...f, unitId: filterUnit }));
+    }
+  }, [filterUnit]);
+
   const resetForm = () => {
     setEditingId(null);
     setForm({
       name: '', course: '', institution: '', shift: 'Manhã',
-      dailyHours: 6, unitId: units[0]?.id || '', active: true,
+      dailyHours: 6, unitId: defaultUnitId(units), active: true,
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       photo: '', cpf: '', email: '', rg: '', phone: '', address: '',
@@ -270,7 +285,7 @@ export default function EstagiariosTab({ filterUnit }) {
       institution: intern.institution || '',
       shift: intern.shift || 'Manhã',
       dailyHours: intern.dailyHours || 6,
-      unitId: intern.unitId || units[0]?.id || '',
+      unitId: filterUnit !== 'all' ? filterUnit : (intern.unitId || units[0]?.id || ''),
       active: intern.active !== false,
       startDate: intern.startDate || '',
       endDate: intern.endDate || '',
@@ -768,15 +783,21 @@ export default function EstagiariosTab({ filterUnit }) {
 
               <div className="space-y-1">
                 <label className="font-semibold text-gray-700">Unidade Recomendada</label>
-                <select
-                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-                  value={form.unitId}
-                  onChange={e => setForm(f => ({ ...f, unitId: e.target.value }))}
-                >
-                  {units.map(u => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
-                </select>
+                {filterUnit !== 'all' ? (
+                  <div className="w-full border rounded-lg p-2 bg-gray-100 text-gray-500">
+                    {unitName(filterUnit)} <span className="text-gray-400">(fixo)</span>
+                  </div>
+                ) : (
+                  <select
+                    className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                    value={form.unitId}
+                    onChange={e => setForm(f => ({ ...f, unitId: e.target.value }))}
+                  >
+                    {units.map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="space-y-1">
