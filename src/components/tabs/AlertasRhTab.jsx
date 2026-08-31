@@ -30,8 +30,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
 
       // Chats ("Chamados & Dúvidas") não têm um filtro de unidade próprio hoje —
       // cruzamos pelo intern_id cru contra os estagiários de unidades restritas
-      // (a partir do fetch de interns não filtrado) para não vazar chats de
-      // Faça Amigos / Unidade A para o Supervisor Geral.
+      // se houver alguma restrição ativa.
       if (chatData) {
         const restrictedInternIds = new Set(
           (internsData || []).filter(i => restrictedUnitIds.includes(i.unit_id)).map(i => i.id)

@@ -98,22 +98,6 @@ const UNITS_DEFAULT = [
     lng: -48.48304674431182,
     radiusKm: 5,
   },
-  {
-    id: 'faca-amigos',
-    name: 'Faça Amigos',
-    address: '',
-    lat: 0,
-    lng: 0,
-    radiusKm: 5,
-  },
-  {
-    id: 'unidade-a',
-    name: 'A',
-    address: '',
-    lat: 0,
-    lng: 0,
-    radiusKm: 5,
-  },
 ];
 
 // Limites da Lei do Estágio (Lei nº 11.788/2008)
@@ -229,8 +213,8 @@ export default function App() {
   // Filtro por unidade (histórico + exportação)
   const [filterUnit, setFilterUnit] = useState('all');
 
-  // Workspace administrativo (visível apenas para os admins nomeados: Guimelly, Bruno, Isabella)
-  const [adminWorkspace, setAdminWorkspace] = useState('porto-terapia'); // 'porto-terapia' | 'faca-amigos' | 'unidade-a'
+  // Workspace administrativo
+  const [adminWorkspace, setAdminWorkspace] = useState('porto-terapia');
 
   const isNamedAdmin = useMemo(() => {
     const email = user?.email;
@@ -244,24 +228,13 @@ export default function App() {
     }
   }, [isNamedAdmin, adminWorkspace]);
 
-  const effectiveFilterUnit = adminWorkspace === 'porto-terapia' ? filterUnit : adminWorkspace;
+  const effectiveFilterUnit = filterUnit;
 
-  // Unidades "extras" (Faça Amigos / A) só existem para quem já é um admin
-  // nomeado. Para Supervisor Geral, estagiários e o fluxo público de
-  // autocadastro, elas simplesmente não aparecem em nenhuma lista/seletor.
-  const visibleUnits = useMemo(
-    () => (isNamedAdmin ? units : units.filter((u) => u.id !== 'faca-amigos' && u.id !== 'unidade-a')),
-    [units, isNamedAdmin]
-  );
+  const visibleUnits = units;
 
-  // IDs de unidade que devem ser tratados como inexistentes para quem não é
-  // admin nomeado — inclusive dentro de cada aba administrativa, que busca
-  // seus próprios dados direto do Supabase (não deriva de `visibleUnits`).
-  // "Todas as unidades" (filterUnit === 'all') nunca deve incluir estes IDs
-  // para o Supervisor Geral.
   const restrictedUnitIds = useMemo(
-    () => (isNamedAdmin ? [] : ['faca-amigos', 'unidade-a']),
-    [isNamedAdmin]
+    () => [],
+    []
   );
 
   // Fluxo Admissional (Upload de Documentos)
@@ -7405,39 +7378,11 @@ export default function App() {
               <div>
                 <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">Porto Terapia</h1>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  Painel da Supervisão{adminWorkspace !== 'porto-terapia' ? ` — ${adminWorkspace === 'faca-amigos' ? 'Faça Amigos' : 'A'}` : ''}
+                  Painel da Supervisão
                 </p>
               </div>
             </div>
           </div>
-
-          {isNamedAdmin && (
-            <div className="p-3 bg-white/40 border-b border-slate-200/80">
-              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
-                Workspace
-              </label>
-              <div className="flex gap-1">
-                {[
-                  { id: 'porto-terapia', label: 'Porto Terapia' },
-                  { id: 'faca-amigos',   label: 'Faça Amigos' },
-                  { id: 'unidade-a',     label: 'A' },
-                ].map(ws => (
-                  <button
-                    key={ws.id}
-                    type="button"
-                    onClick={() => setAdminWorkspace(ws.id)}
-                    className={`flex-1 text-[10px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                      adminWorkspace === ws.id
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {ws.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Filtro de Unidade & Ações Rápidas */}
           <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
@@ -7445,24 +7390,17 @@ export default function App() {
               <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
                 Unidade Selecionada
               </label>
-              {adminWorkspace === 'porto-terapia' ? (
-                <select
-                  value={filterUnit}
-                  onChange={(e) => setFilterUnit(e.target.value)}
-                  title="Filtrar por unidade"
-                  className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
-                >
-                  <option value="all">Todas as unidades</option>
-                  {visibleUnits.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <div className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1.5 text-xs font-medium">
-                  {units.find(u => u.id === adminWorkspace)?.name || (adminWorkspace === 'faca-amigos' ? 'Faça Amigos' : 'A')}
-                  <span className="ml-1 text-slate-400">(fixo)</span>
-                </div>
-              )}
+              <select
+                value={filterUnit}
+                onChange={(e) => setFilterUnit(e.target.value)}
+                title="Filtrar por unidade"
+                className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
+              >
+                <option value="all">Todas as unidades</option>
+                {visibleUnits.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
             </div>
 
             <div className="flex gap-2 pt-1">
@@ -7503,7 +7441,7 @@ export default function App() {
                     <span className="text-base leading-none">{tab.icon}</span>
                     <span>{tab.label}</span>
                   </div>
-                  {tab.id === 'rh' && adminWorkspace === 'porto-terapia' && pendingChatCount > 0 && (
+                  {tab.id === 'rh' && pendingChatCount > 0 && (
                     <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                       {pendingChatCount}
                     </span>

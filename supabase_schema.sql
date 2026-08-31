@@ -92,17 +92,6 @@ ON CONFLICT (id) DO UPDATE SET
   radius_km = EXCLUDED.radius_km,
   radius_m = EXCLUDED.radius_m;
 
--- 5b. INSERÇÃO DE UNIDADES ADICIONAIS (workspaces administrativos vazios,
--- visíveis apenas para os admins nomeados Guimelly/Bruno/Isabella).
--- lat/lng ficam como placeholder (0,0) — sem geofencing/quiosque configurado
--- ainda para estas unidades — e não são sobrescritos em re-execuções, para não
--- apagar uma calibração real feita depois pelo painel.
-INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m) VALUES
-('faca-amigos', 'Faça Amigos', NULL, 0, 0, 5, 5000),
-('unidade-a',   'A',           NULL, 0, 0, 5, 5000)
-ON CONFLICT (id) DO UPDATE SET
-  name = EXCLUDED.name;
-
 -- 6. INSERÇÃO DO SUPERVISOR PADRÃO
 -- IMPORTANTE: troque o valor abaixo por uma senha forte ANTES de rodar este
 -- script em produção. Não deixe a senha real deste usuário em um arquivo
