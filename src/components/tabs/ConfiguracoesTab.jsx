@@ -9,19 +9,57 @@ import {
   Check, 
   RefreshCw, 
   Sliders, 
-  Users, 
-  Mail, 
-  Globe, 
-  DollarSign, 
-  Lock,
-  Smartphone,
-  ShieldAlert
+  Upload,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  Image as ImageIcon
 } from 'lucide-react';
 import { BRANDING } from '../../config/branding';
+import { compressImage } from '../../utils/mappings';
 
-export default function ConfiguracoesTab({ userRole = 'admin' }) {
+export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSaveUnit }) {
   const [activeSubTab, setActiveSubTab] = useState('empresa');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [expandedUnitId, setExpandedUnitId] = useState(null);
+  const [editingUnits, setEditingUnits] = useState({});
+
+  // Lista consolidada de unidades (branding + banco de dados)
+  const availableUnits = units.length > 0 ? units : BRANDING.kioskUnits.map((ku) => ({
+    id: ku.id,
+    name: ku.buttonLabel || ku.name,
+    razaoSocial: ku.razaoSocial || BRANDING.legalEntityName,
+    cnpj: ku.cnpj || BRANDING.cnpj,
+    address: ku.address || '',
+    phone: ku.phone || BRANDING.phone,
+    logoUrl: ku.logoPath || '',
+    tceCustomText: '',
+    paeCustomText: '',
+    declaracaoCustomText: '',
+    fichaCustomText: '',
+    radiusM: 5000
+  }));
+
+  useEffect(() => {
+    const unitMap = {};
+    availableUnits.forEach(u => {
+      unitMap[u.id] = {
+        id: u.id,
+        name: u.name || u.nome || u.buttonLabel || '',
+        razaoSocial: u.razaoSocial || u.razao_social || BRANDING.legalEntityName,
+        cnpj: u.cnpj || BRANDING.cnpj,
+        address: u.address || u.endereco || '',
+        phone: u.phone || BRANDING.phone,
+        logoUrl: u.logoUrl || u.logo_url || BRANDING.logoPath || '',
+        tceCustomText: u.tceCustomText || u.tce_custom_text || '',
+        paeCustomText: u.paeCustomText || u.pae_custom_text || '',
+        declaracaoCustomText: u.declaracaoCustomText || u.declaracao_custom_text || '',
+        fichaCustomText: u.fichaCustomText || u.ficha_custom_text || '',
+        radiusM: u.radiusM || 5000
+      };
+    });
+    setEditingUnits(unitMap);
+  }, [units]);
 
   // Default Settings State
   const [settings, setSettings] = useState(() => {
@@ -34,41 +72,26 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
       }
     }
     return {
-      // 1. Empresa & Unidades
       nomeEmpresa: BRANDING.displayName,
       razaoSocial: BRANDING.legalEntityName,
       cnpj: BRANDING.cnpj,
       emailEmpresa: BRANDING.contactEmail,
       telefone: BRANDING.phone,
-      unidades: BRANDING.kioskUnits.map((ku) => ({
-        id: ku.id,
-        nome: ku.buttonLabel,
-        endereco: ku.address || '',
-        geofenceM: 5000
-      })),
-
-      // 2. Geofencing & Ponto Eletrônico
       geofencePadraoM: 5000,
       toleranciaAtrasoMinutos: 15,
       exigirBiometriaFacial: true,
       bloquearPontoForaDoRaio: true,
-
-      // 3. Permissões de Acesso
       papeis: {
         admin: { verAuditoria: true, verFinanceiro: true, editarEstagiarios: true, emitirFolha: true },
         gestor: { verAuditoria: true, verFinanceiro: true, editarEstagiarios: true, emitirFolha: false },
         supervisor: { verAuditoria: false, verFinanceiro: false, editarEstagiarios: false, emitirFolha: false }
       },
-
-      // 4. Notificações & Alertas
       notificarEmailAusencias: true,
       emailNotificacoes: BRANDING.rhEmail,
       alertarContratoExpirandoDias: 30,
       alertarAniversariantesDoDia: true,
       backupIntervalo: 'semanal',
       emailBackup: BRANDING.rhEmail,
-
-      // 5. Aparência & Preferências
       modoEscuro: false,
       formatoData: 'DD/MM/YYYY',
       itensPorPagina: 15,
@@ -76,8 +99,50 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
     };
   });
 
+  const handleUnitFieldChange = (unitId, field, value) => {
+    setEditingUnits(prev => ({
+      ...prev,
+      [unitId]: {
+        ...prev[unitId],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleLogoUpload = async (unitId, file) => {
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file, 600, 400, 0.85);
+      handleUnitFieldChange(unitId, 'logoUrl', base64);
+    } catch (err) {
+      console.error('Erro ao processar imagem de logo:', err);
+      alert('Não foi possível carregar a imagem. Tente uma imagem menor ou formato JPEG/PNG.');
+    }
+  };
+
+  const handleSaveSingleUnit = (unitId) => {
+    const unitData = editingUnits[unitId];
+    if (unitData && onSaveUnit) {
+      onSaveUnit(unitData);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } else {
+      localStorage.setItem(`unit_config_${unitId}`, JSON.stringify(unitData));
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    }
+  };
+
   const handleSave = () => {
     localStorage.setItem('app_configuracoes', JSON.stringify(settings));
+    // Salva também todas as unidades
+    Object.values(editingUnits).forEach(uData => {
+      if (onSaveUnit) {
+        onSaveUnit(uData);
+      } else {
+        localStorage.setItem(`unit_config_${uData.id}`, JSON.stringify(uData));
+      }
+    });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -107,7 +172,7 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
             Configurações do Sistema
           </h1>
           <p className="text-sm text-slate-500">
-            Gerencie parâmetros gerais da instituição, cerca virtual, permissões de acesso e notificações.
+            Gerencie parâmetros gerais da instituição, unidades, timbres visuais, cerca virtual e notificações.
           </p>
         </div>
 
@@ -172,14 +237,14 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
               <div>
                 <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-indigo-600" />
-                  Dados da Instituição
+                  Dados da Instituição (Workspace Geral)
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">Informações cadastrais utilizadas na geração de relatórios e documentos.</p>
+                <p className="text-xs text-slate-500 mt-1">Informações cadastrais gerais do grupo/workspace. Cada unidade abaixo pode possuir seus próprios dados específicos.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Nome Fantasia</label>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Nome Fantasia do Grupo</label>
                   <input
                     type="text"
                     value={settings.nomeEmpresa}
@@ -189,7 +254,7 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Razão Social</label>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Razão Social Geral</label>
                   <input
                     type="text"
                     value={settings.razaoSocial}
@@ -199,7 +264,7 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">CNPJ</label>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">CNPJ Principal</label>
                   <input
                     type="text"
                     value={settings.cnpj}
@@ -219,23 +284,235 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
                 </div>
               </div>
 
-              {/* Unidades Cadastradas */}
-              <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-md font-semibold text-slate-800 mb-3">Unidades / Lojas Cadastradas</h3>
-                <div className="space-y-3">
-                  {settings.unidades.map((unidade, idx) => (
-                    <div key={unidade.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3">
-                      <div>
-                        <span className="font-semibold text-slate-800 text-sm">{unidade.nome}</span>
-                        <p className="text-xs text-slate-500">{unidade.endereco}</p>
+              {/* Unidades Cadastradas com Personalização Completa */}
+              <div className="pt-6 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-indigo-600" /> Unidades Cadastradas, Timbres & Documentos
+                    </h3>
+                    <p className="text-xs text-slate-500">Configure CNPJ, endereço, telefone, logo do timbre e modelos de documento individualizados por unidade.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {Object.values(editingUnits).map((uData) => {
+                    const isExpanded = expandedUnitId === uData.id;
+                    return (
+                      <div key={uData.id} className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all">
+                        {/* Header do Card da Unidade */}
+                        <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border-b border-slate-100">
+                          <div className="flex items-center gap-3">
+                            {uData.logoUrl ? (
+                              <img src={uData.logoUrl} alt={uData.name} className="w-10 h-10 object-contain rounded border border-slate-200 p-0.5 bg-white" />
+                            ) : (
+                              <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm border border-indigo-100">
+                                {uData.name ? uData.name.substring(0, 2).toUpperCase() : 'UN'}
+                              </div>
+                            )}
+                            <div>
+                              <span className="font-bold text-slate-800 text-sm block">{uData.name}</span>
+                              <p className="text-xs text-slate-500">
+                                {uData.razaoSocial || 'Razão Social pendente'} • CNPJ: {uData.cnpj || 'Não informado'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedUnitId(isExpanded ? null : uData.id)}
+                              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1.5"
+                            >
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              {isExpanded ? 'Recolher Configurações' : 'Editar Unidade & Timbre'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSingleUnit(uData.id)}
+                              className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors flex items-center gap-1"
+                            >
+                              <Save className="w-3.5 h-3.5" /> Salvar Unidade
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Formulário Expansível por Unidade */}
+                        {isExpanded && (
+                          <div className="p-5 space-y-6 bg-slate-50">
+                            {/* 1. Dados Cadastrais da Unidade */}
+                            <div>
+                              <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                                <Building2 className="w-3.5 h-3.5 text-indigo-600" /> Dados Cadastrais da Unidade
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Nome da Unidade</label>
+                                  <input
+                                    type="text"
+                                    value={uData.name}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'name', e.target.value)}
+                                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Razão Social da Unidade</label>
+                                  <input
+                                    type="text"
+                                    value={uData.razaoSocial}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'razaoSocial', e.target.value)}
+                                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="Ex: Empresa Exemplo LTDA"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">CNPJ da Unidade</label>
+                                  <input
+                                    type="text"
+                                    value={uData.cnpj}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'cnpj', e.target.value)}
+                                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="00.000.000/0000-00"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Telefone da Unidade</label>
+                                  <input
+                                    type="text"
+                                    value={uData.phone}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'phone', e.target.value)}
+                                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="(00) 00000-0000"
+                                  />
+                                </div>
+                                <div className="md:col-span-2">
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Endereço Completo</label>
+                                  <input
+                                    type="text"
+                                    value={uData.address}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'address', e.target.value)}
+                                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="Rua, Número, Bairro, Cidade - UF, CEP"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 2. Timbre Visual & Logotipo da Unidade */}
+                            <div>
+                              <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                                <ImageIcon className="w-3.5 h-3.5 text-indigo-600" /> Logotipo & Timbre Visual da Unidade (Cabeçalho de Documentos)
+                              </h4>
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white p-3 border border-slate-200 rounded-lg">
+                                {uData.logoUrl ? (
+                                  <div className="relative group">
+                                    <img src={uData.logoUrl} alt="Timbre Unidade" className="h-16 w-32 object-contain border border-slate-300 rounded p-1 bg-slate-50" />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUnitFieldChange(uData.id, 'logoUrl', '')}
+                                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 text-[10px] shadow hover:bg-red-700"
+                                      title="Remover logotipo"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="h-16 w-32 border-2 border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-slate-400 text-[10px] bg-slate-50">
+                                    <ImageIcon className="w-5 h-5 mb-1 text-slate-300" />
+                                    Sem Timbre
+                                  </div>
+                                )}
+
+                                <div className="space-y-2 flex-1 w-full">
+                                  <label className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg cursor-pointer transition-colors shadow-sm">
+                                    <Upload className="w-3.5 h-3.5 text-indigo-600" /> Upload Imagem de Timbre/Logo
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => handleLogoUpload(uData.id, e.target.files[0])}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                  <p className="text-[10px] text-slate-400">Suporta arquivos JPG ou PNG. Recomendado: imagem retangular com fundo transparente ou branco.</p>
+                                  <input
+                                    type="text"
+                                    value={uData.logoUrl}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'logoUrl', e.target.value)}
+                                    placeholder="Ou insira a URL da imagem de timbre..."
+                                    className="w-full px-2.5 py-1 text-[11px] border border-slate-200 rounded bg-slate-50 text-slate-600 focus:bg-white"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 3. Modelos & Cláusulas Específicas da Unidade */}
+                            <div>
+                              <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                                <FileText className="w-3.5 h-3.5 text-indigo-600" /> Modelos & Cláusulas Customizadas por Unidade
+                              </h4>
+                              <p className="text-[11px] text-slate-500 mb-3">Caso esta unidade exija cláusulas ou observações específicas nos documentos, preencha os campos abaixo (se deixar em branco, o sistema utilizará as cláusulas padrão):</p>
+                              
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Cláusulas / Observações Específicas do TCE (Termo de Compromisso)</label>
+                                  <textarea
+                                    rows={2}
+                                    value={uData.tceCustomText}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'tceCustomText', e.target.value)}
+                                    placeholder="Insira cláusulas aditivas ou regras específicas para contratos nesta unidade..."
+                                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 font-mono"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Observações do PAE (Plano de Atividades de Estágio)</label>
+                                  <textarea
+                                    rows={2}
+                                    value={uData.paeCustomText}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'paeCustomText', e.target.value)}
+                                    placeholder="Insira diretrizes de atividades específicas para esta unidade..."
+                                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 font-mono"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Texto Adicional para Declaração de Vínculo</label>
+                                  <textarea
+                                    rows={2}
+                                    value={uData.declaracaoCustomText}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'declaracaoCustomText', e.target.value)}
+                                    placeholder="Insira observações institucionais adicionais para declarações emitidas nesta unidade..."
+                                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 font-mono"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Observações para Ficha Cadastral</label>
+                                  <textarea
+                                    rows={2}
+                                    value={uData.fichaCustomText}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'fichaCustomText', e.target.value)}
+                                    placeholder="Regras ou termos de ciência internos da ficha cadastral nesta unidade..."
+                                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 font-mono"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-200 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveSingleUnit(uData.id)}
+                                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow transition-colors flex items-center gap-1.5"
+                              >
+                                <Save className="w-4 h-4" /> Salvar Alterações da Unidade {uData.name}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full font-medium border border-indigo-200">
-                          Raio Geofence: {unidade.geofenceM || (unidade.geofenceKm ? unidade.geofenceKm * 1000 : 5000)} m
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

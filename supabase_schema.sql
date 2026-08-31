@@ -1283,3 +1283,15 @@ BEGIN
   END LOOP;
 END $$;
 
+-- 11. Colunas adicionais em public.units para personnalização de dados cadastrais, timbres e documentos por unidade
+ALTER TABLE public.units
+  ADD COLUMN IF NOT EXISTS razao_social text,
+  ADD COLUMN IF NOT EXISTS cnpj text,
+  ADD COLUMN IF NOT EXISTS phone text,
+  ADD COLUMN IF NOT EXISTS logo_url text,
+  ADD COLUMN IF NOT EXISTS tce_custom_text text,
+  ADD COLUMN IF NOT EXISTS pae_custom_text text,
+  ADD COLUMN IF NOT EXISTS declaracao_custom_text text,
+  ADD COLUMN IF NOT EXISTS ficha_custom_text text;
+
+

@@ -201,6 +201,14 @@ export const mapUnitFromDb = (u) => ({
   workspaceId: u.workspace_id,
   kioskEmail: u.kiosk_email,
   biometricRequired: u.biometric_required,
+  razaoSocial: u.razao_social || '',
+  cnpj: u.cnpj || '',
+  phone: u.phone || '',
+  logoUrl: u.logo_url || '',
+  tceCustomText: u.tce_custom_text || '',
+  paeCustomText: u.pae_custom_text || '',
+  declaracaoCustomText: u.declaracao_custom_text || '',
+  fichaCustomText: u.ficha_custom_text || '',
 });
 
 export const mapUnitToDb = (u) => ({
@@ -214,4 +222,13 @@ export const mapUnitToDb = (u) => ({
   workspace_id: u.workspaceId,
   kiosk_email: u.kioskEmail,
   biometric_required: u.biometricRequired,
+  razao_social: u.razaoSocial || null,
+  cnpj: u.cnpj || null,
+  phone: u.phone || null,
+  logo_url: u.logoUrl || null,
+  tce_custom_text: u.tceCustomText || null,
+  pae_custom_text: u.paeCustomText || null,
+  declaracao_custom_text: u.declaracaoCustomText || null,
+  ficha_custom_text: u.fichaCustomText || null,
 });
+

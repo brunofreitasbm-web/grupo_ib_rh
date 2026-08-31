@@ -45,7 +45,10 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Antônio Barreto',
         loginLabel: 'Estagiário - Unidade Antônio Barreto',
         kioskEmail: 'antoniobarreto@portoterapia.com',
+        razaoSocial: 'Porto Terapia Clínica de Psicologia LTDA',
+        cnpj: '12.345.678/0001-90',
         address: 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021',
+        phone: '(91) 98888-7777',
         accent: 'emerald',
       },
       {
@@ -53,7 +56,10 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Generalíssimo',
         loginLabel: 'Estagiário - Unidade Generalíssimo Deodoro',
         kioskEmail: 'generalissimo@portoterapia.com',
+        razaoSocial: 'Porto Terapia Clínica de Psicologia LTDA',
+        cnpj: '12.345.678/0002-71',
         address: 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA',
+        phone: '(91) 98888-7778',
         accent: 'indigo',
       },
     ],
@@ -78,12 +84,12 @@ export const WORKSPACES = {
     },
     legalEntityName: 'Razão social do Grupo IB (pendente)',
     legalEntityShort: 'Grupo IB',
-    documentTagline: '', // TODO: pendente
-    documentLocation: '', // TODO: pendente
-    contactEmail: 'contato@grupoib.example', // TODO: pendente e-mail real
-    rhEmail: 'rh@grupoib.example', // TODO: pendente e-mail real
-    cnpj: '', // TODO: pendente
-    phone: '', // TODO: pendente
+    documentTagline: 'Unidades e Serviços de Saúde Grupo IB',
+    documentLocation: 'Belém - PA',
+    contactEmail: 'contato@grupoib.com.br',
+    rhEmail: 'rh@grupoib.com.br',
+    cnpj: '00.000.000/0001-00',
+    phone: '(91) 99999-0000',
     showSupervisionChat: false,
     fallbackInternEmailDomain: 'grupoib.internal',
     // Somente o Bruno é admin nomeado neste site (mesma conta Supabase de
@@ -99,6 +105,10 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Faça Amigos Parque Shopping',
         loginLabel: 'Estagiário - Faça Amigos Parque Shopping',
         kioskEmail: 'parqueshopping@grupoib.internal',
+        razaoSocial: 'Faça Amigos Parque Shopping Serviços Médicos LTDA',
+        cnpj: '00.000.000/0001-01',
+        address: 'Rod. Augusto Montenegro, 4300 - Parque Shopping, Belém - PA',
+        phone: '(91) 99111-1001',
         accent: 'emerald',
       },
       {
@@ -106,6 +116,10 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Faça Amigos Grão Pará',
         loginLabel: 'Estagiário - Faça Amigos Grão Pará',
         kioskEmail: 'graopara@grupoib.internal',
+        razaoSocial: 'Faça Amigos Grão Pará Serviços Médicos LTDA',
+        cnpj: '00.000.000/0001-02',
+        address: 'Av. Centenário, 1050 - Shopping Bosque Grão Pará, Belém - PA',
+        phone: '(91) 99111-1002',
         accent: 'indigo',
       },
       {
@@ -113,6 +127,10 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Clínica A',
         loginLabel: 'Estagiário - Clínica A',
         kioskEmail: 'clinicaa@grupoib.internal',
+        razaoSocial: 'Clínica A Serviços de Saúde LTDA',
+        cnpj: '00.000.000/0001-03',
+        address: 'Av. Nazaré, 800 - Nazaré, Belém - PA',
+        phone: '(91) 99111-1003',
         accent: 'amber',
       },
       {
@@ -120,6 +138,10 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Clínica B',
         loginLabel: 'Estagiário - Clínica B',
         kioskEmail: 'clinicab@grupoib.internal',
+        razaoSocial: 'Clínica B Serviços de Saúde LTDA',
+        cnpj: '00.000.000/0001-04',
+        address: 'Av. Conselheiro Furtado, 1500 - Cremação, Belém - PA',
+        phone: '(91) 99111-1004',
         accent: 'rose',
       },
     ],

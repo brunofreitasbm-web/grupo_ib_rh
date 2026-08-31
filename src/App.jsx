@@ -2034,6 +2034,30 @@ export default function App() {
     if (error) console.error('Erro ao salvar unidades:', error);
   }, []);
 
+  const handleSaveUnitFromConfig = useCallback(async (updatedUnit) => {
+    try {
+      const dbUnit = mapUnitToDb(updatedUnit);
+      const { error } = await supabase.from('units').upsert([dbUnit]);
+      if (error) {
+        console.error('Erro ao salvar unidade no Supabase:', error);
+        toast.error('Erro ao salvar no banco: ' + error.message);
+      } else {
+        setUnits((prev) => {
+          const exists = prev.some(u => u.id === updatedUnit.id);
+          if (exists) {
+            return prev.map(u => u.id === updatedUnit.id ? { ...u, ...updatedUnit } : u);
+          }
+          return [...prev, updatedUnit];
+        });
+        toast.success(`Unidade "${updatedUnit.name || updatedUnit.nome}" salva com sucesso!`);
+      }
+    } catch (err) {
+      console.error('Erro ao salvar unidade:', err);
+      toast.error('Erro ao salvar unidade: ' + err.message);
+    }
+  }, []);
+
+
   const updateUnitField = (unitId, field, value) => {
     setUnits((prev) => prev.map((u) => (u.id === unitId ? { ...u, [field]: value } : u)));
   };
@@ -4573,18 +4597,30 @@ export default function App() {
 
   const getDocumentHtml = (type, internRaw = null) => {
     const intern = sanitizeInternForDocumentHtml(internRaw);
+    
+    // Busca os dados específicos da unidade do estagiário (ou do filtro de unidade)
+    const targetUnitId = intern?.unitId || filterUnit;
+    const currentUnit = units.find(u => u.id === targetUnitId) || BRANDING.kioskUnits.find(ku => ku.id === targetUnitId);
+    
+    const unitRazaoSocial = currentUnit?.razaoSocial || currentUnit?.razao_social || BRANDING.legalEntityName;
+    const unitCnpj = currentUnit?.cnpj || BRANDING.cnpj;
+    const unitAddress = currentUnit?.address || currentUnit?.endereco || BRANDING.documentLocation;
+    const unitPhone = currentUnit?.phone || BRANDING.phone;
+    const unitDisplayName = currentUnit?.name || currentUnit?.nome || currentUnit?.buttonLabel || BRANDING.displayName;
+    const unitLogo = currentUnit?.logoUrl || currentUnit?.logo_url || BRANDING.logoPath;
+
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
-        ${BRANDING.logoPath ? `<img src="${BRANDING.logoPath}" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="${BRANDING.logoAlt}" />` : ''}
-        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px;">${BRANDING.displayName.toUpperCase()}</h1>
-        <p style="margin: 4px 0 0; font-size: 10px; text-transform: uppercase; color: #4b5563; font-weight: 600; letter-spacing: 2px;">${BRANDING.documentTagline}</p>
-        <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">${BRANDING.documentLocation}</p>
+        ${unitLogo ? `<img src="${unitLogo}" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="${unitDisplayName}" />` : ''}
+        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px;">${unitDisplayName.toUpperCase()}</h1>
+        <p style="margin: 4px 0 0; font-size: 10px; text-transform: uppercase; color: #4b5563; font-weight: 600; letter-spacing: 1px;">${unitRazaoSocial} • CNPJ: ${unitCnpj}</p>
+        <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">${unitAddress} ${unitPhone ? `• Tel: ${unitPhone}` : ''}</p>
       </div>
     `;
 
     const footerHtml = `
       <div style="margin-top: 50px; border-top: 1px solid #e5e7eb; padding-top: 10px; text-align: center; font-size: 8px; color: #9ca3af;">
-        ${BRANDING.legalEntityName} • Documento oficial eletrônico para fins de controle e registro acadêmico.
+        ${unitRazaoSocial} • Documento oficial eletrônico para fins de controle e registro acadêmico.
       </div>
     `;
 
@@ -4595,10 +4631,14 @@ export default function App() {
     const institutionName = intern?.institution || '________________________________________';
     const hoursCount = intern?.dailyHours || '[X]';
     const shiftName = intern?.shift || '[Turno]';
-    const unitTitle = intern?.unitId ? unitName(intern.unitId) : '____________________';
+    const unitTitle = currentUnit?.name || currentUnit?.buttonLabel || (intern?.unitId ? unitName(intern.unitId) : '____________________');
 
     if (type === 'tce' || type === 'minuta') {
       const isMinuta = type === 'minuta';
+      const customTceClause = (currentUnit?.tceCustomText || currentUnit?.tce_custom_text) 
+        ? `<div style="margin-top: 10px; padding: 8px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 8.5px;"><strong>Cláusulas Aditivas da Unidade (${unitDisplayName}):</strong><br>${currentUnit.tceCustomText || currentUnit.tce_custom_text}</div>`
+        : '';
+
       return `
         <div style="font-family: 'Inter', Arial, sans-serif; font-size: 10px; line-height: 1.5; color: #1f2937; padding: 15px;">
           ${headerHtml}
@@ -4631,15 +4671,15 @@ export default function App() {
             </tr>
             <tr>
               <td style="border: 1px solid #d1d5db; padding: 5px; font-weight: bold; width: 25%;">Razão Social:</td>
-              <td style="border: 1px solid #d1d5db; padding: 5px;">NKN PHYSIOTERAPY CENTER LTDA</td>
+              <td style="border: 1px solid #d1d5db; padding: 5px;">${unitRazaoSocial}</td>
             </tr>
             <tr>
               <td style="border: 1px solid #d1d5db; padding: 5px; font-weight: bold;">Endereço:</td>
-              <td style="border: 1px solid #d1d5db; padding: 5px;">R Antonio Barreto, 2050, Bairro: Fatima, Belém - Pará, CEP: 66.060-021</td>
+              <td style="border: 1px solid #d1d5db; padding: 5px;">${unitAddress}</td>
             </tr>
             <tr>
               <td style="border: 1px solid #d1d5db; padding: 5px; font-weight: bold;">CNPJ:</td>
-              <td style="border: 1px solid #d1d5db; padding: 5px;">40.192.432/0002-47</td>
+              <td style="border: 1px solid #d1d5db; padding: 5px;">${unitCnpj}</td>
             </tr>
           </table>
 
@@ -4673,7 +4713,7 @@ export default function App() {
             <p style="margin: 0 0 4px 0;"><strong>1) Período de vigência deste Instrumento:</strong> De <strong>${startFormatted}</strong> a <strong>${endFormatted}</strong>, podendo ser rescindido unilateralmente por qualquer das partes, a qualquer momento, sem ônus, multas ou aviso-prévio, mediante formalização do respectivo Termo de Rescisão;</p>
             <p style="margin: 0 0 4px 0;"><strong>2) Jornada:</strong> <strong>${hoursCount} horas diárias</strong> (${shiftName});</p>
             <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>${intern?.supervisorName || '________________________'}</strong>;</p>
-            <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, a importância mensal correspondente a: <strong>${getBolsaAuxilioText(intern)}</strong> (não se aplicando ao benefício de auxílio-transporte o desconto previsto na CLT).</p>
+            <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, a importância mensal correspondente a: <strong>${getBolsaAuxilioText(intern)}</strong> (não se applying ao benefício de auxílio-transporte o desconto previsto na CLT).</p>
           </div>
 
           <div style="text-align: justify; font-size: 8.5px; line-height: 1.4;">
@@ -4718,6 +4758,8 @@ export default function App() {
             <p style="margin: 0 0 5px 0;"><strong>Cláusula 15ª</strong> - Aplica-se ao Estagiário a Legislação relacionada à saúde e segurança no trabalho, sendo sua implementação de responsabilidade da Parte concedente do Estágio.</p>
             
             <p style="margin: 0 0 5px 0;"><strong>Cláusula 17ª</strong> – O presente Instrumento poderá ser renovado na forma da Lei e denunciado, a qualquer tempo, mediante comunicação escrita, pela Instituição de Ensino, pela EMPRESA ou pelo(a) Estagiário(a).</p>
+
+            ${customTceClause}
           </div>
 
           <p style="margin-top: 15px; margin-bottom: 25px; text-align: justify; font-size: 9px;">
@@ -4735,7 +4777,7 @@ export default function App() {
               </td>
               <td style="width: 33%; vertical-align: top; padding: 5px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 20px; padding-top: 3px;">
-                  <strong>NKN PHYSIOTERAPY CENTER LTDA</strong><br>Parte Concedente
+                  <strong>${unitRazaoSocial}</strong><br>Parte Concedente (${unitDisplayName})
                 </div>
               </td>
               <td style="width: 33%; vertical-align: top; padding: 5px;">
@@ -4780,17 +4822,22 @@ export default function App() {
 
           <h3 style="font-size: 12px; font-weight: 700; margin-top: 20px; margin-bottom: 10px; color: #111827; border-bottom: 1px solid #d1d5db; padding-bottom: 3px;">ATIVIDADES PREVISTAS</h3>
           
-          <ul style="padding-left: 20px; margin-bottom: 30px;">
+          <ul style="padding-left: 20px; margin-bottom: 20px;">
             ${getPaeActivities(intern).map(act => `
               <li style="margin-bottom: 8px; text-align: justify;"><strong>${act.title}:</strong> ${act.desc}</li>
             `).join('')}
           </ul>
 
+          ${(currentUnit?.paeCustomText || currentUnit?.pae_custom_text) 
+            ? `<div style="margin-bottom: 20px; padding: 8px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 9px;"><strong>Observações Específicas da Unidade (${unitDisplayName}):</strong><br>${currentUnit.paeCustomText || currentUnit.pae_custom_text}</div>`
+            : ''
+          }
+
           <table style="width: 100%; border-collapse: collapse; margin-top: 50px; text-align: center; font-size: 10px;">
             <tr>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
-                  <strong>Supervisora de Estágio: ${intern?.supervisorName || '________________________'}</strong><br>${BRANDING.displayName}
+                  <strong>Supervisora de Estágio: ${intern?.supervisorName || '________________________'}</strong><br>${unitDisplayName}
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
@@ -5110,6 +5157,10 @@ export default function App() {
     }
 
     if (type === 'declaracao') {
+      const customDeclaracaoText = (currentUnit?.declaracaoCustomText || currentUnit?.declaracao_custom_text)
+        ? `<p style="text-align: justify; text-indent: 50px; margin-bottom: 30px; background-color: #f0fdf4; border-left: 3px solid #16a34a; padding: 10px; font-size: 10.5px;">${currentUnit.declaracaoCustomText || currentUnit.declaracao_custom_text}</p>`
+        : '';
+
       return `
         <div style="font-family: 'Inter', Arial, sans-serif; font-size: 11px; line-height: 1.8; color: #1f2937; padding: 30px;">
           ${headerHtml}
@@ -5118,15 +5169,17 @@ export default function App() {
           </div>
 
           <p style="text-align: justify; text-indent: 50px; margin-bottom: 30px;">
-            Declaramos, para os devidos fins de comprovação junto à instituição de ensino e demais interessados, que o(a) estudante <strong>${internName}</strong>, inscrito(a) sob o CPF nº <strong>${intern?.cpf || '_____________________'}</strong>, é estagiário(a) regularmente matriculado(a) no curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong> e atualmente desenvolve estágio prático curricular não obrigatório nas dependências da Clínica ${BRANDING.displayName}, unidade <strong>${unitTitle}</strong>.
+            Declaramos, para os devidos fins de comprovação junto à instituição de ensino e demais interessados, que o(a) estudante <strong>${internName}</strong>, inscrito(a) sob o CPF nº <strong>${intern?.cpf || '_____________________'}</strong>, é estagiário(a) regularmente matriculado(a) no curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong> e atualmente desenvolve estágio prático curricular não obrigatório nas dependências da unidade <strong>${unitDisplayName} (${unitTitle})</strong>.
           </p>
 
           <p style="text-align: justify; text-indent: 50px; margin-bottom: 30px;">
             O contrato de estágio iniciou-se em <strong>${startFormatted}</strong> e possui previsão de encerramento em <strong>${endFormatted}</strong>, com carga horária de <strong>${hoursCount} horas diárias</strong>, totalizando <strong>30 horas semanais</strong> no turno <strong>${shiftName}</strong>.
           </p>
 
+          ${customDeclaracaoText}
+
           <p style="text-align: justify; text-indent: 50px; margin-bottom: 40px; font-weight: bold; color: #4b5563;">
-            Período de Vínculo com a Clínica. A validade desta declaração é de 30 dias a partir da data de sua emissão.
+            Período de Vínculo com a Unidade. A validade desta declaração é de 30 dias a partir da data de sua emissão.
           </p>
 
           <p style="text-align: right; margin-top: 60px; margin-bottom: 60px;">
@@ -5137,7 +5190,7 @@ export default function App() {
             <tr>
               <td style="width: 100%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 40px; padding-top: 5px; width: 60%; margin-left: auto; margin-right: auto;">
-                  <strong>${BRANDING.legalEntityShort}</strong><br>Representante Concedente
+                  <strong>${unitRazaoSocial}</strong><br>Representante Concedente (${unitDisplayName})
                 </div>
               </td>
             </tr>
@@ -7507,7 +7560,7 @@ export default function App() {
                   {activeAdminTab === 'admissional'    && <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
                   {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />}
                   {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} />}
+                  {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} />}
                 </Suspense>
               </ErrorBoundary>
             </div>
