@@ -242,6 +242,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
         </div>
 
         {/* Painel Espelhado de Atendimento (Fale com a Supervisão) */}
+        {BRANDING.showSupervisionChat && (
         <div className="mt-8 border-t border-gray-200 pt-6">
           <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-2">
             <MessageSquare size={16} className="text-indigo-600" /> Chamados & Dúvidas dos Estagiários ({chatRecords.filter(r => r.geo?.status === 'pending').length} Pendentes)
@@ -329,6 +330,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

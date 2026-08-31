@@ -2483,7 +2483,7 @@ export default function App() {
         <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
             <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
-              <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-16 w-auto mb-2 rounded-lg shadow-sm" />
+              {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-16 w-auto mb-2 rounded-lg shadow-sm" />}
               <h1 className="text-2xl font-bold mb-1">{BRANDING.displayName}</h1>
               <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
               <LiveClock showDate />
@@ -2683,7 +2683,7 @@ export default function App() {
             >
               <LogOut size={12} /> Desconectar
             </button>
-            <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-12 w-auto mb-2 rounded-lg shadow-sm" />
+            {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-12 w-auto mb-2 rounded-lg shadow-sm" />}
             <h1 className="text-xl font-bold mb-0.5">
               {isUnitLogin ? `Quiosque: ${loggedInIntern.name}` : `Olá, ${loggedInIntern.name}!`}
             </h1>
@@ -2991,7 +2991,7 @@ export default function App() {
             >
               <ArrowLeft size={14} /> Voltar
             </button>
-            <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-14 w-auto mb-2 rounded-lg shadow-sm" />
+            {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-14 w-auto mb-2 rounded-lg shadow-sm" />}
             <h1 className="text-xl font-bold">Autogestão de Biometria Facial</h1>
             <p className="text-indigo-100 text-xs mt-1">Configuração autônoma de biometria para estagiários</p>
           </div>
@@ -4575,7 +4575,7 @@ export default function App() {
     const intern = sanitizeInternForDocumentHtml(internRaw);
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
-        <img src="${BRANDING.logoPath}" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="${BRANDING.logoAlt}" />
+        ${BRANDING.logoPath ? `<img src="${BRANDING.logoPath}" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="${BRANDING.logoAlt}" />` : ''}
         <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px;">${BRANDING.displayName.toUpperCase()}</h1>
         <p style="margin: 4px 0 0; font-size: 10px; text-transform: uppercase; color: #4b5563; font-weight: 600; letter-spacing: 2px;">${BRANDING.documentTagline}</p>
         <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">${BRANDING.documentLocation}</p>
@@ -7362,7 +7362,7 @@ export default function App() {
           {/* Header da Sidebar */}
           <div className="p-4 border-b border-slate-200/80 bg-white/60 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />
+              {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />}
               <div>
                 <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">{BRANDING.displayName}</h1>
                 <p className="text-[11px] text-slate-500 font-medium">
@@ -7580,7 +7580,7 @@ export default function App() {
         renderAdmin()
       )}
 
-      {renderChatWidget()}
+      {BRANDING.showSupervisionChat && renderChatWidget()}
       {renderRecordPhotoModal()}
       {renderDocumentViewModal()}
       {renderTemplateModal()}

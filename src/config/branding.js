@@ -20,6 +20,9 @@ export const WORKSPACES = {
     rhEmail: 'rh@portoterapia.com.br',
     cnpj: '12.345.678/0001-90',
     phone: '(91) 98888-7777',
+    // Widget de chat "Fale com a Supervisão" (estagiário) + painel espelhado
+    // de atendimento na aba RH (supervisor).
+    showSupervisionChat: true,
     // Domínio usado quando um estagiário é cadastrado sem e-mail próprio
     // (vira <usuario>@<fallbackInternEmailDomain>).
     fallbackInternEmailDomain: 'portoterapia.com',
@@ -60,9 +63,19 @@ export const WORKSPACES = {
     appTitle: 'Controle de Estagiário • Grupo IB',
     shortName: 'PontoIB',
     themeColor: '#0f766e',
-    logoPath: '/logo.jpg', // TODO: pendente logo próprio do Grupo IB
+    // Sem logo próprio ainda — telas com logo simplesmente não mostram nada
+    // (ver checagens `BRANDING.logoPath &&` em App.jsx/FinanceiroTab.jsx).
+    logoPath: null,
     logoAlt: 'Logo Grupo IB',
     displayName: 'Grupo IB',
+    // Sobrescreve a paleta "blue" do Tailwind pela paleta "teal" (verde-água)
+    // só neste build — todo o app usa classes bg-blue-*/text-blue-*/etc. como
+    // cor de marca; isso recolore a UI inteira sem precisar tocar em cada
+    // componente. Ver tailwind.config.js.
+    tailwindBlueOverride: {
+      50: '#f0fdfa', 100: '#ccfbf1', 200: '#99f6e4', 300: '#5eead4', 400: '#2dd4bf',
+      500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 800: '#115e59', 900: '#134e4a', 950: '#042f2e',
+    },
     legalEntityName: 'Razão social do Grupo IB (pendente)',
     legalEntityShort: 'Grupo IB',
     documentTagline: '', // TODO: pendente
@@ -71,6 +84,7 @@ export const WORKSPACES = {
     rhEmail: 'rh@grupoib.example', // TODO: pendente e-mail real
     cnpj: '', // TODO: pendente
     phone: '', // TODO: pendente
+    showSupervisionChat: false,
     fallbackInternEmailDomain: 'grupoib.internal',
     // Somente o Bruno é admin nomeado neste site (mesma conta Supabase de
     // sempre); Guimelly/Isabella continuam com acesso de dados ao Grupo IB

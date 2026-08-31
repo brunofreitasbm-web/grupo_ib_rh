@@ -165,7 +165,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       <div style="font-family: Arial, sans-serif; color: #1e293b; padding: 25px; max-width: 900px; margin: 0 auto; background: #fff;">
         <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px;">
           <div style="display: flex; align-items: center; gap: 15px;">
-            <img src="${BRANDING.logoPath}" alt="${BRANDING.logoAlt}" style="height: 60px; object-fit: contain;" />
+            ${BRANDING.logoPath ? `<img src="${BRANDING.logoPath}" alt="${BRANDING.logoAlt}" style="height: 60px; object-fit: contain;" />` : ''}
             <div>
               <h1 style="margin: 0; font-size: 20px; color: #1e3a8a; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">${BRANDING.displayName}</h1>
               <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Clínica Interdisciplinar Infantil${unitSubtitle}</p>

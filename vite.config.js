@@ -32,20 +32,28 @@ export default defineConfig(({ mode }) => {
           theme_color: branding.themeColor,
           background_color: branding.themeColor,
           display: 'standalone',
-          icons: [
-            {
-              src: branding.logoPath,
-              sizes: '192x192',
-              type: 'image/jpeg'
-            },
-            {
-              src: branding.logoPath,
-              sizes: '512x512',
-              type: 'image/jpeg'
-            }
-          ]
+          icons: branding.logoPath
+            ? [
+                { src: branding.logoPath, sizes: '192x192', type: 'image/jpeg' },
+                { src: branding.logoPath, sizes: '512x512', type: 'image/jpeg' },
+              ]
+            : []
         }
-      })
+      }),
+      // Grava o título/theme-color certos direto no HTML de build (não só
+      // via JS em main.jsx), pra nenhum crawler/primeira pintura da tela
+      // chegar a mostrar o branding do outro workspace, nem por um instante.
+      {
+        name: 'inject-workspace-branding-html',
+        transformIndexHtml(html) {
+          return html
+            .replace(/<title>.*<\/title>/, `<title>${branding.appTitle}</title>`)
+            .replace(
+              /<meta name="theme-color" content="[^"]*"\s*\/>/,
+              `<meta name="theme-color" content="${branding.themeColor}" />`
+            );
+        }
+      }
     ],
     server: {
       host: true,
