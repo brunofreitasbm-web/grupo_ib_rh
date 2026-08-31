@@ -17,6 +17,7 @@ import {
   Smartphone,
   ShieldAlert
 } from 'lucide-react';
+import { BRANDING } from '../../config/branding';
 
 export default function ConfiguracoesTab({ userRole = 'admin' }) {
   const [activeSubTab, setActiveSubTab] = useState('empresa');
@@ -34,25 +35,17 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
     }
     return {
       // 1. Empresa & Unidades
-      nomeEmpresa: 'Porto Terapia - Clínica de Psicologia',
-      razaoSocial: 'Porto Terapia Clínica de Psicologia LTDA',
-      cnpj: '12.345.678/0001-90',
-      emailEmpresa: 'contato@portoterapia.com.br',
-      telefone: '(91) 98888-7777',
-      unidades: [
-        {
-          id: 'antonio-barreto',
-          nome: 'Unidade Antônio Barreto',
-          endereco: 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021',
-          geofenceM: 5000
-        },
-        {
-          id: 'generalissimo',
-          nome: 'Unidade Generalíssimo',
-          endereco: 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA',
-          geofenceM: 5000
-        }
-      ],
+      nomeEmpresa: BRANDING.displayName,
+      razaoSocial: BRANDING.legalEntityName,
+      cnpj: BRANDING.cnpj,
+      emailEmpresa: BRANDING.contactEmail,
+      telefone: BRANDING.phone,
+      unidades: BRANDING.kioskUnits.map((ku) => ({
+        id: ku.id,
+        nome: ku.buttonLabel,
+        endereco: ku.address || '',
+        geofenceM: 5000
+      })),
 
       // 2. Geofencing & Ponto Eletrônico
       geofencePadraoM: 5000,
@@ -69,11 +62,11 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
 
       // 4. Notificações & Alertas
       notificarEmailAusencias: true,
-      emailNotificacoes: 'rh@portoterapia.com.br',
+      emailNotificacoes: BRANDING.rhEmail,
       alertarContratoExpirandoDias: 30,
       alertarAniversariantesDoDia: true,
       backupIntervalo: 'semanal',
-      emailBackup: 'rh@portoterapia.com.br',
+      emailBackup: BRANDING.rhEmail,
 
       // 5. Aparência & Preferências
       modoEscuro: false,
@@ -331,10 +324,10 @@ export default function ConfiguracoesTab({ userRole = 'admin' }) {
                   <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">
-                      Restrição de Acesso ao Ponto Vigente (Unidades Antônio Barreto & Generalíssimo)
+                      Restrição de Acesso ao Ponto Vigente (Unidades com Biometria Obrigatória)
                     </h4>
                     <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                      A modalidade de autenticação por senha (PIN/Credential) ou contingência manual foi <strong>desativada com efeito imediato</strong> para o perfil de estagiários nestas unidades. O registro de presença exige <strong>100% de validação por Biometria Facial e Geolocalização (GPS)</strong> sem fallback por senha.
+                      A modalidade de autenticação por senha (PIN/Credential) ou contingência manual foi <strong>desativada com efeito imediato</strong> para o perfil de estagiários nas unidades com biometria obrigatória (ver tabela de unidades). O registro de presença exige <strong>100% de validação por Biometria Facial e Geolocalização (GPS)</strong> sem fallback por senha.
                     </p>
                   </div>
                 </div>

@@ -893,4 +893,393 @@ CREATE INDEX IF NOT EXISTS idx_interns_unit_id ON public.interns(unit_id);
 CREATE INDEX IF NOT EXISTS idx_interns_active ON public.interns(active);
 CREATE INDEX IF NOT EXISTS idx_document_contents_intern ON public.document_contents(intern_id, doc_key);
 
+-- =========================================================================
+-- MULTI-WORKSPACE: GRUPO IB (Faça Amigos Parque Shopping, Faça Amigos Grão
+-- Pará, Clínica A, Clínica B) atendido por um segundo deploy (Vercel) que
+-- compartilha este mesmo banco com a Porto Terapia, sem misturar dados.
+-- Idempotente: pode ser rodado de novo sem duplicar/quebrar nada.
+-- =========================================================================
+
+-- 8. Tabela de workspaces (agrupamento de unidades por "empresa/deploy")
+CREATE TABLE IF NOT EXISTS public.workspaces (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+INSERT INTO public.workspaces (id, name) VALUES
+  ('porto-terapia', 'Porto Terapia'),
+  ('grupoib', 'Grupo IB')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+
+-- 9. units: workspace_id + config por unidade (login de quiosque, exigência de biometria)
+ALTER TABLE public.units
+  ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'porto-terapia'
+    REFERENCES public.workspaces(id),
+  ADD COLUMN IF NOT EXISTS kiosk_email text,
+  ADD COLUMN IF NOT EXISTS biometric_required boolean NOT NULL DEFAULT true;
+
+UPDATE public.units SET kiosk_email = 'antoniobarreto@portoterapia.com' WHERE id = 'antonio-barreto' AND kiosk_email IS NULL;
+UPDATE public.units SET kiosk_email = 'generalissimo@portoterapia.com' WHERE id = 'generalissimo' AND kiosk_email IS NULL;
+
+-- Unidades do Grupo IB (endereço/coordenadas placeholder — calibrar na unidade física antes do go-live)
+INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m, workspace_id, kiosk_email, biometric_required) VALUES
+  ('faca-amigos-parque-shopping', 'Faça Amigos Parque Shopping', 'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'parqueshopping@grupoib.internal', true),
+  ('faca-amigos-grao-para',       'Faça Amigos Grão Pará',       'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'graopara@grupoib.internal',       true),
+  ('clinica-a',                   'Clínica A',                    'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true),
+  ('clinica-b',                   'Clínica B',                    'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'clinicab@grupoib.internal',       true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 10. records.unit_id — coluna durável (interns.unit_id e records.intern_id são
+-- ON DELETE SET NULL, então um join ao vivo via intern não é confiável para
+-- histórico depois que o estagiário é removido). Preenchida automaticamente.
+ALTER TABLE public.records ADD COLUMN IF NOT EXISTS unit_id text REFERENCES public.units(id) ON DELETE SET NULL;
+
+UPDATE public.records r
+SET unit_id = COALESCE(r.geo->>'unitId', i.unit_id)
+FROM public.interns i
+WHERE r.unit_id IS NULL AND i.id = r.intern_id;
+
+CREATE OR REPLACE FUNCTION public.set_record_unit_id() RETURNS trigger AS $$
+BEGIN
+  IF NEW.unit_id IS NULL THEN
+    NEW.unit_id := NEW.geo->>'unitId';
+  END IF;
+  IF NEW.unit_id IS NULL AND NEW.intern_id IS NOT NULL THEN
+    SELECT unit_id INTO NEW.unit_id FROM public.interns WHERE id = NEW.intern_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_set_record_unit_id ON public.records;
+CREATE TRIGGER trg_set_record_unit_id
+  BEFORE INSERT ON public.records
+  FOR EACH ROW EXECUTE FUNCTION public.set_record_unit_id();
+
+CREATE INDEX IF NOT EXISTS idx_records_unit_id ON public.records(unit_id);
+CREATE INDEX IF NOT EXISTS idx_units_workspace_id ON public.units(workspace_id);
+
+-- 11. Helper de RLS: o chamador tem acesso ao workspace informado?
+-- user_metadata.workspace_scope é um array jsonb (ex.: ["porto-terapia"] ou
+-- ["all"] para quem administra os dois grupos, como o Bruno).
+CREATE OR REPLACE FUNCTION public.jwt_has_workspace_access(target_workspace text) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT
+    COALESCE(auth.jwt() -> 'user_metadata' -> 'workspace_scope', '[]'::jsonb) ? 'all'
+    OR (target_workspace IS NOT NULL
+        AND COALESCE(auth.jwt() -> 'user_metadata' -> 'workspace_scope', '[]'::jsonb) ? target_workspace);
+$$;
+
+-- 12. Metadados dos supervisores existentes (rodar ANTES de trocar as políticas
+-- abaixo, para nenhuma sessão supervisor ficar sem workspace_scope e perder
+-- acesso). Bruno, Guimelly e Isabella administram os dois grupos; o Supervisor
+-- Geral genérico (fallback do quiosque) fica restrito à Porto Terapia.
+UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data || '{"workspace_scope": ["all"]}'::jsonb
+  WHERE email IN ('bruno@portoterapia.com', 'guimelly@portoterapia.com', 'isabella@portoterapia.com');
+
+UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data || '{"workspace_scope": ["porto-terapia"]}'::jsonb
+  WHERE email = 'supervisor@portoterapia.com';
+
+-- 13. RLS: as políticas do papel 'supervisor' agora respeitam o workspace da
+-- unidade da linha; as políticas de 'intern_unit' (quiosque) e auth.uid()
+-- (autoatendimento do estagiário) continuam inalteradas, pois já são
+-- restritas à própria unidade.
+
+DROP POLICY IF EXISTS "Permitir leitura de unidades para qualquer autenticado" ON public.units;
+CREATE POLICY "Permitir leitura de unidades para qualquer autenticado"
+    ON public.units FOR SELECT
+    USING (
+        ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor' AND public.jwt_has_workspace_access(workspace_id))
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND workspace_id = (SELECT u2.workspace_id FROM public.units u2 WHERE u2.id = (auth.jwt() -> 'user_metadata' ->> 'unit_id'))
+        )
+        OR workspace_id = (
+            SELECT u2.workspace_id FROM public.units u2
+            JOIN public.interns i ON i.unit_id = u2.id
+            WHERE i.id = auth.uid()
+        )
+    );
+
+DROP POLICY IF EXISTS "Permitir escrita de unidades apenas para supervisor" ON public.units;
+CREATE POLICY "Permitir escrita de unidades apenas para supervisor"
+    ON public.units FOR ALL
+    USING (
+        (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+        AND public.jwt_has_workspace_access(workspace_id)
+    );
+
+DROP POLICY IF EXISTS "Permitir leitura de estagiários (supervisor, próprio estagiário ou login de unidade)" ON public.interns;
+CREATE POLICY "Permitir leitura de estagiários (supervisor, próprio estagiário ou login de unidade)"
+    ON public.interns FOR SELECT
+    USING (
+        ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+         AND EXISTS (SELECT 1 FROM public.units u WHERE u.id = interns.unit_id AND public.jwt_has_workspace_access(u.workspace_id)))
+        OR auth.uid() = id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND (auth.jwt() -> 'user_metadata' ->> 'unit_id') = unit_id
+        )
+    );
+
+DROP POLICY IF EXISTS "Permitir escrita de estagiários apenas para supervisor" ON public.interns;
+CREATE POLICY "Permitir escrita de estagiários apenas para supervisor"
+    ON public.interns FOR ALL
+    USING (
+        (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+        AND EXISTS (SELECT 1 FROM public.units u WHERE u.id = interns.unit_id AND public.jwt_has_workspace_access(u.workspace_id))
+    );
+
+DROP POLICY IF EXISTS "Permitir leitura de pontos (supervisor, próprio estagiário ou login de unidade)" ON public.records;
+CREATE POLICY "Permitir leitura de pontos (supervisor, próprio estagiário ou login de unidade)"
+    ON public.records FOR SELECT
+    USING (
+        ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+         AND EXISTS (SELECT 1 FROM public.units u WHERE u.id = records.unit_id AND public.jwt_has_workspace_access(u.workspace_id)))
+        OR auth.uid() = intern_id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND EXISTS (SELECT 1 FROM public.interns i WHERE i.id = intern_id AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id'))
+        )
+    );
+
+DROP POLICY IF EXISTS "Permitir inserção de pontos para supervisor, próprio estagiário ou login de unidade" ON public.records;
+CREATE POLICY "Permitir inserção de pontos para supervisor, próprio estagiário ou login de unidade"
+    ON public.records FOR INSERT
+    WITH CHECK (
+        ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+         AND EXISTS (SELECT 1 FROM public.units u WHERE u.id = unit_id AND public.jwt_has_workspace_access(u.workspace_id)))
+        OR auth.uid() = intern_id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND EXISTS (SELECT 1 FROM public.interns i WHERE i.id = intern_id AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id'))
+        )
+    );
+
+DROP POLICY IF EXISTS "Permitir modificação/exclusão de pontos apenas para supervisor" ON public.records;
+CREATE POLICY "Permitir modificação/exclusão de pontos apenas para supervisor"
+    ON public.records FOR ALL
+    USING (
+        (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+        AND EXISTS (SELECT 1 FROM public.units u WHERE u.id = records.unit_id AND public.jwt_has_workspace_access(u.workspace_id))
+    );
+
+DROP POLICY IF EXISTS "Permitir leitura de conteúdo de documento para supervisor, próprio estagiário ou login de unidade" ON public.document_contents;
+CREATE POLICY "Permitir leitura de conteúdo de documento para supervisor, próprio estagiário ou login de unidade"
+    ON public.document_contents FOR SELECT
+    USING (
+        ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+         AND EXISTS (SELECT 1 FROM public.interns i JOIN public.units u ON u.id = i.unit_id
+               WHERE i.id = document_contents.intern_id AND public.jwt_has_workspace_access(u.workspace_id)))
+        OR auth.uid() = intern_id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND EXISTS (SELECT 1 FROM public.interns i WHERE i.id = intern_id AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id'))
+        )
+    );
+
+DROP POLICY IF EXISTS "Permitir inserção de conteúdo de documento para supervisor, próprio estagiário ou login de unidade" ON public.document_contents;
+CREATE POLICY "Permitir inserção de conteúdo de documento para supervisor, próprio estagiário ou login de unidade"
+    ON public.document_contents FOR INSERT
+    WITH CHECK (
+        ((auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+         AND EXISTS (SELECT 1 FROM public.interns i JOIN public.units u ON u.id = i.unit_id
+               WHERE i.id = intern_id AND public.jwt_has_workspace_access(u.workspace_id)))
+        OR auth.uid() = intern_id
+        OR (
+            (auth.jwt() -> 'user_metadata' ->> 'role') = 'intern_unit'
+            AND EXISTS (SELECT 1 FROM public.interns i WHERE i.id = intern_id AND i.unit_id = (auth.jwt() -> 'user_metadata' ->> 'unit_id'))
+        )
+    );
+
+DROP POLICY IF EXISTS "Permitir modificação/exclusão de conteúdo de documento apenas para supervisor" ON public.document_contents;
+CREATE POLICY "Permitir modificação/exclusão de conteúdo de documento apenas para supervisor"
+    ON public.document_contents FOR ALL
+    USING (
+        (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+        AND EXISTS (SELECT 1 FROM public.interns i JOIN public.units u ON u.id = i.unit_id
+              WHERE i.id = document_contents.intern_id AND public.jwt_has_workspace_access(u.workspace_id))
+    );
+
+-- 14. RPCs: create_intern_user/delete_intern_user/reset_intern_password agora
+-- também checam workspace (além do papel), evitando que um supervisor
+-- restrito a um workspace mexa em estagiário de outro workspace via RPC
+-- (RPCs são SECURITY DEFINER e por isso ignoram as políticas de RLS acima).
+-- Também restaura, no create_intern_user e no delete_intern_user, checagens
+-- que já existiam no restante deste arquivo mas haviam divergido do banco
+-- em produção (bug encontrado durante esta migração — corrigido aqui).
+
+CREATE OR REPLACE FUNCTION public.create_intern_user(
+  p_email text, p_password text, p_name text, p_course text, p_institution text, p_shift text,
+  p_daily_hours integer, p_unit_id text, p_start_date date, p_end_date date,
+  p_photo text DEFAULT NULL, p_cpf text DEFAULT NULL, p_rg text DEFAULT NULL, p_phone text DEFAULT NULL,
+  p_address text DEFAULT NULL, p_bank_name text DEFAULT NULL, p_bank_agency text DEFAULT NULL,
+  p_bank_account text DEFAULT NULL, p_pix_key text DEFAULT NULL, p_emergency_name text DEFAULT NULL,
+  p_emergency_relationship text DEFAULT NULL, p_emergency_phone text DEFAULT NULL,
+  p_allowance numeric DEFAULT 0, p_supervisor_name text DEFAULT NULL,
+  p_registration_status text DEFAULT 'validated', p_documents jsonb DEFAULT '{}'::jsonb,
+  p_birthdate date DEFAULT NULL, p_face_descriptor text DEFAULT NULL
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  new_intern_id uuid;
+  caller_role text := (auth.jwt() -> 'user_metadata' ->> 'role');
+  caller_unit text := (auth.jwt() -> 'user_metadata' ->> 'unit_id');
+  final_registration_status text := p_registration_status;
+  final_unit_id text := p_unit_id;
+BEGIN
+  IF caller_role IS DISTINCT FROM 'supervisor' AND caller_role IS DISTINCT FROM 'intern_unit' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF caller_role = 'intern_unit' THEN
+    final_registration_status := 'pending_validation';
+    final_unit_id := caller_unit;
+  END IF;
+
+  IF caller_role = 'supervisor' AND NOT public.jwt_has_workspace_access('all') THEN
+    IF NOT EXISTS (SELECT 1 FROM public.units u WHERE u.id = final_unit_id AND public.jwt_has_workspace_access(u.workspace_id)) THEN
+      RAISE EXCEPTION 'not authorized for this unit/workspace';
+    END IF;
+  END IF;
+
+  new_intern_id := gen_random_uuid();
+
+  INSERT INTO public.interns (
+    id, name, course, institution, shift, daily_hours, unit_id, active, start_date, end_date,
+    username, is_first_login, documents, photo, cpf, email, rg, phone, address, bank_name,
+    bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone,
+    allowance, supervisor_name, registration_status, semestral_reports, contract_termination,
+    birthdate, face_descriptor
+  ) VALUES (
+    new_intern_id, p_name, p_course, p_institution, p_shift, p_daily_hours, final_unit_id, true, p_start_date, p_end_date,
+    COALESCE(split_part(p_email, '@', 1), 'estagiario_' || substring(md5(random()::text) from 1 for 6)),
+    false, p_documents, p_photo, p_cpf, p_email, p_rg, p_phone, p_address, p_bank_name,
+    p_bank_agency, p_bank_account, p_pix_key, p_emergency_name, p_emergency_relationship, p_emergency_phone,
+    p_allowance, p_supervisor_name, final_registration_status, '{}'::jsonb, '{}'::jsonb,
+    p_birthdate, p_face_descriptor
+  );
+
+  RETURN new_intern_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.create_intern_user(
+  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_intern_user(
+  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
+) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.delete_intern_user(p_intern_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public
+AS $function$
+BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF NOT public.jwt_has_workspace_access('all') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.interns i JOIN public.units u ON u.id = i.unit_id
+      WHERE i.id = p_intern_id AND public.jwt_has_workspace_access(u.workspace_id)
+    ) THEN
+      RAISE EXCEPTION 'not authorized for this unit/workspace';
+    END IF;
+  END IF;
+
+  -- LGPD: anonimiza as fotos biométricas dos registros de ponto antes de excluir o
+  -- estagiário, para que não fiquem órfãs indefinidamente no banco (records.intern_id
+  -- é ON DELETE SET NULL, então a foto sobreviveria sem vínculo ao titular dos dados).
+  UPDATE public.records SET photo = NULL WHERE intern_id = p_intern_id;
+
+  DELETE FROM public.interns WHERE id = p_intern_id;
+  DELETE FROM auth.users WHERE id = p_intern_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.delete_intern_user(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_intern_user(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.reset_intern_password(p_intern_id uuid, p_new_password text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public
+AS $function$
+BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF NOT public.jwt_has_workspace_access('all') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.interns i JOIN public.units u ON u.id = i.unit_id
+      WHERE i.id = p_intern_id AND public.jwt_has_workspace_access(u.workspace_id)
+    ) THEN
+      RAISE EXCEPTION 'not authorized for this unit/workspace';
+    END IF;
+  END IF;
+
+  UPDATE auth.users
+  SET encrypted_password = crypt(p_new_password, gen_salt('bf')),
+      updated_at = now()
+  WHERE id = p_intern_id;
+
+  UPDATE public.interns
+  SET is_first_login = true
+  WHERE id = p_intern_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.reset_intern_password(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reset_intern_password(uuid, text) TO authenticated;
+
+-- 15. Logins de quiosque das 4 novas unidades (mesmo padrão dos existentes:
+-- role 'intern_unit', senha compartilhada 'estagio123', sem necessidade de
+-- caixa de e-mail real). Idempotente via DELETE + INSERT, como o restante
+-- deste arquivo faz para os demais usuários seed.
+DO $$
+DECLARE
+  units_data jsonb := '[
+    {"email": "parqueshopping@grupoib.internal", "name": "Estagiário Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
+    {"email": "graopara@grupoib.internal", "name": "Estagiário Faça Amigos Grão Pará", "unit_id": "faca-amigos-grao-para"},
+    {"email": "clinicaa@grupoib.internal", "name": "Estagiário Clínica A", "unit_id": "clinica-a"},
+    {"email": "clinicab@grupoib.internal", "name": "Estagiário Clínica B", "unit_id": "clinica-b"}
+  ]'::jsonb;
+  u jsonb;
+  new_id uuid;
+BEGIN
+  FOR u IN SELECT * FROM jsonb_array_elements(units_data) LOOP
+    DELETE FROM auth.users WHERE email = (u->>'email');
+    new_id := gen_random_uuid();
+
+    INSERT INTO auth.users (
+      id, instance_id, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, aud, role, created_at, updated_at,
+      confirmation_token, recovery_token, email_change_token_new, email_change,
+      is_sso_user, is_anonymous
+    ) VALUES (
+      new_id, '00000000-0000-0000-0000-000000000000', u->>'email',
+      crypt('estagio123', gen_salt('bf')), now(),
+      '{"provider": "email", "providers": ["email"]}'::jsonb,
+      jsonb_build_object('name', u->>'name', 'role', 'intern_unit', 'unit_id', u->>'unit_id'),
+      'authenticated', 'authenticated', now(), now(),
+      '', '', '', '', false, false
+    );
+
+    INSERT INTO auth.identities (
+      id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+    ) VALUES (
+      gen_random_uuid(), new_id,
+      jsonb_build_object('sub', new_id::text, 'email', u->>'email'),
+      'email', new_id::text, now(), now(), now()
+    );
+  END LOOP;
+END $$;
 

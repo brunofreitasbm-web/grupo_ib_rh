@@ -22,6 +22,7 @@ import {
   mapUnitToDb,
 } from './utils/mappings';
 import { formatDistance, startOfWeek, validateCPF } from './utils/helpers';
+import { BRANDING, WORKSPACES } from './config/branding';
 import { calculateHoursSummary, calculateHoursAlerts } from './utils/hoursCalculations';
 import useGeolocation from './hooks/useGeolocation';
 import * as faceapi from 'face-api.js';
@@ -56,54 +57,56 @@ import BiometricEnrollment from './components/BiometricEnrollment';
 // CONFIGURAÇÕES GERAIS
 // ============================================================
 
-// Administradores com acesso ao painel de supervisão (role 'supervisor').
-// Cada um possui sua própria conta em auth.users (ver supabase_schema.sql).
-const ADMIN_USERS = {
-  supervisor: { label: 'Supervisor Geral', email: 'supervisor@portoterapia.com' },
-  guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
-  bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
-  isabella: { label: 'Isabella', email: 'isabella@portoterapia.com' },
-};
+// Administradores com acesso ao painel de supervisão (role 'supervisor'),
+// nomeados neste site. Cada um possui sua própria conta em auth.users (ver
+// supabase_schema.sql) — a lista em si vem do branding por workspace, pois o
+// clone (Grupo IB) só expõe o Bruno como opção nomeada de login.
+const ADMIN_USERS = BRANDING.adminUsers;
 
 // Resolve o texto digitado no login (nome, e-mail ou em branco) para uma
 // chave de ADMIN_USERS. Não há lista visível nessa tela — só quem já sabe o
-// nome/e-mail correto consegue acessar como Guimelly/Bruno/Isabella; qualquer
-// outro texto (ou campo vazio) cai no Supervisor Geral genérico.
+// nome/e-mail correto consegue acessar como um admin nomeado; qualquer outro
+// texto (ou campo vazio) cai no admin padrão deste site: "supervisor"
+// (Supervisor Geral) na Porto Terapia, ou o único admin do workspace quando
+// não existir essa chave genérica (caso do clone Grupo IB, só com "bruno").
+const DEFAULT_ADMIN_KEY = ADMIN_USERS.supervisor ? 'supervisor' : Object.keys(ADMIN_USERS)[0];
 const resolveAdminKey = (typed) => {
   const t = (typed || '').trim().toLowerCase();
-  if (!t) return 'supervisor';
+  if (!t) return DEFAULT_ADMIN_KEY;
   const match = Object.keys(ADMIN_USERS).find((key) => {
     const { label, email } = ADMIN_USERS[key];
     return key === t || label.toLowerCase() === t || email.toLowerCase() === t;
   });
-  return match || 'supervisor';
+  return match || DEFAULT_ADMIN_KEY;
 };
 
-// Unidades da Porto Terapia. Coordenadas APROXIMADAS — use o botão
-// "Calibrar" no painel (estando fisicamente na unidade) para fixar o ponto exato.
-const UNITS_DEFAULT = [
-  {
-    id: 'antonio-barreto',
-    name: 'Unidade Antônio Barreto',
-    address: 'R. Antônio Barreto, 2050 - Fátima, Belém - PA, 66060-021',
-    lat: -1.442473861453128,
-    lng: -48.469996243820276,
-    radiusKm: 5,
-  },
-  {
-    id: 'generalissimo',
-    name: 'Unidade Generalíssimo',
-    address: 'Av. Generalíssimo Deodoro, 564 - Nazaré, Belém - PA',
-    lat: -1.4456511159378498,
-    lng: -48.48304674431182,
-    radiusKm: 5,
-  },
-];
+// Placeholder de unidades usado só até fetchUnits() trazer os dados reais do
+// banco (que só roda após login — ver useEffect mais abaixo). Gerado a partir
+// do branding do workspace deste deploy para que a UI nunca mostre, nem por
+// um instante, as unidades do outro grupo.
+const UNITS_DEFAULT = BRANDING.kioskUnits.map((ku) => ({
+  id: ku.id,
+  name: ku.buttonLabel,
+  address: '',
+  lat: 0,
+  lng: 0,
+  radiusKm: 5,
+}));
 
 // Limites da Lei do Estágio (Lei nº 11.788/2008)
 const LABOR = {
   maxDailyHours: 6,   // 6h/dia (padrão ensino superior/médio)
   maxWeeklyHours: 30, // 30h/semana
+};
+
+// Classes Tailwind por "accent" de unidade no botão de login do quiosque.
+// Escritas por extenso (não interpoladas) para o scanner JIT do Tailwind
+// conseguir detectá-las e gerar o CSS correspondente.
+const KIOSK_ACCENT_CLASSES = {
+  emerald: { hoverBorder: 'hover:border-emerald-500 hover:bg-emerald-50', icon: 'bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200', badge: 'bg-emerald-100 text-emerald-800' },
+  indigo: { hoverBorder: 'hover:border-indigo-500 hover:bg-indigo-50', icon: 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-200', badge: 'bg-indigo-100 text-indigo-800' },
+  amber: { hoverBorder: 'hover:border-amber-500 hover:bg-amber-50', icon: 'bg-amber-100 text-amber-600 group-hover:bg-amber-200', badge: 'bg-amber-100 text-amber-800' },
+  rose: { hoverBorder: 'hover:border-rose-500 hover:bg-rose-50', icon: 'bg-rose-100 text-rose-600 group-hover:bg-rose-200', badge: 'bg-rose-100 text-rose-800' },
 };
 
 const ADMISSIONAL_DOCUMENTS = [
@@ -173,7 +176,7 @@ export default function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [selectedLoginOption, setSelectedLoginOption] = useState(null); // null | 'supervisor' | 'antonio-barreto' | 'generalissimo'
+  const [selectedLoginOption, setSelectedLoginOption] = useState(null); // null | 'supervisor' | <id de uma unidade do quiosque>
   // Identificação do administrador é DIGITADA (nunca listada/salva), para que
   // ninguém que observe o quiosque saiba quais nomes de admin existem no sistema.
   const [loginAdminName, setLoginAdminName] = useState('');
@@ -213,28 +216,38 @@ export default function App() {
   // Filtro por unidade (histórico + exportação)
   const [filterUnit, setFilterUnit] = useState('all');
 
-  // Workspace administrativo
-  const [adminWorkspace, setAdminWorkspace] = useState('porto-terapia');
+  // Workspace administrativo: qual grupo de unidades está sendo exibido.
+  // Começa no workspace deste próprio site (BRANDING.id) — só quem tem
+  // workspace_scope "all" (Bruno, Guimelly, Isabella) pode alternar para o outro.
+  const [adminWorkspace, setAdminWorkspace] = useState(BRANDING.id);
 
-  const isNamedAdmin = useMemo(() => {
-    const email = user?.email;
-    if (!email) return false;
-    return [ADMIN_USERS.guimelly.email, ADMIN_USERS.bruno.email, ADMIN_USERS.isabella.email].includes(email);
-  }, [user?.email]);
+  // Só uma conta com workspace_scope "all" no JWT (ver supabase_schema.sql,
+  // seção "MULTI-WORKSPACE") pode alternar entre os dois grupos de unidades.
+  const canSwitchWorkspace = useMemo(() => {
+    const scope = user?.user_metadata?.workspace_scope || [];
+    return scope.includes('all');
+  }, [user]);
 
   useEffect(() => {
-    if (!isNamedAdmin && adminWorkspace !== 'porto-terapia') {
-      setAdminWorkspace('porto-terapia');
+    if (!canSwitchWorkspace && adminWorkspace !== BRANDING.id) {
+      setAdminWorkspace(BRANDING.id);
     }
-  }, [isNamedAdmin, adminWorkspace]);
+  }, [canSwitchWorkspace, adminWorkspace]);
 
   const effectiveFilterUnit = filterUnit;
 
-  const visibleUnits = units;
+  // Unidades ocultas da UI: para quem enxerga os dois grupos (workspace_scope
+  // "all"), esconde o grupo que não está selecionado no momento no seletor de
+  // workspace. Para qualquer outra sessão, o RLS já retornou só as unidades do
+  // próprio workspace — não há nada a restringir aqui.
+  const restrictedUnitIds = useMemo(() => {
+    if (!canSwitchWorkspace) return [];
+    return units.filter((u) => u.workspaceId && u.workspaceId !== adminWorkspace).map((u) => u.id);
+  }, [canSwitchWorkspace, units, adminWorkspace]);
 
-  const restrictedUnitIds = useMemo(
-    () => [],
-    []
+  const visibleUnits = useMemo(
+    () => units.filter((u) => !restrictedUnitIds.includes(u.id)),
+    [units, restrictedUnitIds]
   );
 
   // Fluxo Admissional (Upload de Documentos)
@@ -686,14 +699,14 @@ export default function App() {
       const hasTest = interns.some(i => i.name.toLowerCase() === 'teste');
       if (!hasTest) {
         supabase.rpc('create_intern_user', {
-          p_email: 'teste.estagio@portoterapia.com',
+          p_email: `teste.estagio@${BRANDING.fallbackInternEmailDomain}`,
           p_password: '0000',
           p_name: 'TEste',
           p_course: 'Psicologia Clínica',
           p_institution: 'UFPA',
           p_shift: 'Tarde',
           p_daily_hours: 6,
-          p_unit_id: units[0]?.id || 'antonio-barreto',
+          p_unit_id: units[0]?.id || BRANDING.kioskUnits[0]?.id,
           p_start_date: new Date().toISOString().split('T')[0],
           p_end_date: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         })
@@ -939,10 +952,6 @@ export default function App() {
     let email = '';
     if (selectedLoginOption === 'supervisor') {
       email = ADMIN_USERS[resolveAdminKey(loginAdminName)].email;
-    } else if (selectedLoginOption === 'antonio-barreto') {
-      email = 'antoniobarreto@portoterapia.com';
-    } else if (selectedLoginOption === 'generalissimo') {
-      email = 'generalissimo@portoterapia.com';
     } else {
       setLoginError('Selecione uma opção de acesso.');
       setGpsLoading(false);
@@ -980,12 +989,8 @@ export default function App() {
   const handleDirectUnitLogin = async (unitOption) => {
     setLoginError('');
     setGpsLoading(true);
-    let email = '';
-    if (unitOption === 'antonio-barreto') {
-      email = 'antoniobarreto@portoterapia.com';
-    } else if (unitOption === 'generalissimo') {
-      email = 'generalissimo@portoterapia.com';
-    }
+    const kioskUnit = BRANDING.kioskUnits.find((ku) => ku.id === unitOption);
+    const email = kioskUnit?.kioskEmail || '';
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
@@ -996,7 +1001,7 @@ export default function App() {
       if (!error) {
         setLoggedInIntern({
           id: `kiosk-${unitOption}`,
-          name: unitOption === 'antonio-barreto' ? 'Estagiário Antônio Barreto' : 'Estagiário Generalíssimo',
+          name: kioskUnit?.loginLabel || 'Estagiário',
           role: 'intern_unit',
           unitId: unitOption,
           isFirstLogin: false
@@ -1337,7 +1342,7 @@ export default function App() {
     const interval = config.backupIntervalo || 'semanal';
     if (interval === 'desativado') return;
 
-    const email = config.emailBackup || config.emailNotificacoes || 'rh@portoterapia.com.br';
+    const email = config.emailBackup || config.emailNotificacoes || BRANDING.rhEmail;
     const lastBackupStr = localStorage.getItem('porto_last_backup_date');
     const now = Date.now();
 
@@ -1560,10 +1565,11 @@ export default function App() {
       return;
     }
 
-    // Restrição de Acesso ao Ponto: Desativação do fallback de senha para estagiários nas Unidades Antônio Barreto e Generalíssimo
-    const isRestrictedUnit = ['antonio-barreto', 'generalissimo'].includes(unit.id);
+    // Restrição de Acesso ao Ponto: unidades com biometric_required=true (ver
+    // tabela units) desativam o fallback de senha/registro manual.
+    const isRestrictedUnit = !!unit.biometricRequired;
     if (isRestrictedUnit && (forceManualPoint || !isCameraActive)) {
-      setGeoError('Acesso Negado: A modalidade de autenticação por senha (PIN/Credential) ou registro manual foi desativada para o perfil de estagiários nas Unidades Antônio Barreto e Generalíssimo. É obrigatório o uso de biometria facial e geolocalização.');
+      setGeoError('Acesso Negado: A modalidade de autenticação por senha (PIN/Credential) ou registro manual foi desativada para o perfil de estagiários nesta unidade. É obrigatório o uso de biometria facial e geolocalização.');
       return;
     }
 
@@ -1632,7 +1638,7 @@ export default function App() {
       }
     } else {
       if (isRestrictedUnit) {
-        setGeoError('Acesso Negado: A modalidade de autenticação por senha (PIN/Credential) ou registro manual foi desativada para o perfil de estagiários nas Unidades Antônio Barreto e Generalíssimo. É obrigatório o uso de biometria facial e geolocalização.');
+        setGeoError('Acesso Negado: A modalidade de autenticação por senha (PIN/Credential) ou registro manual foi desativada para o perfil de estagiários nesta unidade. É obrigatório o uso de biometria facial e geolocalização.');
         return;
       }
       // Registro manual exige justificativa no RH
@@ -1898,7 +1904,7 @@ export default function App() {
           .eq('id', editingId);
         if (error) throw error;
       } else {
-        const email = payload.email || `${generateUsername(payload.name)}@portoterapia.com`;
+        const email = payload.email || `${generateUsername(payload.name)}@${BRANDING.fallbackInternEmailDomain}`;
         let createResult = await supabase.rpc('create_intern_user', {
           p_email: email,
           p_password: '0000',
@@ -2417,7 +2423,7 @@ export default function App() {
     const link = document.createElement('a');
     link.href = url;
     const unitSuffix = filterUnit === 'all' ? 'todas' : filterUnit;
-    link.download = `frequencia_portoterapia_${unitSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `frequencia_${BRANDING.id}_${unitSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 
@@ -2462,18 +2468,13 @@ export default function App() {
     // Caso o estagiário não esteja logado, exibe a tela de login simplificada
     if (!loggedInIntern) {
       const getOptionDetails = () => {
-        switch (selectedLoginOption) {
-          case 'supervisor':
-            // Nome genérico proposital: não revela qual administrador vai
-            // acessar, mesmo depois de digitado (evita "shoulder surfing").
-            return { name: 'Painel Administrativo' };
-          case 'antonio-barreto':
-            return { name: 'Estagiário - Unidade Antônio Barreto', email: 'antoniobarreto@portoterapia.com' };
-          case 'generalissimo':
-            return { name: 'Estagiário - Unidade Generalíssimo Deodoro', email: 'generalissimo@portoterapia.com' };
-          default:
-            return null;
+        if (selectedLoginOption === 'supervisor') {
+          // Nome genérico proposital: não revela qual administrador vai
+          // acessar, mesmo depois de digitado (evita "shoulder surfing").
+          return { name: 'Painel Administrativo' };
         }
+        const kioskUnit = BRANDING.kioskUnits.find((ku) => ku.id === selectedLoginOption);
+        return kioskUnit ? { name: kioskUnit.loginLabel, email: kioskUnit.kioskEmail } : null;
       };
 
       const optionDetails = getOptionDetails();
@@ -2482,8 +2483,8 @@ export default function App() {
         <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
             <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
-              <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-16 w-auto mb-2 rounded-lg shadow-sm" />
-              <h1 className="text-2xl font-bold mb-1">Porto Terapia</h1>
+              <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-16 w-auto mb-2 rounded-lg shadow-sm" />
+              <h1 className="text-2xl font-bold mb-1">{BRANDING.displayName}</h1>
               <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
               <LiveClock showDate />
             </div>
@@ -2503,48 +2504,35 @@ export default function App() {
                         <Lock size={20} />
                       </div>
                       <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Supervisor Geral</h4>
+                        <h4 className="font-bold text-gray-800 text-sm">Acesso Administrativo</h4>
                         <p className="text-[10px] text-gray-500">Painel administrativo, cadastros e relatórios (Exige Senha)</p>
                       </div>
                     </button>
 
-                    {/* Botão Antônio Barreto */}
-                    <button
-                      type="button"
-                      onClick={() => handleDirectUnitLogin('antonio-barreto')}
-                      disabled={gpsLoading}
-                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left group disabled:opacity-50"
-                    >
-                      <div className="p-2.5 bg-emerald-100 text-emerald-600 rounded-lg group-hover:bg-emerald-200 transition-colors">
-                        <Building2 size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-gray-800 text-sm">Estagiários - Antônio Barreto</h4>
-                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded">Sem Senha</span>
-                        </div>
-                        <p className="text-[10px] text-gray-500">Acesso direto ao ponto (Biometria + GPS)</p>
-                      </div>
-                    </button>
-
-                    {/* Botão Generalíssimo */}
-                    <button
-                      type="button"
-                      onClick={() => handleDirectUnitLogin('generalissimo')}
-                      disabled={gpsLoading}
-                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all flex items-center gap-4 text-left group disabled:opacity-50"
-                    >
-                      <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
-                        <Building2 size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-gray-800 text-sm">Estagiários - Generalíssimo</h4>
-                          <span className="text-[9px] bg-indigo-100 text-indigo-800 font-semibold px-2 py-0.5 rounded">Sem Senha</span>
-                        </div>
-                        <p className="text-[10px] text-gray-500">Acesso direto ao ponto (Biometria + GPS)</p>
-                      </div>
-                    </button>
+                    {/* Botões de unidade (um por unidade do workspace deste site) */}
+                    {BRANDING.kioskUnits.map((ku) => {
+                      const accent = KIOSK_ACCENT_CLASSES[ku.accent] || KIOSK_ACCENT_CLASSES.emerald;
+                      return (
+                        <button
+                          key={ku.id}
+                          type="button"
+                          onClick={() => handleDirectUnitLogin(ku.id)}
+                          disabled={gpsLoading}
+                          className={`w-full p-4 border-2 border-gray-200 rounded-xl ${accent.hoverBorder} transition-all flex items-center gap-4 text-left group disabled:opacity-50`}
+                        >
+                          <div className={`p-2.5 rounded-lg transition-colors ${accent.icon}`}>
+                            <Building2 size={20} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-gray-800 text-sm">{ku.buttonLabel}</h4>
+                              <span className={`text-[9px] font-semibold px-2 py-0.5 rounded ${accent.badge}`}>Sem Senha</span>
+                            </div>
+                            <p className="text-[10px] text-gray-500">Acesso direto ao ponto (Biometria + GPS)</p>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
@@ -2695,7 +2683,7 @@ export default function App() {
             >
               <LogOut size={12} /> Desconectar
             </button>
-            <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-12 w-auto mb-2 rounded-lg shadow-sm" />
+            <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-12 w-auto mb-2 rounded-lg shadow-sm" />
             <h1 className="text-xl font-bold mb-0.5">
               {isUnitLogin ? `Quiosque: ${loggedInIntern.name}` : `Olá, ${loggedInIntern.name}!`}
             </h1>
@@ -2774,7 +2762,7 @@ export default function App() {
                     <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                       <Camera size={14} className="text-blue-600" /> Controle Facial Biométrico
                     </span>
-                    {['antonio-barreto', 'generalissimo'].includes(selectedUnit) ? (
+                    {currentUnit?.biometricRequired ? (
                       <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
                         <ShieldAlert size={12} className="text-amber-600" /> Sem Fallback de Senha
                       </span>
@@ -2790,7 +2778,7 @@ export default function App() {
                       )
                     )}
                   </div>
-                  {['antonio-barreto', 'generalissimo'].includes(selectedUnit) && (
+                  {currentUnit?.biometricRequired && (
                     <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-800 text-[10px] font-medium leading-tight">
                       <ShieldAlert size={14} className="shrink-0 text-amber-600" />
                       <span>Autenticação por biometria facial e geolocalização 100% obrigatória nesta unidade (Restrição de senha/PIN ativa).</span>
@@ -2847,7 +2835,7 @@ export default function App() {
                         >
                           <Video size={12} /> Habilitar Câmera
                         </button>
-                        {forceManualPoint && !['antonio-barreto', 'generalissimo'].includes(selectedUnit) && (
+                        {forceManualPoint && !currentUnit?.biometricRequired && (
                           <span className="bg-amber-100 text-amber-800 text-[9px] font-semibold px-2 py-1 rounded inline-flex items-center">
                             Modo Contingência
                           </span>
@@ -3003,7 +2991,7 @@ export default function App() {
             >
               <ArrowLeft size={14} /> Voltar
             </button>
-            <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-14 w-auto mb-2 rounded-lg shadow-sm" />
+            <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-14 w-auto mb-2 rounded-lg shadow-sm" />
             <h1 className="text-xl font-bold">Autogestão de Biometria Facial</h1>
             <p className="text-indigo-100 text-xs mt-1">Configuração autônoma de biometria para estagiários</p>
           </div>
@@ -3175,7 +3163,7 @@ export default function App() {
 
         const email = cadastroForm.email.trim();
         const username = generateUsername(cadastroForm.name.trim());
-        const finalEmail = email || `${username}@portoterapia.com`;
+        const finalEmail = email || `${username}@${BRANDING.fallbackInternEmailDomain}`;
 
         // 1. Preparar os documentos admissionais
         const updatedDocs = {};
@@ -4479,7 +4467,7 @@ export default function App() {
       { title: "Observação de Atendimentos Psicoterapêuticos Online", desc: "Acompanhamento de sessões virtuais com adolescentes ou sessões de orientação parental online." },
       { title: "Planejamento de Altas em Psicoterapia Infantil", desc: "Discussão de critérios clínicos e preparação de documentos finais para o encerramento do processo terapêutico infantil." },
       { title: "Estudo de Psicopatologia da Infância e Adolescência", desc: "Leitura e discussão semanal do DSM-5 voltado para transtornos do neurodesenvolvimento e de comportamento disruptivo." },
-      { title: "Diagnóstico Institucional da Clínica Infantil", desc: "Avaliação das barreiras de acessibilidade e acolhimento das dependências físicas da Porto Terapia." },
+      { title: "Diagnóstico Institucional da Clínica Infantil", desc: `Avaliação das barreiras de acessibilidade e acolhimento das dependências físicas da ${BRANDING.displayName}.` },
       { title: "Estudo sobre Transtornos de Aprendizagem", desc: "Leitura dirigida sobre dislexia, disgrafia e discalculia em conjunto com abordagens psicopedagógicas." },
       { title: "Auxílio na Condução de Treinamento de Assertividade", desc: "Planejamento de treinos de habilidades sociais para crianças tímidas ou com fobia social." },
       { title: "Intervenção Baseada no Modelo Denver (ESDM)", desc: "Estudo e observação de técnicas de estimulação precoce baseadas no jogo e rotinas diárias para bebês de risco." },
@@ -4587,16 +4575,16 @@ export default function App() {
     const intern = sanitizeInternForDocumentHtml(internRaw);
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
-        <img src="/logo.jpg" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="Logo Porto Terapia" />
-        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px;">PORTO TERAPIA</h1>
-        <p style="margin: 4px 0 0; font-size: 10px; text-transform: uppercase; color: #4b5563; font-weight: 600; letter-spacing: 2px;">Clínica de Psicologia e Desenvolvimento Humano</p>
-        <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">Belém - PA</p>
+        <img src="${BRANDING.logoPath}" style="height: 60px; margin-bottom: 10px; object-fit: contain;" alt="${BRANDING.logoAlt}" />
+        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px;">${BRANDING.displayName.toUpperCase()}</h1>
+        <p style="margin: 4px 0 0; font-size: 10px; text-transform: uppercase; color: #4b5563; font-weight: 600; letter-spacing: 2px;">${BRANDING.documentTagline}</p>
+        <p style="margin: 2px 0 0; font-size: 8px; color: #6b7280;">${BRANDING.documentLocation}</p>
       </div>
     `;
 
     const footerHtml = `
       <div style="margin-top: 50px; border-top: 1px solid #e5e7eb; padding-top: 10px; text-align: center; font-size: 8px; color: #9ca3af;">
-        Porto Terapia Clínica de Psicologia LTDA • Documento oficial eletrônico para fins de controle e registro acadêmico.
+        ${BRANDING.legalEntityName} • Documento oficial eletrônico para fins de controle e registro acadêmico.
       </div>
     `;
 
@@ -4802,7 +4790,7 @@ export default function App() {
             <tr>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
-                  <strong>Supervisora de Estágio: ${intern?.supervisorName || '________________________'}</strong><br>Porto Terapia
+                  <strong>Supervisora de Estágio: ${intern?.supervisorName || '________________________'}</strong><br>${BRANDING.displayName}
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
@@ -4927,7 +4915,7 @@ export default function App() {
             <p style="margin: 2px 0 0; font-size: 9px; color: #6b7280;">Carta de Solicitação de Desligamento por Iniciativa Própria</p>
           </div>
           
-          <p style="margin-bottom: 15px;">À Direção da <strong>PORTO TERAPIA CLINICA DE PSICOLOGIA LTDA</strong>,</p>
+          <p style="margin-bottom: 15px;">À Direção da <strong>${BRANDING.legalEntityName.toUpperCase()}</strong>,</p>
 
           <p style="text-align: justify; margin-bottom: 20px;">
             Eu, <strong>${internName}</strong>, inscrito(a) no CPF sob o nº <strong>${intern?.cpf || '_____________________'}</strong>, estudante regular do curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong>, venho por meio desta solicitar formalmente o desligamento do meu estágio, exercido na <strong>${unitTitle}</strong>, por motivos particulares de cunho pessoal/profissional.
@@ -4938,7 +4926,7 @@ export default function App() {
           </p>
 
           <p style="text-align: justify; margin-bottom: 30px;">
-            Agradeço a oportunidade de aprendizado e desenvolvimento profissional concedida durante o período de convivência com a equipe técnica e supervisores da Porto Terapia.
+            Agradeço a oportunidade de aprendizado e desenvolvimento profissional concedida durante o período de convivência com a equipe técnica e supervisores da ${BRANDING.displayName}.
           </p>
 
           <p style="text-align: right; margin-bottom: 50px;">Belém/PA, ${new Date().toLocaleDateString('pt-BR')}.</p>
@@ -4952,7 +4940,7 @@ export default function App() {
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
-                  <strong>Porto Terapia</strong><br>Representante Concedente
+                  <strong>${BRANDING.displayName}</strong><br>Representante Concedente
                 </div>
               </td>
             </tr>
@@ -5106,7 +5094,7 @@ export default function App() {
             <tr>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 25px; padding-top: 5px; width: 80%; margin-left: auto; margin-right: auto;">
-                  <strong>Supervisor de Estágio</strong><br>Porto Terapia
+                  <strong>Supervisor de Estágio</strong><br>${BRANDING.displayName}
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
@@ -5130,7 +5118,7 @@ export default function App() {
           </div>
 
           <p style="text-align: justify; text-indent: 50px; margin-bottom: 30px;">
-            Declaramos, para os devidos fins de comprovação junto à instituição de ensino e demais interessados, que o(a) estudante <strong>${internName}</strong>, inscrito(a) sob o CPF nº <strong>${intern?.cpf || '_____________________'}</strong>, é estagiário(a) regularmente matriculado(a) no curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong> e atualmente desenvolve estágio prático curricular não obrigatório nas dependências da Clínica Porto Terapia, unidade <strong>${unitTitle}</strong>.
+            Declaramos, para os devidos fins de comprovação junto à instituição de ensino e demais interessados, que o(a) estudante <strong>${internName}</strong>, inscrito(a) sob o CPF nº <strong>${intern?.cpf || '_____________________'}</strong>, é estagiário(a) regularmente matriculado(a) no curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong> e atualmente desenvolve estágio prático curricular não obrigatório nas dependências da Clínica ${BRANDING.displayName}, unidade <strong>${unitTitle}</strong>.
           </p>
 
           <p style="text-align: justify; text-indent: 50px; margin-bottom: 30px;">
@@ -5149,7 +5137,7 @@ export default function App() {
             <tr>
               <td style="width: 100%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 40px; padding-top: 5px; width: 60%; margin-left: auto; margin-right: auto;">
-                  <strong>Porto Terapia Clínica de Psicologia</strong><br>Representante Concedente
+                  <strong>${BRANDING.legalEntityShort}</strong><br>Representante Concedente
                 </div>
               </td>
             </tr>
@@ -5172,7 +5160,7 @@ export default function App() {
       <html>
         <head>
           <base href="${window.location.origin}/" />
-          <title>${type.toUpperCase()} - Porto Terapia</title>
+          <title>${type.toUpperCase()} - ${BRANDING.displayName}</title>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
           <style>
             body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; }
@@ -5230,7 +5218,7 @@ export default function App() {
           <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
             <Printer size={20} className="text-blue-600" /> Documentos para Imprimir
           </h2>
-          <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Porto Terapia</span>
+          <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">{BRANDING.displayName}</span>
         </div>
         <p className="text-xs text-gray-500 mb-4">Selecione o estagiário abaixo para gerar e imprimir os documentos regulamentares preenchidos com os dados cadastrais completos.</p>
 
@@ -5334,7 +5322,7 @@ export default function App() {
             <h3 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
               <FileText size={18} className="text-blue-600" /> {templateName}
             </h3>
-            <p className="text-xs text-gray-500">Visualização prévia do papel timbrado oficial da Porto Terapia.</p>
+            <p className="text-xs text-gray-500">Visualização prévia do papel timbrado oficial da {BRANDING.displayName}.</p>
           </div>
 
           <div className="flex-1 w-full bg-slate-100 rounded-xl overflow-y-auto border border-slate-200 p-4 mb-4">
@@ -7056,7 +7044,7 @@ export default function App() {
               </div>
             </div>
             <p className="text-[10px] text-blue-100/80 mt-4 flex items-center gap-1 font-medium">
-              Vínculos ativos na Porto Terapia
+              Vínculos ativos na {BRANDING.displayName}
             </p>
           </div>
 
@@ -7374,9 +7362,9 @@ export default function App() {
           {/* Header da Sidebar */}
           <div className="p-4 border-b border-slate-200/80 bg-white/60 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="/logo.jpg" alt="Logo Porto Terapia" className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />
+              <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />
               <div>
-                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">Porto Terapia</h1>
+                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">{BRANDING.displayName}</h1>
                 <p className="text-[11px] text-slate-500 font-medium">
                   Painel da Supervisão
                 </p>
@@ -7386,6 +7374,29 @@ export default function App() {
 
           {/* Filtro de Unidade & Ações Rápidas */}
           <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
+            {canSwitchWorkspace && (
+              <div>
+                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                  Grupo de Unidades
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {Object.values(WORKSPACES).map((ws) => (
+                    <button
+                      key={ws.id}
+                      type="button"
+                      onClick={() => { setAdminWorkspace(ws.id); setFilterUnit('all'); }}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                        adminWorkspace === ws.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
+                      }`}
+                    >
+                      {ws.displayName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
                 Unidade Selecionada
@@ -7576,11 +7587,12 @@ export default function App() {
       {renderOccurrenceModal()}
       {renderConfirmModal()}
       {currentView === 'admin' && (
-        <Omnibar 
-          isOpen={isOmnibarOpen} 
-          setIsOpen={setIsOmnibarOpen} 
-          interns={interns} 
-          onSelectAction={handleOmnibarAction} 
+        <Omnibar
+          isOpen={isOmnibarOpen}
+          setIsOpen={setIsOmnibarOpen}
+          interns={interns}
+          units={units}
+          onSelectAction={handleOmnibarAction}
         />
       )}
     </>

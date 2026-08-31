@@ -198,6 +198,9 @@ export const mapUnitFromDb = (u) => ({
   lng: Number(u.lng),
   radiusKm: Number(u.radius_km),
   radiusM: Number(u.radius_m),
+  workspaceId: u.workspace_id,
+  kioskEmail: u.kiosk_email,
+  biometricRequired: u.biometric_required,
 });
 
 export const mapUnitToDb = (u) => ({
@@ -208,4 +211,7 @@ export const mapUnitToDb = (u) => ({
   lng: Number(u.lng),
   radius_km: Number(u.radiusKm),
   radius_m: Number(u.radiusM),
+  workspace_id: u.workspaceId,
+  kiosk_email: u.kioskEmail,
+  biometric_required: u.biometricRequired,
 });

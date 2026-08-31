@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Command } from 'cmdk';
 import { Search, User, FileText, X, AlertTriangle } from 'lucide-react';
 
-export default function Omnibar({ isOpen, setIsOpen, interns, onSelectAction }) {
+export default function Omnibar({ isOpen, setIsOpen, interns, units = [], onSelectAction }) {
   const [search, setSearch] = useState('');
 
   // Toggle with Cmd+K or Ctrl+K
@@ -55,7 +55,7 @@ export default function Omnibar({ isOpen, setIsOpen, interns, onSelectAction }) 
                   <User className="w-5 h-5 text-indigo-500 mr-3" />
                   <div>
                     <div className="font-medium text-gray-900">{intern.name}</div>
-                    <div className="text-sm text-gray-500">{intern.unitId === 'antonio-barreto' ? 'Antônio Barreto' : 'Generalíssimo'}</div>
+                    <div className="text-sm text-gray-500">{units.find((u) => u.id === intern.unitId)?.name || '—'}</div>
                   </div>
                 </Command.Item>
               ))}

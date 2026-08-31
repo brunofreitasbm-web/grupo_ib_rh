@@ -3,6 +3,7 @@ import { ShieldAlert, FileText, MessageSquare } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate, getInternRhMetrics } from '../../utils/helpers';
+import { BRANDING } from '../../config/branding';
 
 export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -62,7 +63,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
 
       if (error) throw error;
 
-      alert(`Resposta enviada com sucesso! Uma cópia com o timbre institucional foi enviada para o e-mail: ${record.geo?.internEmail || 'estagiario@portoterapia.com'}`);
+      alert(`Resposta enviada com sucesso! Uma cópia com o timbre institucional foi enviada para o e-mail: ${record.geo?.internEmail || `estagiario@${BRANDING.fallbackInternEmailDomain}`}`);
       setReplyText('');
       setReplyingId(null);
       fetchData();

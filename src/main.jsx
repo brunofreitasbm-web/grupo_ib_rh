@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { Toaster } from 'sonner';
 import './index.css';
+import { BRANDING } from './config/branding';
+
+document.title = BRANDING.appTitle;
+document.querySelector('meta[name="theme-color"]')?.setAttribute('content', BRANDING.themeColor);
 
 // Tratamento global para erros de carregamento de módulos dinâmicos (ex: novos deploys no Netlify)
 window.addEventListener('vite:preloadError', (event) => {

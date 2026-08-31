@@ -3,6 +3,7 @@ import { Users, Timer, Clock, FileText, Cake, CheckCircle2, AlertTriangle, Shiel
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { BRANDING } from '../../config/branding';
 
 export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -245,7 +246,7 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
             </div>
           </div>
           <p className="text-[10px] text-blue-200 mt-4 flex items-center gap-1 font-medium">
-            Vínculos ativos na Porto Terapia
+            Vínculos ativos na {BRANDING.displayName}
           </p>
         </div>
 

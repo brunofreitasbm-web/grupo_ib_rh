@@ -3,6 +3,7 @@ import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, Refres
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
+import { BRANDING } from '../../config/branding';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
 import { toast } from 'sonner';
@@ -453,7 +454,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
         if (error) throw error;
         toast.success('Estagiário atualizado com sucesso!');
       } else {
-        const email = payload.email || `${generateUsername(payload.name)}@portoterapia.com`;
+        const email = payload.email || `${generateUsername(payload.name)}@${BRANDING.fallbackInternEmailDomain}`;
         const createResult = await supabase.rpc('create_intern_user', {
           p_email: email,
           p_password: '0000',

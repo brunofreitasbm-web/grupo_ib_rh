@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Cake, Users, Printer, Calendar, Edit2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { BRANDING } from '../../config/branding';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -151,7 +152,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
       </style></head>
       <body>
         <h2>🎂 Aniversariantes de ${monthLabel}</h2>
-        <p class="sub">Porto Terapia — Controle de Estágios · Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
+        <p class="sub">${BRANDING.displayName} — Controle de Estágios · Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
         <table>
           <thead>
             <tr>
@@ -161,7 +162,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
           </thead>
           <tbody>${rows || '<tr><td colspan="7" style="padding:12px;text-align:center;color:#9ca3af;">Nenhum aniversariante neste mês.</td></tr>'}</tbody>
         </table>
-        <div class="footer">Lista gerada pelo Sistema de Controle de Estagiários · Porto Terapia</div>
+        <div class="footer">Lista gerada pelo Sistema de Controle de Estagiários · ${BRANDING.displayName}</div>
       </body></html>`;
 
     const w = window.open('', '_blank');

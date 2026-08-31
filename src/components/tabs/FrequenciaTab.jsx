@@ -3,6 +3,7 @@ import { List, AlertTriangle, LogIn, LogOut, MapPin, FileText, Timer, Camera, X,
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { startOfWeek, formatDistance, formatDate, formatTime } from '../../utils/helpers';
+import { BRANDING } from '../../config/branding';
 
 export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -205,7 +206,7 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
     const link = document.createElement('a');
     link.href = url;
     const unitSuffix = filterUnit === 'all' ? 'todas' : filterUnit;
-    link.download = `frequencia_portoterapia_${unitSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `frequencia_${BRANDING.id}_${unitSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Timer, Printer, Download, FileText } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { BRANDING } from '../../config/branding';
 
 export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -164,9 +165,9 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       <div style="font-family: Arial, sans-serif; color: #1e293b; padding: 25px; max-width: 900px; margin: 0 auto; background: #fff;">
         <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px;">
           <div style="display: flex; align-items: center; gap: 15px;">
-            <img src="/logo.jpg" alt="Logo Porto Terapia" style="height: 60px; object-fit: contain;" />
+            <img src="${BRANDING.logoPath}" alt="${BRANDING.logoAlt}" style="height: 60px; object-fit: contain;" />
             <div>
-              <h1 style="margin: 0; font-size: 20px; color: #1e3a8a; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Porto Terapia</h1>
+              <h1 style="margin: 0; font-size: 20px; color: #1e3a8a; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">${BRANDING.displayName}</h1>
               <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Clínica Interdisciplinar Infantil${unitSubtitle}</p>
             </div>
           </div>
@@ -238,7 +239,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 40px; page-break-inside: avoid;">
           <div style="flex: 1; text-align: center; border-top: 1px solid #94a3b8; padding-top: 8px;">
             <p style="margin: 0; font-size: 11px; font-weight: bold; color: #334155;">Gestão Financeira / RH</p>
-            <p style="margin: 2px 0 0 0; font-size: 10px; color: #64748b;">Porto Terapia</p>
+            <p style="margin: 2px 0 0 0; font-size: 10px; color: #64748b;">${BRANDING.displayName}</p>
           </div>
           <div style="flex: 1; text-align: center; border-top: 1px solid #94a3b8; padding-top: 8px;">
             <p style="margin: 0; font-size: 11px; font-weight: bold; color: #334155;">Direção Geral</p>
@@ -258,7 +259,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Folha de Pagamento - Porto Terapia (${formattedMonth})</title>
+          <title>Folha de Pagamento - ${BRANDING.displayName} (${formattedMonth})</title>
           <style>
             @media print {
               body { margin: 0; padding: 0; }

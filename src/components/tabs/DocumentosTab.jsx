@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Printer } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { BRANDING } from '../../config/branding';
 
 export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -74,7 +75,7 @@ export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedU
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
           <Printer size={20} className="text-blue-600" /> Gerador de Documentos & Impressão
         </h2>
-        <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Porto Terapia</span>
+        <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">{BRANDING.displayName}</span>
       </div>
       <p className="text-xs text-gray-500 mb-4">Selecione o estagiário abaixo para gerar e imprimir os documentos regulamentares preenchidos com os dados cadastrais completos.</p>
 
@@ -98,7 +99,7 @@ export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedU
           <div className="border border-gray-200 rounded-xl p-4 bg-slate-50 flex flex-col justify-between h-40 shadow-sm">
             <div>
               <h3 className="font-bold text-gray-800 text-xs mb-1">Declaração de Vínculo</h3>
-              <p className="text-[10px] text-gray-400 leading-snug">Declaração oficial que comprova o vínculo ativo do estagiário com a clínica Porto Terapia.</p>
+              <p className="text-[10px] text-gray-400 leading-snug">Declaração oficial que comprova o vínculo ativo do estagiário com a clínica {BRANDING.displayName}.</p>
             </div>
             <button
               type="button"
