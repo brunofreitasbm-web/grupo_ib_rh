@@ -162,9 +162,10 @@ INSERT INTO auth.identities (
 -- Guimelly: guimelly@portoterapia.com / Senha: admin321
 -- Bruno: bruno@portoterapia.com / Senha: admin321
 -- Isabella: isabella@portoterapia.com / Senha: admin321
+-- Ian: ian@portoterapia.com / Senha: admin321
 -- IMPORTANTE: troque estas senhas por senhas fortes assim que possível.
 
-DELETE FROM auth.users WHERE email IN ('guimelly@portoterapia.com', 'bruno@portoterapia.com', 'isabella@portoterapia.com');
+DELETE FROM auth.users WHERE email IN ('guimelly@portoterapia.com', 'bruno@portoterapia.com', 'isabella@portoterapia.com', 'ian@portoterapia.com');
 
 -- Guimelly
 INSERT INTO auth.users (
@@ -338,6 +339,65 @@ INSERT INTO auth.identities (
   '{"sub":"f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66","email":"isabella@portoterapia.com"}'::jsonb,
   'email',
   'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66',
+  now(),
+  now(),
+  now()
+);
+
+-- Ian
+INSERT INTO auth.users (
+  id,
+  instance_id,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  aud,
+  role,
+  created_at,
+  updated_at,
+  confirmation_token,
+  recovery_token,
+  email_change_token_new,
+  email_change,
+  is_sso_user,
+  is_anonymous
+) VALUES (
+  'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a77',
+  '00000000-0000-0000-0000-000000000000',
+  'ian@portoterapia.com',
+  crypt('admin321', gen_salt('bf')),
+  now(),
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  '{"name": "Ian", "role": "supervisor"}'::jsonb,
+  'authenticated',
+  'authenticated',
+  now(),
+  now(),
+  '',
+  '',
+  '',
+  '',
+  false,
+  false
+);
+
+INSERT INTO auth.identities (
+  id,
+  user_id,
+  identity_data,
+  provider,
+  provider_id,
+  last_sign_in_at,
+  created_at,
+  updated_at
+) VALUES (
+  gen_random_uuid(),
+  'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a77',
+  '{"sub":"a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a77","email":"ian@portoterapia.com"}'::jsonb,
+  'email',
+  'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a77',
   now(),
   now(),
   now()

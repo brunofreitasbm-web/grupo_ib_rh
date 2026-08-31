@@ -35,6 +35,7 @@ export const WORKSPACES = {
       guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
       bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
       isabella: { label: 'Isabella', email: 'isabella@portoterapia.com' },
+      ian: { label: 'Ian', email: 'ian@portoterapia.com' },
     },
     // Unidades mostradas nos botões de login do quiosque (tela pré-login, sem
     // sessão — por isso não dá para consultar a tabela `units` via RLS ainda;
