@@ -7,7 +7,7 @@ import {
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
   ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
-import { getFaceDescriptor, compareFaces } from './utils/faceBiometrics';
+import { getFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
   getFriendlyDbErrorMessage,
   INTERN_SELECT_FIELDS,
@@ -153,6 +153,13 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+
+  // Pré-carrega os modelos de biometria facial assim que o app monta, para que
+  // o cadastro público (onde o upload da foto tem só 20s de orçamento total)
+  // não gaste esse tempo baixando os modelos pela rede antes mesmo de detectar o rosto.
+  useEffect(() => {
+    loadModels().catch(() => {});
+  }, []);
 
   const handleOmnibarAction = (action, internId) => {
     if (action === 'view_dossie') {
@@ -3387,9 +3394,9 @@ export default function App() {
                           setIsBioCadastroModalOpen(true);
                           setBioCadastroStatus('processing');
                           setBioCadastroMsg('Compactando foto 3x4 e inicializando modelos...');
-                          setBioCadastroTimeLeft(20);
+                          setBioCadastroTimeLeft(30);
 
-                          let timeLeft = 20;
+                          let timeLeft = 30;
                           const timerInterval = setInterval(() => {
                             timeLeft -= 1;
                             setBioCadastroTimeLeft(timeLeft);
@@ -3402,7 +3409,7 @@ export default function App() {
                             const timeoutPromise = new Promise((_, reject) => {
                               setTimeout(() => {
                                 reject(new Error('TIMEOUT'));
-                              }, 20000);
+                              }, 30000);
                             });
                             return Promise.race([
                               getFaceDescriptor(base64),
@@ -3413,7 +3420,7 @@ export default function App() {
                           try {
                             const base64 = await compressImage(file, 250, 333, 0.7);
                             setCadastroForm(f => ({ ...f, photo: base64 }));
-                            setBioCadastroMsg('Analisando traços faciais na imagem (limite de 20s)...');
+                            setBioCadastroMsg('Analisando traços faciais na imagem (limite de 30s)...');
 
                             const descriptor = await runExtraction(base64);
                             clearInterval(timerInterval);
@@ -3436,7 +3443,7 @@ export default function App() {
                             console.error("Erro ao converter/extrair biometria:", err);
                             setBioCadastroStatus('error');
                             if (err.message === 'TIMEOUT') {
-                              setBioCadastroMsg('❌ Tempo limite de 20 segundos esgotado. A extração biométrica falhou.');
+                              setBioCadastroMsg('❌ Tempo limite de 30 segundos esgotado. A extração biométrica falhou.');
                             } else {
                               setBioCadastroMsg('❌ Falha ao processar imagem ou extrair biometria.');
                             }
