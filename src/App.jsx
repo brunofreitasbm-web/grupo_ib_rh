@@ -3061,17 +3061,18 @@ export default function App() {
                 </div>
 
                 {autogestaoInternId && (
-                  hasBiometria ? (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-amber-900 text-xs font-semibold space-y-2 animate-fade-in">
-                      <p>⚠️ Você já possui uma biometria facial cadastrada e validada no sistema.</p>
-                      <p className="font-normal text-slate-500">Por questões de segurança, a alteração ou recadastro biométrico só pode ser feito sob supervisão direta no painel administrativo.</p>
-                    </div>
-                  ) : isAutogestaoLocked ? (
+                  isAutogestaoLocked ? (
                     <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center text-red-800 text-xs font-semibold animate-fade-in">
                       ⛔ Muitas tentativas de CPF incorretas. Aguarde um minuto antes de tentar novamente.
                     </div>
                   ) : (
                     <div className="animate-fade-in space-y-4">
+                      {hasBiometria && (
+                        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs font-medium space-y-1 animate-fade-in">
+                          <p className="font-semibold">ℹ️ Biometria facial já cadastrada</p>
+                          <p className="text-[11px] text-blue-700">Para atualizar seu cadastro biométrico, confirme seu CPF abaixo para prosseguir com a nova captura facial.</p>
+                        </div>
+                      )}
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
                           Confirme seu CPF para validação de identidade:

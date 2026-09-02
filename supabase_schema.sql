@@ -579,18 +579,17 @@ DECLARE
   final_registration_status text := p_registration_status;
   final_unit_id text := p_unit_id;
 BEGIN
-  -- Apenas supervisor (cadastro administrativo) ou o login de unidade/quiosque
-  -- (auto-cadastro do estagiário, sempre pendente de validação) podem chamar esta função.
-  IF caller_role IS DISTINCT FROM 'supervisor' AND caller_role IS DISTINCT FROM 'intern_unit' THEN
+  -- Supervisor (cadastro administrativo), login de unidade/quiosque ou cadastro anônimo obrigatório podem chamar esta função.
+  IF caller_role IS DISTINCT FROM 'supervisor' AND caller_role IS DISTINCT FROM 'intern_unit' AND caller_role IS NOT NULL THEN
     RAISE EXCEPTION 'not authorized';
   END IF;
 
-  -- Um login de unidade só pode se autocadastrar como pendente de validação,
-  -- e apenas na própria unidade (não pode criar estagiário validado/ativo
-  -- nem em outra unidade).
-  IF caller_role = 'intern_unit' THEN
+  -- Um login de unidade ou cadastro anônimo só pode se autocadastrar como pendente de validação
+  IF caller_role = 'intern_unit' OR caller_role IS NULL THEN
     final_registration_status := 'pending_validation';
-    final_unit_id := caller_unit;
+    IF caller_role = 'intern_unit' AND caller_unit IS NOT NULL THEN
+      final_unit_id := caller_unit;
+    END IF;
   END IF;
 
   -- Gerar novo UUID aleatório para o estagiário
@@ -671,12 +670,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-REVOKE ALL ON FUNCTION public.create_intern_user(
-  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
-) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_intern_user(
   text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
-) TO authenticated;
+) TO anon, authenticated;
 
 -- Função 2: Excluir estagiário (deleta de auth.users e o cascade limpa public.interns)
 -- Apenas o supervisor pode excluir estagiários.
@@ -1190,13 +1186,15 @@ DECLARE
   final_registration_status text := p_registration_status;
   final_unit_id text := p_unit_id;
 BEGIN
-  IF caller_role IS DISTINCT FROM 'supervisor' AND caller_role IS DISTINCT FROM 'intern_unit' THEN
+  IF caller_role IS DISTINCT FROM 'supervisor' AND caller_role IS DISTINCT FROM 'intern_unit' AND caller_role IS NOT NULL THEN
     RAISE EXCEPTION 'not authorized';
   END IF;
 
-  IF caller_role = 'intern_unit' THEN
+  IF caller_role = 'intern_unit' OR caller_role IS NULL THEN
     final_registration_status := 'pending_validation';
-    final_unit_id := caller_unit;
+    IF caller_role = 'intern_unit' AND caller_unit IS NOT NULL THEN
+      final_unit_id := caller_unit;
+    END IF;
   END IF;
 
   IF caller_role = 'supervisor' AND NOT public.jwt_has_workspace_access('all') THEN
@@ -1226,12 +1224,9 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.create_intern_user(
-  text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
-) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_intern_user(
   text, text, text, text, text, text, integer, text, date, date, text, text, text, text, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, date, text
-) TO authenticated;
+) TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.delete_intern_user(p_intern_id uuid)
  RETURNS void
