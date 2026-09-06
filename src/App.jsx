@@ -21,7 +21,7 @@ import {
   mapUnitFromDb,
   mapUnitToDb,
 } from './utils/mappings';
-import { formatDistance, startOfWeek, validateCPF } from './utils/helpers';
+import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { BRANDING, WORKSPACES } from './config/branding';
 import { calculateHoursSummary, calculateHoursAlerts } from './utils/hoursCalculations';
 import useGeolocation from './hooks/useGeolocation';
@@ -54,9 +54,16 @@ const ProfissionaisTab = lazyWithRetry(() => import('./components/tabs/Profissio
 const PresencaProfissionaisTab = lazyWithRetry(() => import('./components/tabs/PresencaProfissionaisTab'));
 const ProducaoProfissionaisTab = lazyWithRetry(() => import('./components/tabs/ProducaoProfissionaisTab'));
 const DocumentosProfissionaisTab = lazyWithRetry(() => import('./components/tabs/DocumentosProfissionaisTab'));
+// Abas do módulo Funcionários CLT (empregados) — terceiro tipo de vínculo do
+// hub de RH, ao lado de Estagiários e Profissionais PJ (ver plano do módulo).
+const FuncionariosTab = lazyWithRetry(() => import('./components/tabs/FuncionariosTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
+import EmployeeKiosk from './components/EmployeeKiosk';
+// Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
+// não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
+const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
 
 
 
@@ -194,11 +201,14 @@ export default function App() {
   // Sessão do quiosque de Profissionais PJ — separada de loggedInIntern de
   // propósito (papel 'professional_unit', ver handleSession e supabase_schema.sql seção 16).
   const [professionalKiosk, setProfessionalKiosk] = useState(null);
+  // Sessão do quiosque de Funcionários CLT — papel 'employee_unit' (ver
+  // handleSession e supabase_schema.sql, seção 17).
+  const [employeeKiosk, setEmployeeKiosk] = useState(null);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [selectedLoginOption, setSelectedLoginOption] = useState(null); // null | 'supervisor' | <id de uma unidade do quiosque>
-  // Categoria escolhida no hub inicial pré-login: null (hub) | 'interns' | 'pj'.
+  // Categoria escolhida no hub inicial pré-login: null (hub) | 'interns' | 'pj' | 'clt'.
   const [kioskCategory, setKioskCategory] = useState(null);
   // Identificação do administrador é DIGITADA (nunca listada/salva), para que
   // ninguém que observe o quiosque saiba quais nomes de admin existem no sistema.
@@ -517,6 +527,16 @@ export default function App() {
         });
         setCurrentView('pj_kiosk');
         setLoginError('');
+      } else if (role === 'employee_unit') {
+        // Quiosque de Funcionários CLT — papel próprio, isolado no servidor
+        // de 'intern_unit'/'professional_unit' (ver supabase_schema.sql, seção 17).
+        setLoggedInIntern(null);
+        setEmployeeKiosk({
+          unitId: userObj.user_metadata?.unit_id || '',
+          name: userObj.user_metadata?.name || 'Funcionários CLT',
+        });
+        setCurrentView('clt_kiosk');
+        setLoginError('');
       } else {
         console.error('Usuário sem papel (role) definido.');
         setLoginError('Esta conta não possui permissão de acesso (papel indefinido).');
@@ -526,6 +546,7 @@ export default function App() {
       setUser(null);
       setLoggedInIntern(null);
       setProfessionalKiosk(null);
+      setEmployeeKiosk(null);
       setSelectedIntern('');
       setCurrentView('kiosk');
       setSelectedLoginOption(null);
@@ -1085,6 +1106,37 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao acessar quiosque PJ da unidade:', err);
       toast.error('Não foi possível acessar o quiosque de profissionais desta unidade. Verifique sua conexão e tente novamente.');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
+  // Login direto sem senha para o quiosque de Funcionários CLT por unidade.
+  const handleDirectEmployeeLogin = async (unitOption) => {
+    setLoginError('');
+    setGpsLoading(true);
+    const kioskUnit = BRANDING.kioskUnits.find((ku) => ku.id === unitOption);
+    const email = kioskUnit?.employeeKioskEmail || '';
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: 'estagio123',
+      });
+
+      if (!error) {
+        setEmployeeKiosk({
+          unitId: unitOption,
+          name: kioskUnit?.employeeButtonLabel || 'Funcionários CLT',
+        });
+        setCurrentView('clt_kiosk');
+      } else {
+        console.error('Erro ao acessar quiosque CLT da unidade:', error);
+        toast.error('Não foi possível acessar o quiosque de funcionários desta unidade. Tente novamente ou contate a administração.');
+      }
+    } catch (err) {
+      console.error('Erro ao acessar quiosque CLT da unidade:', err);
+      toast.error('Não foi possível acessar o quiosque de funcionários desta unidade. Verifique sua conexão e tente novamente.');
     } finally {
       setGpsLoading(false);
     }
@@ -2718,6 +2770,22 @@ export default function App() {
                         </div>
                       </button>
                     )}
+
+                    {BRANDING.showEmployeesModule && (
+                      <button
+                        type="button"
+                        onClick={() => setKioskCategory('clt')}
+                        className="w-full p-5 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all flex items-center gap-4 text-left group"
+                      >
+                        <div className="p-3 bg-indigo-100 text-indigo-700 rounded-lg group-hover:bg-indigo-200 transition-colors">
+                          <ScanFace size={26} />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-gray-800 text-base">{BRANDING.employeeLabels?.plural || 'Funcionários CLT'}</h4>
+                          <p className="text-xs text-gray-500">Registro de ponto (Biometria + GPS + NSR)</p>
+                        </div>
+                      </button>
+                    )}
                   </div>
 
                   <div className="border-t border-gray-100 pt-4 mt-2">
@@ -2818,6 +2886,32 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+              ) : kioskCategory === 'clt' ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-1">
+                    <button
+                      type="button"
+                      onClick={() => setKioskCategory(null)}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="text-xs font-semibold text-gray-600">{BRANDING.employeeLabels?.plural || 'Funcionários CLT'} · Escolha a unidade</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {BRANDING.kioskUnits.filter((ku) => ku.employeeKioskEmail).map((ku) =>
+                      renderUnitButton(ku, {
+                        keyPrefix: 'clt-',
+                        onSelect: handleDirectEmployeeLogin,
+                        accentClass: 'hover:border-indigo-500 hover:bg-indigo-50',
+                        iconBg: 'bg-indigo-100 text-indigo-700 group-hover:bg-indigo-200',
+                        badge: { label: 'Biometria', className: 'bg-indigo-100 text-indigo-800' },
+                        description: 'Registro de ponto (Biometria + GPS + NSR)',
+                      })
+                    )}
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-1">
@@ -2843,12 +2937,35 @@ export default function App() {
                       })
                     )}
                   </div>
+
+                  {BRANDING.showProfessionalSelfRegistration && (
+                    <div className="border-t border-gray-100 pt-4 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentView('pj_autocadastro')}
+                        className="w-full p-4 border-2 border-dashed border-teal-300 rounded-xl bg-teal-50/30 hover:bg-teal-50 hover:border-teal-500 transition-all flex items-center justify-between text-left group"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-2.5 bg-teal-100 text-teal-600 rounded-lg group-hover:bg-teal-200 transition-colors">
+                            <Sparkles size={20} className="animate-pulse text-teal-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-teal-800 text-sm">📋 Cadastro Obrigatório de {BRANDING.professionalLabels?.singular || 'Prestador(a)'}</h4>
+                            <p className="text-[10px] text-teal-600/80">Faça o seu cadastro completo para emissão do contrato de prestação de serviços</p>
+                          </div>
+                        </div>
+                        <span className="text-teal-500 font-bold text-xs bg-white border border-teal-200 py-1 px-2.5 rounded-lg group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
           {kioskCategory === 'interns' ? (
             <p className="mt-8 text-xs text-gray-500">Módulo de Estágio • Lei nº 11.788/2008</p>
+          ) : kioskCategory === 'clt' ? (
+            <p className="mt-8 text-xs text-gray-500">Ponto eletrônico • CLT / Portaria MTP 671/2021</p>
           ) : (
             <p className="mt-8 text-xs text-gray-500">{BRANDING.displayName} • Controle de Frequência</p>
           )}
@@ -4756,15 +4873,8 @@ export default function App() {
     return shuffled.slice(0, 5);
   };
 
-  const escapeHtmlForDocument = (value) => {
-    if (value === null || value === undefined) return value;
-    return String(value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  };
+  // escapeHtmlForDocument agora vive em ./utils/helpers (reaproveitada pelo
+  // gerador de contrato PJ em ./utils/professionalContract).
 
   // Escapa todos os campos de texto do estagiário antes de interpolá-los no HTML
   // gerado abaixo (evita XSS armazenado via nome/endereço/CPF/etc., que são
@@ -7615,10 +7725,34 @@ export default function App() {
       { id: 'configuracoes',    label: 'Configurações',           icon: '⚙️' },
     ];
 
-    // Módulo PJ só aparece para quem tem BRANDING.showProfessionalsModule
-    // (Grupo IB) — a Porto Terapia nunca vê o toggle nem as abas de PJ.
-    const showModuleToggle = !!BRANDING.showProfessionalsModule;
-    const adminNavItems = adminModule === 'professionals' && showModuleToggle ? professionalNavItems : internNavItems;
+    const employeeLabels = BRANDING.employeeLabels || { plural: 'Funcionários CLT' };
+    const employeeNavItems = [
+      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: '🧑‍💼' },
+      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: '📁' },
+      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: '📄' },
+      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: '⏱️' },
+      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: '🧾' },
+      { id: 'clt_ferias',        label: 'Férias',                  icon: '🏖️' },
+      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: '🩺' },
+      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: '⚠️' },
+      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: '🔒' },
+      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'configuracoes',     label: 'Configurações',           icon: '⚙️' },
+    ];
+
+    // Módulos PJ e CLT só aparecem para quem tem BRANDING.showProfessionalsModule/
+    // showEmployeesModule (Grupo IB) — a Porto Terapia nunca vê o toggle nem
+    // as abas desses módulos.
+    const showProfessionalsModule = !!BRANDING.showProfessionalsModule;
+    const showEmployeesModule = !!BRANDING.showEmployeesModule;
+    const showModuleToggle = showProfessionalsModule || showEmployeesModule;
+    const moduleToggleCount = 1 + (showProfessionalsModule ? 1 : 0) + (showEmployeesModule ? 1 : 0);
+    const moduleToggleGridClass = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' }[moduleToggleCount] || 'grid-cols-1';
+    const adminNavItems = adminModule === 'professionals' && showProfessionalsModule
+      ? professionalNavItems
+      : adminModule === 'employees' && showEmployeesModule
+        ? employeeNavItems
+        : internNavItems;
 
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
@@ -7667,7 +7801,7 @@ export default function App() {
                 <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
                   Módulo
                 </label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className={`grid ${moduleToggleGridClass} gap-1.5`}>
                   <button
                     type="button"
                     onClick={() => { setAdminModule('interns'); setActiveAdminTab('dashboard'); }}
@@ -7679,17 +7813,32 @@ export default function App() {
                   >
                     Estagiários
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_profissionais'); }}
-                    className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                      adminModule === 'professionals'
-                        ? 'bg-teal-600 text-white border-teal-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-teal-400'
-                    }`}
-                  >
-                    {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
-                  </button>
+                  {showProfessionalsModule && (
+                    <button
+                      type="button"
+                      onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_profissionais'); }}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                        adminModule === 'professionals'
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-teal-400'
+                      }`}
+                    >
+                      {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                    </button>
+                  )}
+                  {showEmployeesModule && (
+                    <button
+                      type="button"
+                      onClick={() => { setAdminModule('employees'); setActiveAdminTab('clt_funcionarios'); }}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                        adminModule === 'employees'
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'
+                      }`}
+                    >
+                      {BRANDING.employeeLabels?.plural || 'Funcionários CLT'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -7768,7 +7917,7 @@ export default function App() {
         <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
           <div className="max-w-7xl mx-auto space-y-6">
 
-            {adminModule !== 'professionals' && hoursAlerts.length > 0 && (
+            {adminModule === 'interns' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
                 <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2 text-sm">
                   <AlertTriangle size={18} /> Atenção: Limite de Carga Horária Excedido ({LABOR.maxDailyHours}h/dia)
@@ -7840,6 +7989,12 @@ export default function App() {
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
                     <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  <div style={{ display: activeAdminTab === 'clt_funcionarios' ? 'block' : 'none' }}>
+                    <FuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  {/* clt_dossie, clt_documentos, clt_ponto, clt_apuracao, clt_ferias, clt_saude,
+                      clt_ocorrencias, clt_encerramento, clt_alertas: abas adicionadas em passos
+                      seguintes da implementação do módulo CLT. */}
                 </Suspense>
               </ErrorBoundary>
             </div>
@@ -7919,6 +8074,31 @@ export default function App() {
           branding={BRANDING}
           onLogout={handleLogout}
         />
+      ) : currentView === 'clt_kiosk' && employeeKiosk ? (
+        <EmployeeKiosk
+          unit={
+            units.find((u) => u.id === employeeKiosk.unitId) || (() => {
+              const ku = BRANDING.kioskUnits.find((k) => k.id === employeeKiosk.unitId);
+              return { id: employeeKiosk.unitId, name: ku?.name || ku?.buttonLabel || employeeKiosk.unitId, address: ku?.address || '' };
+            })()
+          }
+          branding={BRANDING}
+          onLogout={handleLogout}
+        />
+      ) : currentView === 'pj_autocadastro' ? (
+        <ErrorBoundary>
+          <Suspense fallback={
+            <div className="min-h-screen flex justify-center items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+            </div>
+          }>
+            <ProfessionalSelfRegistration
+              units={units}
+              branding={BRANDING}
+              onCancel={() => setCurrentView('kiosk')}
+            />
+          </Suspense>
+        </ErrorBoundary>
       ) : (
         renderAdmin()
       )}
