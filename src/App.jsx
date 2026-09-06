@@ -350,6 +350,7 @@ export default function App() {
   }, [filterUnit]);
 
   // Autogestão de Biometria
+  const [autogestaoUnitId, setAutogestaoUnitId] = useState('');
   const [autogestaoInternId, setAutogestaoInternId] = useState('');
   const [autogestaoCpf, setAutogestaoCpf] = useState('');
   const [autogestaoSuccess, setAutogestaoSuccess] = useState(false);
@@ -2610,6 +2611,7 @@ export default function App() {
                       type="button"
                       onClick={() => {
                         setCurrentView('autogestao_biometria');
+                        setAutogestaoUnitId('');
                         setAutogestaoInternId('');
                         setAutogestaoCpf('');
                         setAutogestaoSuccess(false);
@@ -3062,24 +3064,48 @@ export default function App() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Selecione o seu nome na lista:
+                    Unidade:
                   </label>
                   <select
-                    value={autogestaoInternId}
+                    value={autogestaoUnitId}
                     onChange={(e) => {
-                      setAutogestaoInternId(e.target.value);
+                      setAutogestaoUnitId(e.target.value);
+                      setAutogestaoInternId('');
                       setAutogestaoCpf('');
                       setAutogestaoCpfAttempts(0);
                       setAutogestaoLockedUntil(0);
                     }}
                     className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
                   >
-                    <option value="" disabled>Selecione...</option>
-                    {publicInterns.map((i) => (
-                      <option key={i.id} value={i.id}>{i.name}</option>
+                    <option value="" disabled>Selecione a unidade...</option>
+                    {BRANDING.kioskUnits.map((ku) => (
+                      <option key={ku.id} value={ku.id}>{ku.buttonLabel}</option>
                     ))}
                   </select>
                 </div>
+
+                {autogestaoUnitId && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Selecione o seu nome na lista:
+                    </label>
+                    <select
+                      value={autogestaoInternId}
+                      onChange={(e) => {
+                        setAutogestaoInternId(e.target.value);
+                        setAutogestaoCpf('');
+                        setAutogestaoCpfAttempts(0);
+                        setAutogestaoLockedUntil(0);
+                      }}
+                      className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
+                    >
+                      <option value="" disabled>Selecione...</option>
+                      {publicInterns.filter((i) => i.unitId === autogestaoUnitId).map((i) => (
+                        <option key={i.id} value={i.id}>{i.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {autogestaoInternId && (
                   isAutogestaoLocked ? (
