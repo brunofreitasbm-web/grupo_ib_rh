@@ -60,6 +60,7 @@ export const WORKSPACES = {
     kioskUnits: [
       {
         id: 'antonio-barreto',
+        name: 'Antônio Barreto',
         buttonLabel: 'Estagiários - Antônio Barreto',
         loginLabel: 'Estagiário - Unidade Antônio Barreto',
         kioskEmail: 'antoniobarreto@portoterapia.com',
@@ -71,6 +72,7 @@ export const WORKSPACES = {
       },
       {
         id: 'generalissimo',
+        name: 'Generalíssimo Deodoro',
         buttonLabel: 'Estagiários - Generalíssimo',
         loginLabel: 'Estagiário - Unidade Generalíssimo Deodoro',
         kioskEmail: 'generalissimo@portoterapia.com',
@@ -84,7 +86,7 @@ export const WORKSPACES = {
   },
   grupoib: {
     id: 'grupoib',
-    appTitle: 'Controle de Estagiário • Grupo IB',
+    appTitle: 'Controle de Frequência • Grupo IB',
     shortName: 'PontoIB',
     themeColor: '#0f766e',
     // Sem logo próprio ainda — telas com logo simplesmente não mostram nada
@@ -138,6 +140,7 @@ export const WORKSPACES = {
     kioskUnits: [
       {
         id: 'faca-amigos-parque-shopping',
+        name: 'Faça Amigos Parque Shopping',
         buttonLabel: 'Estagiários - Faça Amigos Parque Shopping',
         loginLabel: 'Estagiário - Faça Amigos Parque Shopping',
         kioskEmail: 'parqueshopping@grupoib.internal',
@@ -151,6 +154,7 @@ export const WORKSPACES = {
       },
       {
         id: 'faca-amigos-grao-para',
+        name: 'Faça Amigos Grão Pará',
         buttonLabel: 'Estagiários - Faça Amigos Grão Pará',
         loginLabel: 'Estagiário - Faça Amigos Grão Pará',
         kioskEmail: 'graopara@grupoib.internal',
@@ -164,6 +168,7 @@ export const WORKSPACES = {
       },
       {
         id: 'clinica-a',
+        name: 'Clínica A',
         buttonLabel: 'Estagiários - Clínica A',
         loginLabel: 'Estagiário - Clínica A',
         kioskEmail: 'clinicaa@grupoib.internal',
@@ -177,6 +182,7 @@ export const WORKSPACES = {
       },
       {
         id: 'clinica-b',
+        name: 'Clínica B',
         buttonLabel: 'Estagiários - Clínica B',
         loginLabel: 'Estagiário - Clínica B',
         kioskEmail: 'clinicab@grupoib.internal',

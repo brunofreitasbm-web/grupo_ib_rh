@@ -5,7 +5,7 @@ import {
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
-  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
@@ -93,7 +93,7 @@ const resolveAdminKey = (typed) => {
 // um instante, as unidades do outro grupo.
 const UNITS_DEFAULT = BRANDING.kioskUnits.map((ku) => ({
   id: ku.id,
-  name: ku.buttonLabel,
+  name: ku.name || ku.buttonLabel,
   address: '',
   lat: 0,
   lng: 0,
@@ -198,6 +198,8 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [selectedLoginOption, setSelectedLoginOption] = useState(null); // null | 'supervisor' | <id de uma unidade do quiosque>
+  // Categoria escolhida no hub inicial pré-login: null (hub) | 'interns' | 'pj'.
+  const [kioskCategory, setKioskCategory] = useState(null);
   // Identificação do administrador é DIGITADA (nunca listada/salva), para que
   // ninguém que observe o quiosque saiba quais nomes de admin existem no sistema.
   const [loginAdminName, setLoginAdminName] = useState('');
@@ -526,6 +528,8 @@ export default function App() {
       setProfessionalKiosk(null);
       setSelectedIntern('');
       setCurrentView('kiosk');
+      setSelectedLoginOption(null);
+      setKioskCategory(null);
     }
   }, [setLoginError]);
 
@@ -2566,7 +2570,8 @@ export default function App() {
   const currentUnit = units.find((u) => u.id === selectedUnit);
 
   const renderKiosk = () => {
-    // Caso o estagiário não esteja logado, exibe a tela de login simplificada
+    // Caso ninguém esteja logado, exibe o hub inicial: escolher o perfil
+    // (Estagiários / Profissionais PJ / Administrativo) e depois a unidade.
     if (!loggedInIntern) {
       const getOptionDetails = () => {
         if (selectedLoginOption === 'supervisor') {
@@ -2580,149 +2585,41 @@ export default function App() {
 
       const optionDetails = getOptionDetails();
 
+      // Card de unidade reutilizado tanto pela lista de Estagiários quanto
+      // pela de Profissionais PJ — só muda o handler, o accent e os textos.
+      const renderUnitButton = (ku, { onSelect, accentClass, iconBg, badge, description, keyPrefix = '' }) => (
+        <button
+          key={`${keyPrefix}${ku.id}`}
+          type="button"
+          onClick={() => onSelect(ku.id)}
+          disabled={gpsLoading}
+          className={`w-full p-4 border-2 border-gray-200 rounded-xl ${accentClass} transition-all flex items-center gap-4 text-left group disabled:opacity-50`}
+        >
+          <div className={`p-2.5 rounded-lg transition-colors ${iconBg}`}>
+            <Building2 size={20} />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-gray-800 text-sm">{ku.name || ku.buttonLabel}</h4>
+              <span className={`text-[9px] font-semibold px-2 py-0.5 rounded ${badge.className}`}>{badge.label}</span>
+            </div>
+            <p className="text-[10px] text-gray-500">{description}</p>
+          </div>
+        </button>
+      );
+
       return (
         <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
             <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
               {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-16 w-auto mb-2 rounded-lg shadow-sm" />}
               <h1 className="text-2xl font-bold mb-1">{BRANDING.displayName}</h1>
-              <p className="text-blue-100 text-xs">Acesso ao Sistema de Estágios <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
+              <p className="text-blue-100 text-xs">Registro de Frequência e Presença <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
               <LiveClock showDate />
             </div>
 
             <div className="p-6">
-              {!selectedLoginOption ? (
-                <div className="space-y-4">
-                  <h3 className="text-center font-bold text-gray-700 text-sm mb-2">Quem está acessando?</h3>
-                  <div className="grid grid-cols-1 gap-3">
-                    {/* Botão Supervisor */}
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedLoginOption('supervisor'); setLoginError(''); }}
-                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center gap-4 text-left group"
-                    >
-                      <div className="p-2.5 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
-                        <Lock size={20} />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Acesso Administrativo</h4>
-                        <p className="text-[10px] text-gray-500">Painel administrativo, cadastros e relatórios (Exige Senha)</p>
-                      </div>
-                    </button>
-
-                    {/* Botões de unidade (um por unidade do workspace deste site) */}
-                    {BRANDING.kioskUnits.map((ku) => {
-                      const accent = KIOSK_ACCENT_CLASSES[ku.accent] || KIOSK_ACCENT_CLASSES.emerald;
-                      return (
-                        <button
-                          key={ku.id}
-                          type="button"
-                          onClick={() => handleDirectUnitLogin(ku.id)}
-                          disabled={gpsLoading}
-                          className={`w-full p-4 border-2 border-gray-200 rounded-xl ${accent.hoverBorder} transition-all flex items-center gap-4 text-left group disabled:opacity-50`}
-                        >
-                          <div className={`p-2.5 rounded-lg transition-colors ${accent.icon}`}>
-                            <Building2 size={20} />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-bold text-gray-800 text-sm">{ku.buttonLabel}</h4>
-                              <span className={`text-[9px] font-semibold px-2 py-0.5 rounded ${accent.badge}`}>Sem Senha</span>
-                            </div>
-                            <p className="text-[10px] text-gray-500">Acesso direto ao ponto (Biometria + GPS)</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {BRANDING.showProfessionalsModule && (
-                    <div className="pt-2">
-                      <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-2 px-1">
-                        {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
-                      </p>
-                      <div className="grid grid-cols-1 gap-3">
-                        {BRANDING.kioskUnits.filter((ku) => ku.professionalKioskEmail).map((ku) => (
-                          <button
-                            key={`pj-${ku.id}`}
-                            type="button"
-                            onClick={() => handleDirectProfessionalLogin(ku.id)}
-                            disabled={gpsLoading}
-                            className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-teal-500 hover:bg-teal-50 transition-all flex items-center gap-4 text-left group disabled:opacity-50"
-                          >
-                            <div className="p-2.5 rounded-lg bg-teal-100 text-teal-700 group-hover:bg-teal-200 transition-colors">
-                              <Building2 size={20} />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between">
-                                <h4 className="font-bold text-gray-800 text-sm">{ku.professionalButtonLabel || `Profissionais PJ - ${ku.buttonLabel}`}</h4>
-                                <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-teal-100 text-teal-800">PIN</span>
-                              </div>
-                              <p className="text-[10px] text-gray-500">Registro de presença por PIN de 6 dígitos</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentView('recadastro');
-                        setCadastroCpfRgFile(null);
-                        setCadastroMatriculaFile(null);
-                        setCadastroSuccess(false);
-                        setCadastroForm({
-                          name: '', course: '', institution: '', shift: 'Manhã',
-                          dailyHours: 6, unitId: units[0]?.id || '', active: true,
-                          startDate: '', endDate: '', photo: '', cpf: '', email: '',
-                          rg: '', phone: '', address: '', bankName: '', bankAgency: '',
-                          bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
-                          emergencyPhone: '', allowance: 0, supervisorName: '', birthdate: ''
-                        });
-                      }}
-                      className="w-full p-4 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/30 hover:bg-blue-50 hover:border-blue-500 transition-all flex items-center justify-between text-left group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="p-2.5 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
-                          <Sparkles size={20} className="animate-pulse text-blue-600" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-blue-800 text-sm">⚠️ Cadastro Obrigatório</h4>
-                          <p className="text-[10px] text-blue-600/80">Faça o seu cadastro inicial obrigatório de estagiário</p>
-                        </div>
-                      </div>
-                      <span className="text-blue-500 font-bold text-xs bg-white border border-blue-200 py-1 px-2.5 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentView('autogestao_biometria');
-                        setAutogestaoUnitId('');
-                        setAutogestaoInternId('');
-                        setAutogestaoCpf('');
-                        setAutogestaoSuccess(false);
-                        loadPublicInterns();
-                      }}
-                      className="w-full p-4 border-2 border-dashed border-indigo-300 rounded-xl bg-indigo-50/30 hover:bg-indigo-50 hover:border-indigo-500 transition-all flex items-center justify-between text-left group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
-                          <Camera size={20} className="text-indigo-600 animate-pulse" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-indigo-800 text-sm">📷 Autogestão de Biometria</h4>
-                          <p className="text-[10px] text-indigo-600/80">Cadastre ou atualize sua biometria facial</p>
-                        </div>
-                      </div>
-                      <span className="text-indigo-500 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Configurar &rarr;</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
+              {selectedLoginOption ? (
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-2">
                     <button
@@ -2788,10 +2685,173 @@ export default function App() {
                     )}
                   </button>
                 </form>
+              ) : kioskCategory === null ? (
+                <div className="space-y-4">
+                  <h3 className="text-center font-bold text-gray-700 text-sm mb-2">Quem está acessando?</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setKioskCategory('interns')}
+                      className="w-full p-5 border-2 border-gray-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left group"
+                    >
+                      <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg group-hover:bg-emerald-200 transition-colors">
+                        <GraduationCap size={26} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-gray-800 text-base">Estagiários</h4>
+                        <p className="text-xs text-gray-500">Registro de ponto (Biometria + GPS)</p>
+                      </div>
+                    </button>
+
+                    {BRANDING.showProfessionalsModule && (
+                      <button
+                        type="button"
+                        onClick={() => setKioskCategory('pj')}
+                        className="w-full p-5 border-2 border-gray-200 rounded-xl hover:border-teal-500 hover:bg-teal-50 transition-all flex items-center gap-4 text-left group"
+                      >
+                        <div className="p-3 bg-teal-100 text-teal-700 rounded-lg group-hover:bg-teal-200 transition-colors">
+                          <Briefcase size={26} />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-gray-800 text-base">{BRANDING.professionalLabels?.plural || 'Profissionais PJ'}</h4>
+                          <p className="text-xs text-gray-500">Registro de presença por PIN de 6 dígitos</p>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-4 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedLoginOption('supervisor'); setLoginError(''); }}
+                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center gap-4 text-left group"
+                    >
+                      <div className="p-2.5 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
+                        <Lock size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-800 text-sm">Acesso Administrativo</h4>
+                        <p className="text-[10px] text-gray-500">Painel administrativo, cadastros e relatórios (Exige Senha)</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              ) : kioskCategory === 'interns' ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-1">
+                    <button
+                      type="button"
+                      onClick={() => setKioskCategory(null)}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="text-xs font-semibold text-gray-600">Estagiários · Escolha a unidade</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {BRANDING.kioskUnits.map((ku) => {
+                      const accent = KIOSK_ACCENT_CLASSES[ku.accent] || KIOSK_ACCENT_CLASSES.emerald;
+                      return renderUnitButton(ku, {
+                        onSelect: handleDirectUnitLogin,
+                        accentClass: accent.hoverBorder,
+                        iconBg: accent.icon,
+                        badge: { label: 'Sem Senha', className: accent.badge },
+                        description: 'Acesso direto ao ponto (Biometria + GPS)',
+                      });
+                    })}
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentView('recadastro');
+                        setCadastroCpfRgFile(null);
+                        setCadastroMatriculaFile(null);
+                        setCadastroSuccess(false);
+                        setCadastroForm({
+                          name: '', course: '', institution: '', shift: 'Manhã',
+                          dailyHours: 6, unitId: units[0]?.id || '', active: true,
+                          startDate: '', endDate: '', photo: '', cpf: '', email: '',
+                          rg: '', phone: '', address: '', bankName: '', bankAgency: '',
+                          bankAccount: '', pixKey: '', emergencyName: '', emergencyRelationship: 'Pais',
+                          emergencyPhone: '', allowance: 0, supervisorName: '', birthdate: ''
+                        });
+                      }}
+                      className="w-full p-4 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/30 hover:bg-blue-50 hover:border-blue-500 transition-all flex items-center justify-between text-left group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
+                          <Sparkles size={20} className="animate-pulse text-blue-600" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-blue-800 text-sm">⚠️ Cadastro Obrigatório</h4>
+                          <p className="text-[10px] text-blue-600/80">Faça o seu cadastro inicial obrigatório de estagiário</p>
+                        </div>
+                      </div>
+                      <span className="text-blue-500 font-bold text-xs bg-white border border-blue-200 py-1 px-2.5 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentView('autogestao_biometria');
+                        setAutogestaoUnitId('');
+                        setAutogestaoInternId('');
+                        setAutogestaoCpf('');
+                        setAutogestaoSuccess(false);
+                        loadPublicInterns();
+                      }}
+                      className="w-full p-4 border-2 border-dashed border-indigo-300 rounded-xl bg-indigo-50/30 hover:bg-indigo-50 hover:border-indigo-500 transition-all flex items-center justify-between text-left group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
+                          <Camera size={20} className="text-indigo-600 animate-pulse" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-indigo-800 text-sm">📷 Autogestão de Biometria</h4>
+                          <p className="text-[10px] text-indigo-600/80">Cadastre ou atualize sua biometria facial</p>
+                        </div>
+                      </div>
+                      <span className="text-indigo-500 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Configurar &rarr;</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-1">
+                    <button
+                      type="button"
+                      onClick={() => setKioskCategory(null)}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="text-xs font-semibold text-gray-600">{BRANDING.professionalLabels?.plural || 'Profissionais PJ'} · Escolha a unidade</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {BRANDING.kioskUnits.filter((ku) => ku.professionalKioskEmail).map((ku) =>
+                      renderUnitButton(ku, {
+                        keyPrefix: 'pj-',
+                        onSelect: handleDirectProfessionalLogin,
+                        accentClass: 'hover:border-teal-500 hover:bg-teal-50',
+                        iconBg: 'bg-teal-100 text-teal-700 group-hover:bg-teal-200',
+                        badge: { label: 'PIN', className: 'bg-teal-100 text-teal-800' },
+                        description: 'Registro de presença por PIN de 6 dígitos',
+                      })
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>
-          <p className="mt-8 text-xs text-gray-500">Módulo de Estágio • Lei nº 11.788/2008</p>
+          {kioskCategory === 'interns' ? (
+            <p className="mt-8 text-xs text-gray-500">Módulo de Estágio • Lei nº 11.788/2008</p>
+          ) : (
+            <p className="mt-8 text-xs text-gray-500">{BRANDING.displayName} • Controle de Frequência</p>
+          )}
           <p className="mt-3 text-[10px] text-gray-400 text-center max-w-xs leading-relaxed select-none">
             Como alternativa para sua conveniência, é opcional e autorizado o uso de seu aparelho celular pessoal, sem qualquer obrigatoriedade
           </p>
@@ -7853,7 +7913,7 @@ export default function App() {
           unit={
             units.find((u) => u.id === professionalKiosk.unitId) || (() => {
               const ku = BRANDING.kioskUnits.find((k) => k.id === professionalKiosk.unitId);
-              return { id: professionalKiosk.unitId, name: ku?.buttonLabel || professionalKiosk.unitId, address: ku?.address || '' };
+              return { id: professionalKiosk.unitId, name: ku?.name || ku?.buttonLabel || professionalKiosk.unitId, address: ku?.address || '' };
             })()
           }
           branding={BRANDING}
