@@ -64,6 +64,8 @@ const ApuracaoFuncionariosTab = lazyWithRetry(() => import('./components/tabs/Ap
 const FeriasTab = lazyWithRetry(() => import('./components/tabs/FeriasTab'));
 const SaudeOcupacionalTab = lazyWithRetry(() => import('./components/tabs/SaudeOcupacionalTab'));
 const OcorrenciasFuncionariosTab = lazyWithRetry(() => import('./components/tabs/OcorrenciasFuncionariosTab'));
+const EncerramentoFuncionariosTab = lazyWithRetry(() => import('./components/tabs/EncerramentoFuncionariosTab'));
+const AlertasFuncionariosTab = lazyWithRetry(() => import('./components/tabs/AlertasFuncionariosTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
@@ -8020,8 +8022,12 @@ export default function App() {
                   <div style={{ display: activeAdminTab === 'clt_ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
-                  {/* clt_encerramento, clt_alertas: abas adicionadas em passos seguintes
-                      da implementação do módulo CLT. */}
+                  <div style={{ display: activeAdminTab === 'clt_encerramento' ? 'block' : 'none' }}>
+                    <EncerramentoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'clt_alertas' ? 'block' : 'none' }}>
+                    <AlertasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
                 </Suspense>
               </ErrorBoundary>
             </div>
