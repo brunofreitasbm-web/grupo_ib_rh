@@ -1,23 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Building2, 
-  MapPin, 
-  ShieldCheck, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Building2,
+  MapPin,
+  ShieldCheck,
   ShieldAlert,
-  Bell, 
-  Palette, 
-  Save, 
-  Check, 
-  RefreshCw, 
-  Sliders, 
+  Bell,
+  Palette,
+  Save,
+  Check,
+  RefreshCw,
+  Sliders,
   Upload,
   FileText,
   ChevronDown,
   ChevronUp,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Calendar,
+  Plus,
+  Trash2,
+  Download,
 } from 'lucide-react';
 import { BRANDING } from '../../config/branding';
-import { compressImage } from '../../utils/mappings';
+import { compressImage, mapHolidayFromDb, mapHolidayToDb, getFriendlyDbErrorMessage } from '../../utils/mappings';
+import { supabase } from '../../supabase';
+import { NATIONAL_FIXED_HOLIDAYS, movableHolidays } from '../../utils/cltCalculations';
+import { toast } from 'sonner';
 
 export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSaveUnit }) {
   const [activeSubTab, setActiveSubTab] = useState('empresa');
@@ -68,6 +75,11 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         pjKioskEmail: u.pjKioskEmail || u.pj_kiosk_email || '',
         pjSelfRegistrationEnabled: u.pjSelfRegistrationEnabled !== undefined ? u.pjSelfRegistrationEnabled : (u.pj_self_registration_enabled || false),
         contratoPjCustomText: u.contratoPjCustomText || u.contrato_pj_custom_text || '',
+        cltEnabled: u.cltEnabled !== undefined ? u.cltEnabled : (u.clt_enabled || false),
+        cltKioskEmail: u.cltKioskEmail || u.clt_kiosk_email || '',
+        cltToleranceMinutes: u.cltToleranceMinutes !== undefined ? u.cltToleranceMinutes : (u.clt_tolerance_minutes ?? 5),
+        cltGeofenceRequired: u.cltGeofenceRequired !== undefined ? u.cltGeofenceRequired : (u.clt_geofence_required !== false),
+        cltCustomContractText: u.cltCustomContractText || u.clt_custom_contract_text || '',
       };
     });
     setEditingUnits(unitMap);
@@ -173,7 +185,8 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     { id: 'geofence', label: 'Geofencing & Ponto', icon: MapPin },
     { id: 'permissoes', label: 'Permissões & Acessos', icon: ShieldCheck },
     { id: 'notificacoes', label: 'Notificações & Alertas', icon: Bell },
-    { id: 'aparencia', label: 'Aparência & Preferências', icon: Palette }
+    { id: 'aparencia', label: 'Aparência & Preferências', icon: Palette },
+    ...(BRANDING.showEmployeesModule ? [{ id: 'feriados', label: 'Feriados (CLT)', icon: Calendar }] : []),
   ];
 
   return (
@@ -555,6 +568,66 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                                       onChange={(e) => handleUnitFieldChange(uData.id, 'contratoPjCustomText', e.target.value)}
                                       placeholder="Cláusulas específicas desta unidade a incluir no contrato pré-pronto do prestador PJ..."
                                       className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-teal-500 font-mono"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 5. Funcionários CLT — só no site com showEmployeesModule (Grupo IB) */}
+                            {BRANDING.showEmployeesModule && (
+                              <div>
+                                <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                                  {BRANDING.employeeLabels?.plural || 'Funcionários CLT'}
+                                </h4>
+                                <div className="space-y-3">
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!uData.cltEnabled}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'cltEnabled', e.target.checked)}
+                                    />
+                                    Habilitar ponto eletrônico de Funcionários CLT nesta unidade
+                                  </label>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">E-mail do Quiosque CLT</label>
+                                    <input
+                                      type="text"
+                                      value={uData.cltKioskEmail}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'cltKioskEmail', e.target.value)}
+                                      placeholder="clt-nomedaunidade@grupoib.internal"
+                                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    <p className="text-[10px] text-slate-400 mt-1">Precisa corresponder à conta de quiosque (papel employee_unit) cadastrada no Supabase para esta unidade.</p>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Tolerância de Ponto (min)</label>
+                                      <input
+                                        type="number" min={0} max={30}
+                                        value={uData.cltToleranceMinutes}
+                                        onChange={(e) => handleUnitFieldChange(uData.id, 'cltToleranceMinutes', Number(e.target.value))}
+                                        className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                      />
+                                      <p className="text-[10px] text-slate-400 mt-1">Art. 58 §1 CLT — padrão 5 minutos.</p>
+                                    </div>
+                                    <label className="flex items-center gap-2 text-xs font-medium text-slate-700 self-end pb-1.5">
+                                      <input
+                                        type="checkbox"
+                                        checked={uData.cltGeofenceRequired !== false}
+                                        onChange={(e) => handleUnitFieldChange(uData.id, 'cltGeofenceRequired', e.target.checked)}
+                                      />
+                                      Exigir geolocalização dentro do raio da unidade
+                                    </label>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Cláusulas Aditivas dos Contratos CLT</label>
+                                    <textarea
+                                      rows={3}
+                                      value={uData.cltCustomContractText}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'cltCustomContractText', e.target.value)}
+                                      placeholder="Cláusulas específicas desta unidade a incluir nos contratos/termos gerados para funcionários CLT..."
+                                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 font-mono"
                                     />
                                   </div>
                                 </div>
@@ -953,8 +1026,179 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
               </div>
             </div>
           </div>
+
+          {/* 6. FERIADOS (CLT) — só no site com showEmployeesModule (Grupo IB) */}
+          {BRANDING.showEmployeesModule && (
+            <div style={{ display: activeSubTab === 'feriados' ? 'block' : 'none' }}>
+              <FeriadosPanel />
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Gestão de feriados (nacionais/estaduais/municipais/por unidade) usados
+// pelo módulo CLT para apurar HE 100%, jornada esperada e alertas.
+function FeriadosPanel() {
+  const [holidays, setHolidays] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [importYear, setImportYear] = useState(new Date().getFullYear());
+  const [importing, setImporting] = useState(false);
+  const [form, setForm] = useState({ date: '', name: '', scope: 'nacional' });
+  const [saving, setSaving] = useState(false);
+
+  const fetchHolidays = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('holidays').select('*').order('date');
+      if (error) throw error;
+      setHolidays((data || []).map(mapHolidayFromDb));
+    } catch (err) {
+      console.error('Erro ao carregar feriados:', err);
+      toast.error('Erro ao carregar feriados.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchHolidays(); }, [fetchHolidays]);
+
+  const handleImportNational = async () => {
+    setImporting(true);
+    try {
+      const fixed = NATIONAL_FIXED_HOLIDAYS.map((h) => ({
+        date: `${importYear}-${String(h.month).padStart(2, '0')}-${String(h.day).padStart(2, '0')}`,
+        name: h.name, scope: 'nacional', recurring: true,
+      }));
+      const movable = movableHolidays(Number(importYear)).map((h) => ({ date: h.date, name: h.name, scope: 'nacional', recurring: false }));
+      const rows = [...fixed, ...movable].map((h) => mapHolidayToDb(h));
+      // A restrição de unicidade é sobre COALESCE(unit_id,'')/COALESCE(workspace_id,''),
+      // não sobre as colunas em si — upsert com onConflict não bate no índice. Em vez
+      // disso, insere um a um e ignora violações de chave duplicada (reimportação).
+      let imported = 0;
+      for (const row of rows) {
+        const { error } = await supabase.from('holidays').insert([row]);
+        if (error && error.code !== '23505') throw error;
+        if (!error) imported++;
+      }
+      toast.success(`${imported} feriado(s) nacional(is) de ${importYear} importado(s) (duplicados ignorados).`);
+      fetchHolidays();
+    } catch (err) {
+      console.error('Erro ao importar feriados:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!form.date || !form.name.trim()) { toast.error('Informe data e nome do feriado.'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('holidays').insert([mapHolidayToDb(form)]);
+      if (error) throw error;
+      toast.success('Feriado adicionado.');
+      setForm({ date: '', name: '', scope: 'nacional' });
+      fetchHolidays();
+    } catch (err) {
+      console.error('Erro ao adicionar feriado:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Remover este feriado?')) return;
+    try {
+      const { error } = await supabase.from('holidays').delete().eq('id', id);
+      if (error) throw error;
+      fetchHolidays();
+    } catch (err) {
+      console.error('Erro ao remover feriado:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-indigo-600" />
+          Feriados
+        </h2>
+        <p className="text-xs text-slate-500 mt-1">
+          Usados pelo módulo CLT para calcular jornada esperada, HE 100% e alertas de escala.
+        </p>
+      </div>
+
+      <div className="flex items-end gap-2">
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Ano</label>
+          <input type="number" value={importYear} onChange={(e) => setImportYear(e.target.value)} className="w-28 px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+        </div>
+        <button onClick={handleImportNational} disabled={importing} className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow flex items-center gap-1.5 disabled:opacity-50">
+          <Download className="w-3.5 h-3.5" /> {importing ? 'Importando...' : `Importar feriados nacionais de ${importYear}`}
+        </button>
+      </div>
+
+      <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Data</label>
+          <input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Nome</label>
+          <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Escopo</label>
+          <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-lg bg-white">
+            <option value="nacional">Nacional</option>
+            <option value="estadual">Estadual</option>
+            <option value="municipal">Municipal</option>
+            <option value="unidade">Só desta unidade</option>
+          </select>
+        </div>
+        <button type="submit" disabled={saving} className="h-8 bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+          <Plus className="w-3.5 h-3.5" /> Adicionar
+        </button>
+      </form>
+
+      {loading ? (
+        <div className="flex justify-center py-8"><RefreshCw className="w-6 h-6 animate-spin text-indigo-600" /></div>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-600 border-b border-slate-100">
+                <th className="p-2 font-semibold">Data</th>
+                <th className="p-2 font-semibold">Nome</th>
+                <th className="p-2 font-semibold">Escopo</th>
+                <th className="p-2 font-semibold text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {holidays.length === 0 ? (
+                <tr><td colSpan={4} className="p-6 text-center text-slate-400">Nenhum feriado cadastrado.</td></tr>
+              ) : (
+                holidays.map((h) => (
+                  <tr key={h.id}>
+                    <td className="p-2">{h.date}</td>
+                    <td className="p-2 font-semibold">{h.name}</td>
+                    <td className="p-2">{h.scope}</td>
+                    <td className="p-2 text-right">
+                      <button onClick={() => handleDelete(h.id)} className="p-1 text-red-500 hover:text-red-700"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
