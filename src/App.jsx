@@ -2957,10 +2957,15 @@ export default function App() {
   const loadPublicInterns = async () => {
     setLoadingPublicInterns(true);
     try {
+      // Restringe à lista de unidades deste workspace (BRANDING.kioskUnits) —
+      // esta tela é pública/sem sessão, então nunca deve misturar estagiários
+      // do outro grupo (ver UNITS_DEFAULT acima).
+      const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
       const { data, error } = await supabase
         .from('interns')
         .select('*')
         .eq('active', true)
+        .in('unit_id', workspaceUnitIds)
         .order('name', { ascending: true });
       if (!error && data) {
         setPublicInterns(data.map(mapInternFromDb));
