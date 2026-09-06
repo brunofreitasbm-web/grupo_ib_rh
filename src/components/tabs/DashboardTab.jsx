@@ -5,7 +5,7 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
 
-export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
+export default function DashboardTab({ filterUnit, restrictedUnitIds = [], isActive = true }) {
   const [interns, setInterns] = useState([]);
   const [records, setRecords] = useState([]);
   const [units, setUnits] = useState([]);
@@ -339,7 +339,7 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
             <div className="h-64">
               {unitStats.length === 0 ? (
                 <p className="text-center text-xs text-gray-400 italic py-4">Nenhum dado disponível.</p>
-              ) : (
+              ) : !isActive ? null : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -369,6 +369,7 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
               🌅 Distribuição por Turno
             </h3>
             <div className="h-64">
+              {!isActive ? null : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={shiftStats} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -378,6 +379,7 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [] }) {
                   <Bar dataKey="count" fill="#4f46e5" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              )}
             </div>
           </div>
 

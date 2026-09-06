@@ -7567,7 +7567,7 @@ export default function App() {
                   </div>
                 }>
                   <div style={{ display: activeAdminTab === 'dashboard' ? 'block' : 'none' }}>
-                    <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                    <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'dashboard'} />
                   </div>
                   <div style={{ display: activeAdminTab === 'frequencia' ? 'block' : 'none' }}>
                     <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
