@@ -57,6 +57,8 @@ const DocumentosProfissionaisTab = lazyWithRetry(() => import('./components/tabs
 // Abas do módulo Funcionários CLT (empregados) — terceiro tipo de vínculo do
 // hub de RH, ao lado de Estagiários e Profissionais PJ (ver plano do módulo).
 const FuncionariosTab = lazyWithRetry(() => import('./components/tabs/FuncionariosTab'));
+const DossieFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DossieFuncionariosTab'));
+const DocumentosFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DocumentosFuncionariosTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
@@ -7987,14 +7989,20 @@ export default function App() {
                     <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
-                    <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                    <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={units} branding={BRANDING} />
                   </div>
                   <div style={{ display: activeAdminTab === 'clt_funcionarios' ? 'block' : 'none' }}>
                     <FuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
-                  {/* clt_dossie, clt_documentos, clt_ponto, clt_apuracao, clt_ferias, clt_saude,
-                      clt_ocorrencias, clt_encerramento, clt_alertas: abas adicionadas em passos
-                      seguintes da implementação do módulo CLT. */}
+                  <div style={{ display: activeAdminTab === 'clt_dossie' ? 'block' : 'none' }}>
+                    <DossieFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'clt_documentos' ? 'block' : 'none' }}>
+                    <DocumentosFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  {/* clt_ponto, clt_apuracao, clt_ferias, clt_saude, clt_ocorrencias,
+                      clt_encerramento, clt_alertas: abas adicionadas em passos seguintes
+                      da implementação do módulo CLT. */}
                 </Suspense>
               </ErrorBoundary>
             </div>
