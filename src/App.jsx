@@ -59,6 +59,7 @@ const DocumentosProfissionaisTab = lazyWithRetry(() => import('./components/tabs
 const FuncionariosTab = lazyWithRetry(() => import('./components/tabs/FuncionariosTab'));
 const DossieFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DossieFuncionariosTab'));
 const DocumentosFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DocumentosFuncionariosTab'));
+const PontoFuncionariosTab = lazyWithRetry(() => import('./components/tabs/PontoFuncionariosTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
@@ -8000,7 +8001,10 @@ export default function App() {
                   <div style={{ display: activeAdminTab === 'clt_documentos' ? 'block' : 'none' }}>
                     <DocumentosFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
-                  {/* clt_ponto, clt_apuracao, clt_ferias, clt_saude, clt_ocorrencias,
+                  <div style={{ display: activeAdminTab === 'clt_ponto' ? 'block' : 'none' }}>
+                    <PontoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  {/* clt_apuracao, clt_ferias, clt_saude, clt_ocorrencias,
                       clt_encerramento, clt_alertas: abas adicionadas em passos seguintes
                       da implementação do módulo CLT. */}
                 </Suspense>
