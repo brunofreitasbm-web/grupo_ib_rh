@@ -43,6 +43,15 @@ export const WORKSPACES = {
       'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
       'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
       'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+    // Módulo de Funcionários CLT — ver EmployeeKiosk.jsx. Desligado neste site
+    // (a Porto Terapia hoje não usa o hub para empregados CLT).
+    showEmployeesModule: false,
+    biometricConsentVersion: '1.0',
+    employeeLabels: {
+      singular: 'Funcionário(a)',
+      plural: 'Funcionários CLT',
+      timesheet: 'Ponto Eletrônico',
+    },
     // Contas com role 'supervisor' que podem logar nomeadas neste site
     // (resolveAdminKey). Qualquer outro texto digitado cai no "supervisor"
     // genérico. O e-mail de cada uma é o mesmo em auth.users nos dois sites
@@ -130,6 +139,17 @@ export const WORKSPACES = {
       'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
       'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
       'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+    // Módulo de Funcionários CLT (empregados) — ver EmployeeKiosk.jsx. Ligado
+    // no Grupo IB: terceiro tipo de vínculo do hub de RH, ao lado de
+    // Estagiários e Profissionais PJ. Ao contrário do PJ, este módulo se
+    // aproxima deliberadamente de controle de jornada (Portaria MTP 671/2021).
+    showEmployeesModule: true,
+    biometricConsentVersion: '1.0',
+    employeeLabels: {
+      singular: 'Funcionário(a)',
+      plural: 'Funcionários CLT',
+      timesheet: 'Ponto Eletrônico',
+    },
     // Somente o Bruno é admin nomeado neste site (mesma conta Supabase de
     // sempre); Guimelly/Isabella continuam com acesso de dados ao Grupo IB
     // (workspace_scope inclui "all"), mas não aparecem como opção de login
@@ -146,6 +166,8 @@ export const WORKSPACES = {
         kioskEmail: 'parqueshopping@grupoib.internal',
         professionalButtonLabel: 'Profissionais PJ - Faça Amigos Parque Shopping',
         professionalKioskEmail: 'pj-parqueshopping@grupoib.internal',
+        employeeButtonLabel: 'Funcionários CLT - Faça Amigos Parque Shopping',
+        employeeKioskEmail: 'clt-parqueshopping@grupoib.internal',
         razaoSocial: 'Faça Amigos Parque Shopping Serviços Médicos LTDA',
         cnpj: '00.000.000/0001-01',
         address: 'Rod. Augusto Montenegro, 4300 - Parque Shopping, Belém - PA',
@@ -160,6 +182,8 @@ export const WORKSPACES = {
         kioskEmail: 'graopara@grupoib.internal',
         professionalButtonLabel: 'Profissionais PJ - Faça Amigos Grão Pará',
         professionalKioskEmail: 'pj-graopara@grupoib.internal',
+        employeeButtonLabel: 'Funcionários CLT - Faça Amigos Grão Pará',
+        employeeKioskEmail: 'clt-graopara@grupoib.internal',
         razaoSocial: 'Faça Amigos Grão Pará Serviços Médicos LTDA',
         cnpj: '00.000.000/0001-02',
         address: 'Av. Centenário, 1050 - Shopping Bosque Grão Pará, Belém - PA',
@@ -174,6 +198,8 @@ export const WORKSPACES = {
         kioskEmail: 'clinicaa@grupoib.internal',
         professionalButtonLabel: 'Profissionais PJ - Clínica A',
         professionalKioskEmail: 'pj-clinicaa@grupoib.internal',
+        employeeButtonLabel: 'Funcionários CLT - Clínica A',
+        employeeKioskEmail: 'clt-clinicaa@grupoib.internal',
         razaoSocial: 'Clínica A Serviços de Saúde LTDA',
         cnpj: '00.000.000/0001-03',
         address: 'Av. Nazaré, 800 - Nazaré, Belém - PA',
@@ -188,6 +214,8 @@ export const WORKSPACES = {
         kioskEmail: 'clinicab@grupoib.internal',
         professionalButtonLabel: 'Profissionais PJ - Clínica B',
         professionalKioskEmail: 'pj-clinicab@grupoib.internal',
+        employeeButtonLabel: 'Funcionários CLT - Clínica B',
+        employeeKioskEmail: 'clt-clinicab@grupoib.internal',
         razaoSocial: 'Clínica B Serviços de Saúde LTDA',
         cnpj: '00.000.000/0001-04',
         address: 'Av. Conselheiro Furtado, 1500 - Cremação, Belém - PA',

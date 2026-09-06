@@ -219,6 +219,11 @@ export const mapUnitFromDb = (u) => {
     paeCustomText: u.pae_custom_text || '',
     declaracaoCustomText: u.declaracao_custom_text || '',
     fichaCustomText: u.ficha_custom_text || '',
+    cltEnabled: u.clt_enabled || false,
+    cltKioskEmail: u.clt_kiosk_email || '',
+    cltToleranceMinutes: safeNum(u.clt_tolerance_minutes, 5),
+    cltGeofenceRequired: u.clt_geofence_required !== false,
+    cltCustomContractText: u.clt_custom_contract_text || '',
   };
 };
 
@@ -245,6 +250,11 @@ export const mapUnitToDb = (u) => {
     pae_custom_text: u.paeCustomText || u.pae_custom_text || null,
     declaracao_custom_text: u.declaracaoCustomText || u.declaracao_custom_text || null,
     ficha_custom_text: u.fichaCustomText || u.ficha_custom_text || null,
+    clt_enabled: u.cltEnabled !== undefined ? Boolean(u.cltEnabled) : (u.clt_enabled !== undefined ? Boolean(u.clt_enabled) : false),
+    clt_kiosk_email: u.cltKioskEmail || u.clt_kiosk_email || null,
+    clt_tolerance_minutes: safeNum(u.cltToleranceMinutes ?? u.clt_tolerance_minutes, 5),
+    clt_geofence_required: (u.cltGeofenceRequired ?? u.clt_geofence_required) !== false,
+    clt_custom_contract_text: u.cltCustomContractText || u.clt_custom_contract_text || null,
   };
 };
 
@@ -334,5 +344,388 @@ export const professionalRpcErrorMessage = (err) => {
   if (msg.includes('professional_inactive')) return 'Cadastro inativo. Procure a administração.';
   if (msg.includes('unit_pj_disabled')) return 'O registro de prestadores não está habilitado nesta unidade.';
   if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';
+  return msg || 'Erro inesperado.';
+};
+
+// =========================================================================
+// MÓDULO FUNCIONÁRIOS CLT (empregados) — tabelas employees, employee_*,
+// holidays. Terceiro tipo de vínculo, mantido isolado dos mapeadores de
+// estagiário e de PJ (ver supabase_schema.sql, seção 17).
+// =========================================================================
+
+// Inclui photo e face_descriptor: necessários para o matching biométrico no
+// quiosque CLT. Usada no cadastro (FuncionariosTab) e onde a foto é exibida.
+export const EMPLOYEE_SELECT_FIELDS = 'id, unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace, mother_name, father_name, phone, email, address, ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category, bank_name, bank_agency, bank_account, bank_account_type, pix_key, job_title, cbo, department, admission_date, contract_type, experience_first_end, experience_second_end, contract_end, base_salary, weekly_hours, schedule, work_regime, night_work, hours_bank, hours_bank_started_at, vt_opted, vt_daily_cost, vr_opted, health_plan, union_name, cba_reference, photo, face_descriptor, biometric_consent_at, biometric_consent_version, status, termination_date, notes, created_at, updated_at';
+
+// Versão enxuta para listas/tabelas — nunca carrega photo/face_descriptor.
+export const EMPLOYEE_LIST_FIELDS = 'id, unit_id, name, cpf, job_title, department, admission_date, contract_type, status, weekly_hours, hours_bank, birthdate';
+
+export const mapEmployeeFromDb = (e) => ({
+  id: e.id,
+  unitId: e.unit_id,
+  name: e.name || '',
+  cpf: e.cpf || '',
+  rg: e.rg || '',
+  rgIssuer: e.rg_issuer || '',
+  birthdate: e.birthdate || '',
+  sex: e.sex || '',
+  maritalStatus: e.marital_status || '',
+  education: e.education || '',
+  nationality: e.nationality || '',
+  birthplace: e.birthplace || '',
+  motherName: e.mother_name || '',
+  fatherName: e.father_name || '',
+  phone: e.phone || '',
+  email: e.email || '',
+  address: e.address || {},
+  ctpsNumber: e.ctps_number || '',
+  ctpsSeries: e.ctps_series || '',
+  ctpsUf: e.ctps_uf || '',
+  pis: e.pis || '',
+  voterTitle: e.voter_title || '',
+  reservistCert: e.reservist_cert || '',
+  cnh: e.cnh || '',
+  cnhCategory: e.cnh_category || '',
+  bankName: e.bank_name || '',
+  bankAgency: e.bank_agency || '',
+  bankAccount: e.bank_account || '',
+  bankAccountType: e.bank_account_type || '',
+  pixKey: e.pix_key || '',
+  jobTitle: e.job_title || '',
+  cbo: e.cbo || '',
+  department: e.department || '',
+  admissionDate: e.admission_date || '',
+  contractType: e.contract_type || 'indeterminado',
+  experienceFirstEnd: e.experience_first_end || '',
+  experienceSecondEnd: e.experience_second_end || '',
+  contractEnd: e.contract_end || '',
+  baseSalary: e.base_salary != null ? Number(e.base_salary) : null,
+  weeklyHours: Number(e.weekly_hours) || 44,
+  schedule: e.schedule || {},
+  workRegime: e.work_regime || '',
+  nightWork: !!e.night_work,
+  hoursBank: !!e.hours_bank,
+  hoursBankStartedAt: e.hours_bank_started_at || '',
+  vtOpted: !!e.vt_opted,
+  vtDailyCost: e.vt_daily_cost != null ? Number(e.vt_daily_cost) : null,
+  vrOpted: !!e.vr_opted,
+  healthPlan: !!e.health_plan,
+  unionName: e.union_name || '',
+  cbaReference: e.cba_reference || '',
+  photo: e.photo || '',
+  faceDescriptor: e.face_descriptor || '',
+  biometricConsentAt: e.biometric_consent_at || null,
+  biometricConsentVersion: e.biometric_consent_version || '',
+  status: e.status || 'ativo',
+  terminationDate: e.termination_date || '',
+  notes: e.notes || '',
+  createdAt: e.created_at,
+  updatedAt: e.updated_at,
+});
+
+export const mapEmployeeToDb = (e) => ({
+  unit_id: e.unitId,
+  name: (e.name || '').trim(),
+  cpf: e.cpf || null,
+  rg: e.rg || null,
+  rg_issuer: e.rgIssuer || null,
+  birthdate: e.birthdate || null,
+  sex: e.sex || null,
+  marital_status: e.maritalStatus || null,
+  education: e.education || null,
+  nationality: e.nationality || null,
+  birthplace: e.birthplace || null,
+  mother_name: e.motherName || null,
+  father_name: e.fatherName || null,
+  phone: e.phone || null,
+  email: e.email || null,
+  address: e.address || {},
+  ctps_number: e.ctpsNumber || null,
+  ctps_series: e.ctpsSeries || null,
+  ctps_uf: e.ctpsUf || null,
+  pis: e.pis || null,
+  voter_title: e.voterTitle || null,
+  reservist_cert: e.reservistCert || null,
+  cnh: e.cnh || null,
+  cnh_category: e.cnhCategory || null,
+  bank_name: e.bankName || null,
+  bank_agency: e.bankAgency || null,
+  bank_account: e.bankAccount || null,
+  bank_account_type: e.bankAccountType || null,
+  pix_key: e.pixKey || null,
+  job_title: e.jobTitle || null,
+  cbo: e.cbo || null,
+  department: e.department || null,
+  admission_date: e.admissionDate || null,
+  contract_type: e.contractType || 'indeterminado',
+  experience_first_end: e.experienceFirstEnd || null,
+  experience_second_end: e.experienceSecondEnd || null,
+  contract_end: e.contractEnd || null,
+  base_salary: e.baseSalary != null && e.baseSalary !== '' ? Number(e.baseSalary) : null,
+  weekly_hours: Number(e.weeklyHours) || 44,
+  schedule: e.schedule || {},
+  work_regime: e.workRegime || null,
+  night_work: !!e.nightWork,
+  hours_bank: !!e.hoursBank,
+  hours_bank_started_at: e.hoursBankStartedAt || null,
+  vt_opted: !!e.vtOpted,
+  vt_daily_cost: e.vtDailyCost != null && e.vtDailyCost !== '' ? Number(e.vtDailyCost) : null,
+  vr_opted: !!e.vrOpted,
+  health_plan: !!e.healthPlan,
+  union_name: e.unionName || null,
+  cba_reference: e.cbaReference || null,
+  photo: e.photo || null,
+  face_descriptor: e.faceDescriptor || null,
+  biometric_consent_at: e.biometricConsentAt || null,
+  biometric_consent_version: e.biometricConsentVersion || null,
+  status: e.status || 'ativo',
+  termination_date: e.terminationDate || null,
+  notes: e.notes || null,
+});
+
+export const mapDependentFromDb = (d) => ({
+  id: d.id,
+  employeeId: d.employee_id,
+  name: d.name || '',
+  cpf: d.cpf || '',
+  birthdate: d.birthdate || '',
+  relationship: d.relationship || '',
+  forIr: !!d.for_ir,
+  forSalarioFamilia: !!d.for_salario_familia,
+});
+
+export const mapDependentToDb = (d) => ({
+  employee_id: d.employeeId,
+  name: (d.name || '').trim(),
+  cpf: d.cpf || null,
+  birthdate: d.birthdate || null,
+  relationship: d.relationship || null,
+  for_ir: !!d.forIr,
+  for_salario_familia: !!d.forSalarioFamilia,
+});
+
+// Sem `photo`: listas de ponto não devem carregar a imagem (só sob demanda).
+export const EMPLOYEE_TIME_RECORD_SELECT_FIELDS = 'id, unit_id, nsr, employee_id, employee_name, employee_cpf, type, timestamp, work_date, geo, auth_method, biometric, record_hash, created_by, created_at';
+
+export const mapTimeRecordFromDb = (r) => ({
+  id: r.id,
+  unitId: r.unit_id,
+  nsr: r.nsr,
+  employeeId: r.employee_id,
+  employeeName: r.employee_name,
+  employeeCpf: r.employee_cpf || '',
+  type: r.type,
+  timestamp: r.timestamp,
+  workDate: r.work_date,
+  geo: r.geo || {},
+  authMethod: r.auth_method || 'facial',
+  biometric: r.biometric || {},
+  recordHash: r.record_hash || '',
+  createdBy: r.created_by || null,
+});
+
+export const mapTimeAdjustmentFromDb = (a) => ({
+  id: a.id,
+  employeeId: a.employee_id,
+  unitId: a.unit_id,
+  workDate: a.work_date,
+  type: a.type,
+  timestamp: a.timestamp,
+  voidsRecordId: a.voids_record_id || null,
+  voidsAdjustmentId: a.voids_adjustment_id || null,
+  reason: a.reason || '',
+  evidenceDoc: a.evidence_doc || {},
+  createdBy: a.created_by || null,
+  createdAt: a.created_at,
+});
+
+export const mapTimeAdjustmentToDb = (a) => ({
+  employee_id: a.employeeId,
+  unit_id: a.unitId,
+  work_date: a.workDate,
+  type: a.type,
+  timestamp: a.timestamp || null,
+  voids_record_id: a.voidsRecordId || null,
+  voids_adjustment_id: a.voidsAdjustmentId || null,
+  reason: a.reason || '',
+  evidence_doc: a.evidenceDoc || {},
+});
+
+export const mapVacationPeriodFromDb = (p) => ({
+  id: p.id,
+  employeeId: p.employee_id,
+  acquisitionStart: p.acquisition_start,
+  acquisitionEnd: p.acquisition_end,
+  concessionEnd: p.concession_end,
+  unjustifiedAbsences: p.unjustified_absences || 0,
+  daysEntitled: p.days_entitled != null ? p.days_entitled : 30,
+  suspendedReason: p.suspended_reason || '',
+  status: p.status || 'em_aquisicao',
+});
+
+export const mapVacationPeriodToDb = (p) => ({
+  employee_id: p.employeeId,
+  acquisition_start: p.acquisitionStart,
+  acquisition_end: p.acquisitionEnd,
+  concession_end: p.concessionEnd,
+  unjustified_absences: Number(p.unjustifiedAbsences) || 0,
+  days_entitled: Number(p.daysEntitled) || 30,
+  suspended_reason: p.suspendedReason || null,
+  status: p.status || 'em_aquisicao',
+});
+
+export const mapVacationScheduleFromDb = (s) => ({
+  id: s.id,
+  periodId: s.period_id,
+  employeeId: s.employee_id,
+  startDate: s.start_date,
+  endDate: s.end_date,
+  days: s.days,
+  abonoDays: s.abono_days || 0,
+  noticeIssuedAt: s.notice_issued_at || '',
+  paymentDue: s.payment_due || '',
+  paymentDoneAt: s.payment_done_at || '',
+  status: s.status || 'planejado',
+  docNoticeKey: s.doc_notice_key || '',
+  docReceiptKey: s.doc_receipt_key || '',
+});
+
+export const mapVacationScheduleToDb = (s) => ({
+  period_id: s.periodId,
+  employee_id: s.employeeId,
+  start_date: s.startDate,
+  end_date: s.endDate,
+  days: Number(s.days) || 0,
+  abono_days: Number(s.abonoDays) || 0,
+  notice_issued_at: s.noticeIssuedAt || null,
+  payment_due: s.paymentDue || null,
+  payment_done_at: s.paymentDoneAt || null,
+  status: s.status || 'planejado',
+  doc_notice_key: s.docNoticeKey || null,
+  doc_receipt_key: s.docReceiptKey || null,
+});
+
+export const mapMedicalExamFromDb = (x) => ({
+  id: x.id,
+  employeeId: x.employee_id,
+  examType: x.exam_type,
+  examDate: x.exam_date,
+  validUntil: x.valid_until || '',
+  result: x.result || '',
+  riskGrade: x.risk_grade != null ? x.risk_grade : null,
+  doctorName: x.doctor_name || '',
+  doctorCrm: x.doctor_crm || '',
+  restrictions: x.restrictions || '',
+  docKey: x.doc_key || '',
+});
+
+export const mapMedicalExamToDb = (x) => ({
+  employee_id: x.employeeId,
+  exam_type: x.examType,
+  exam_date: x.examDate,
+  valid_until: x.validUntil || null,
+  result: x.result || null,
+  risk_grade: x.riskGrade != null && x.riskGrade !== '' ? Number(x.riskGrade) : null,
+  doctor_name: x.doctorName || null,
+  doctor_crm: x.doctorCrm || null,
+  restrictions: x.restrictions || null,
+  doc_key: x.docKey || null,
+});
+
+export const mapOccurrenceFromDb = (o) => ({
+  id: o.id,
+  employeeId: o.employee_id,
+  unitId: o.unit_id,
+  type: o.type,
+  startDate: o.start_date,
+  endDate: o.end_date || '',
+  days: o.days || 1,
+  justified: !!o.justified,
+  legalBasis: o.legal_basis || '',
+  description: o.description || '',
+  affectsDsr: !!o.affects_dsr,
+  affectsVacation: !!o.affects_vacation,
+  inssReferral: !!o.inss_referral,
+  catNumber: o.cat_number || '',
+  docKey: o.doc_key || '',
+});
+
+export const mapOccurrenceToDb = (o) => ({
+  employee_id: o.employeeId,
+  unit_id: o.unitId,
+  type: o.type,
+  start_date: o.startDate,
+  end_date: o.endDate || null,
+  days: Number(o.days) || 1,
+  justified: !!o.justified,
+  legal_basis: o.legalBasis || null,
+  description: o.description || null,
+  affects_dsr: !!o.affectsDsr,
+  affects_vacation: !!o.affectsVacation,
+  inss_referral: !!o.inssReferral,
+  cat_number: o.catNumber || null,
+  doc_key: o.docKey || null,
+});
+
+export const mapTerminationFromDb = (t) => ({
+  employeeId: t.employee_id,
+  type: t.type,
+  noticeType: t.notice_type || '',
+  noticeReduction: t.notice_reduction || '',
+  noticeStart: t.notice_start || '',
+  noticeDays: t.notice_days != null ? t.notice_days : null,
+  projectedEnd: t.projected_end || '',
+  terminationDate: t.termination_date || '',
+  demissionalExamId: t.demissional_exam_id || null,
+  paymentDeadline: t.payment_deadline || '',
+  checklist: t.checklist || {},
+  notes: t.notes || '',
+});
+
+export const mapTerminationToDb = (t) => ({
+  employee_id: t.employeeId,
+  type: t.type,
+  notice_type: t.noticeType || null,
+  notice_reduction: t.noticeReduction || null,
+  notice_start: t.noticeStart || null,
+  notice_days: t.noticeDays != null && t.noticeDays !== '' ? Number(t.noticeDays) : null,
+  projected_end: t.projectedEnd || null,
+  termination_date: t.terminationDate || null,
+  demissional_exam_id: t.demissionalExamId || null,
+  payment_deadline: t.paymentDeadline || null,
+  checklist: t.checklist || {},
+  notes: t.notes || null,
+});
+
+export const mapHolidayFromDb = (h) => ({
+  id: h.id,
+  date: h.date,
+  name: h.name,
+  scope: h.scope || 'nacional',
+  workspaceId: h.workspace_id || null,
+  unitId: h.unit_id || null,
+  recurring: !!h.recurring,
+});
+
+export const mapHolidayToDb = (h) => ({
+  date: h.date,
+  name: (h.name || '').trim(),
+  scope: h.scope || 'nacional',
+  workspace_id: h.workspaceId || null,
+  unit_id: h.unitId || null,
+  recurring: !!h.recurring,
+});
+
+// Traduz os códigos de erro lançados pelas RPCs do módulo CLT.
+export const employeeRpcErrorMessage = (err) => {
+  const msg = String(err?.message || err || '');
+  if (msg.includes('employee_inactive')) return 'Cadastro inativo ou desligado. Procure o RH.';
+  if (msg.includes('unit_clt_disabled')) return 'O ponto eletrônico CLT não está habilitado nesta unidade.';
+  if (msg.includes('consent_required')) return 'Termo de consentimento biométrico pendente. Procure o RH para regularizar.';
+  if (msg.includes('sequence_invalid')) return 'Marcação fora de sequência (verifique se já bateu entrada/intervalo/saída hoje).';
+  if (msg.includes('duplicate_record')) return 'Esta marcação já foi registrada há poucos segundos.';
+  if (msg.includes('time_record_immutable')) return 'Registros de ponto não podem ser alterados ou excluídos. Lance um ajuste com justificativa.';
+  if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';
+  if (msg.includes('invalid_type')) return 'Tipo de marcação inválido.';
   return msg || 'Erro inesperado.';
 };
