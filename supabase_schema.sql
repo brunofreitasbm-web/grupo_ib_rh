@@ -1716,3 +1716,685 @@ DROP POLICY IF EXISTS "Permitir leitura de unidades para quiosque PJ" ON public.
 CREATE POLICY "Permitir leitura de unidades para quiosque PJ"
     ON public.units FOR SELECT
     USING (public.jwt_is_professional_kiosk_for_unit(id));
+
+-- =========================================================================
+-- 17. MÓDULO FUNCIONÁRIOS CLT (empregados regidos pela CLT)
+-- Terceiro tipo de vínculo do hub de RH, ao lado de Estagiários (Lei 11.788,
+-- seção 1-15) e Profissionais PJ (seção 16). Ao contrário do PJ, este módulo
+-- deliberadamente SE APROXIMA de controle de jornada (Portaria MTP 671/2021):
+-- ponto biométrico com GPS, registros imutáveis com NSR sequencial e hash
+-- encadeado, espelho mensal e apuração de eventos (faltas, HE, noturno, DSR,
+-- férias) para a contabilidade. NÃO calcula folha (INSS/IRRF/FGTS/rescisão).
+-- =========================================================================
+
+-- 17.1 Colunas novas em units
+ALTER TABLE public.units
+  ADD COLUMN IF NOT EXISTS clt_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS clt_kiosk_email text,
+  ADD COLUMN IF NOT EXISTS clt_tolerance_minutes integer NOT NULL DEFAULT 5,
+  ADD COLUMN IF NOT EXISTS clt_geofence_required boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS clt_custom_contract_text text;
+
+-- 17.2 Tabelas
+
+CREATE TABLE IF NOT EXISTS public.employees (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  unit_id text NOT NULL REFERENCES public.units(id),
+  -- Identificação
+  name text NOT NULL,
+  cpf text,
+  rg text,
+  rg_issuer text,
+  birthdate date,
+  sex text CHECK (sex IN ('M', 'F', 'outro')),
+  marital_status text,
+  education text,
+  nationality text,
+  birthplace text,
+  mother_name text,
+  father_name text,
+  -- Contato / endereço
+  phone text,
+  email text,
+  address jsonb DEFAULT '{}'::jsonb,
+  -- Documentos trabalhistas
+  ctps_number text,
+  ctps_series text,
+  ctps_uf text,
+  pis text,
+  voter_title text,
+  reservist_cert text,
+  cnh text,
+  cnh_category text,
+  -- Dados bancários
+  bank_name text,
+  bank_agency text,
+  bank_account text,
+  bank_account_type text,
+  pix_key text,
+  -- Contrato / jornada
+  job_title text,
+  cbo text,
+  department text,
+  admission_date date NOT NULL,
+  contract_type text NOT NULL DEFAULT 'indeterminado'
+    CHECK (contract_type IN ('indeterminado', 'experiencia', 'tempo_determinado', 'intermitente', 'aprendiz')),
+  experience_first_end date,
+  experience_second_end date,
+  contract_end date,
+  base_salary numeric(12, 2),
+  weekly_hours numeric(5, 2) NOT NULL DEFAULT 44,
+  schedule jsonb DEFAULT '{}'::jsonb,
+  work_regime text CHECK (work_regime IN ('presencial', 'hibrido', 'remoto')),
+  night_work boolean NOT NULL DEFAULT false,
+  hours_bank boolean NOT NULL DEFAULT false,
+  hours_bank_started_at date,
+  vt_opted boolean NOT NULL DEFAULT false,
+  vt_daily_cost numeric(10, 2),
+  vr_opted boolean NOT NULL DEFAULT false,
+  health_plan boolean NOT NULL DEFAULT false,
+  union_name text,
+  cba_reference text,
+  -- Biometria / foto
+  photo text,
+  face_descriptor text,
+  biometric_consent_at timestamp with time zone,
+  biometric_consent_version text,
+  -- Estado
+  status text NOT NULL DEFAULT 'ativo'
+    CHECK (status IN ('ativo', 'afastado', 'ferias', 'aviso_previo', 'desligado')),
+  termination_date date,
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_dependents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  cpf text,
+  birthdate date,
+  relationship text,
+  for_ir boolean NOT NULL DEFAULT false,
+  for_salario_familia boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_documents (
+  employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
+  doc_key text NOT NULL,
+  content text NOT NULL,
+  meta jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (employee_id, doc_key)
+);
+
+-- Registros de ponto — IMUTÁVEIS (Portaria MTP 671/2021). NSR sequencial por
+-- unidade e hash encadeado; nunca UPDATE/DELETE (ver trigger abaixo). Erros
+-- operacionais viram um novo lançamento em employee_time_adjustments.
+CREATE TABLE IF NOT EXISTS public.employee_time_records (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  unit_id text NOT NULL REFERENCES public.units(id),
+  nsr bigint NOT NULL,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+  employee_name text NOT NULL,
+  employee_cpf text,
+  type text NOT NULL CHECK (type IN ('entrada', 'saida', 'intervalo_inicio', 'intervalo_fim')),
+  timestamp timestamp with time zone NOT NULL DEFAULT now(),
+  work_date date NOT NULL,
+  photo text,
+  geo jsonb DEFAULT '{}'::jsonb,
+  auth_method text NOT NULL DEFAULT 'facial' CHECK (auth_method IN ('facial')),
+  biometric jsonb DEFAULT '{}'::jsonb,
+  prev_hash text,
+  record_hash text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  UNIQUE (unit_id, nsr)
+);
+
+-- Contador de NSR/hash por unidade, usado com SELECT ... FOR UPDATE dentro do
+-- RPC de registro (garante sequência atômica mesmo com marcações concorrentes).
+CREATE TABLE IF NOT EXISTS public.employee_time_nsr (
+  unit_id text PRIMARY KEY REFERENCES public.units(id),
+  last_nsr bigint NOT NULL DEFAULT 0,
+  last_hash text
+);
+
+CREATE OR REPLACE FUNCTION public.forbid_time_record_mutation() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'time_record_immutable';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_employee_time_records_immutable ON public.employee_time_records;
+CREATE TRIGGER trg_employee_time_records_immutable
+  BEFORE UPDATE OR DELETE ON public.employee_time_records
+  FOR EACH ROW EXECUTE FUNCTION public.forbid_time_record_mutation();
+
+-- Ajustes de ponto lançados pelo RH: SEMPRE um registro novo, nunca edição do
+-- original. 'desconsiderar' anula um registro/ajuste anterior via voids_*.
+CREATE TABLE IF NOT EXISTS public.employee_time_adjustments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+  unit_id text NOT NULL REFERENCES public.units(id),
+  work_date date NOT NULL,
+  type text NOT NULL CHECK (type IN ('entrada', 'saida', 'intervalo_inicio', 'intervalo_fim', 'desconsiderar')),
+  timestamp timestamp with time zone,
+  voids_record_id uuid REFERENCES public.employee_time_records(id),
+  voids_adjustment_id uuid,
+  reason text NOT NULL,
+  evidence_doc jsonb DEFAULT '{}'::jsonb,
+  created_by uuid DEFAULT auth.uid(),
+  created_at timestamp with time zone DEFAULT now()
+);
+
+ALTER TABLE public.employee_time_adjustments
+  DROP CONSTRAINT IF EXISTS employee_time_adjustments_voids_adjustment_fk;
+ALTER TABLE public.employee_time_adjustments
+  ADD CONSTRAINT employee_time_adjustments_voids_adjustment_fk
+  FOREIGN KEY (voids_adjustment_id) REFERENCES public.employee_time_adjustments(id) DEFERRABLE INITIALLY DEFERRED;
+
+DROP TRIGGER IF EXISTS trg_employee_time_adjustments_immutable ON public.employee_time_adjustments;
+CREATE TRIGGER trg_employee_time_adjustments_immutable
+  BEFORE UPDATE OR DELETE ON public.employee_time_adjustments
+  FOR EACH ROW EXECUTE FUNCTION public.forbid_time_record_mutation();
+
+CREATE TABLE IF NOT EXISTS public.employee_timesheet_closures (
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  competencia text NOT NULL, -- 'AAAA-MM'
+  summary jsonb DEFAULT '{}'::jsonb,
+  closed_by uuid,
+  closed_at timestamp with time zone DEFAULT now(),
+  reopened_at timestamp with time zone,
+  PRIMARY KEY (employee_id, competencia)
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_vacation_periods (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  acquisition_start date NOT NULL,
+  acquisition_end date NOT NULL,
+  concession_end date NOT NULL,
+  unjustified_absences integer NOT NULL DEFAULT 0,
+  days_entitled integer NOT NULL DEFAULT 30,
+  suspended_reason text,
+  status text NOT NULL DEFAULT 'em_aquisicao'
+    CHECK (status IN ('em_aquisicao', 'adquirido', 'parcialmente_gozado', 'gozado', 'vencido', 'zerado')),
+  created_at timestamp with time zone DEFAULT now(),
+  UNIQUE (employee_id, acquisition_start)
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_vacation_schedules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  period_id uuid NOT NULL REFERENCES public.employee_vacation_periods(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  days integer NOT NULL,
+  abono_days integer NOT NULL DEFAULT 0,
+  notice_issued_at date,
+  payment_due date,
+  payment_done_at date,
+  status text NOT NULL DEFAULT 'planejado'
+    CHECK (status IN ('planejado', 'avisado', 'em_gozo', 'concluido', 'cancelado')),
+  doc_notice_key text,
+  doc_receipt_key text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_medical_exams (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  exam_type text NOT NULL CHECK (exam_type IN ('admissional', 'periodico', 'retorno', 'mudanca_risco', 'demissional')),
+  exam_date date NOT NULL,
+  valid_until date,
+  result text CHECK (result IN ('apto', 'inapto', 'apto_com_restricoes')),
+  risk_grade smallint,
+  doctor_name text,
+  doctor_crm text,
+  restrictions text,
+  doc_key text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+-- Ocorrências funcionais. Deliberadamente SEM coluna de CID (dado de saúde
+-- sensível, LGPD art. 11): o atestado fica só como documento anexado.
+CREATE TABLE IF NOT EXISTS public.employee_occurrences (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  unit_id text NOT NULL REFERENCES public.units(id),
+  type text NOT NULL,
+  start_date date NOT NULL,
+  end_date date,
+  days integer NOT NULL DEFAULT 1,
+  justified boolean NOT NULL DEFAULT false,
+  legal_basis text,
+  description text,
+  affects_dsr boolean NOT NULL DEFAULT false,
+  affects_vacation boolean NOT NULL DEFAULT false,
+  inss_referral boolean NOT NULL DEFAULT false,
+  cat_number text,
+  doc_key text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_terminations (
+  employee_id uuid PRIMARY KEY REFERENCES public.employees(id) ON DELETE CASCADE,
+  type text NOT NULL CHECK (type IN ('sem_justa_causa', 'pedido_demissao', 'justa_causa', 'acordo_484a', 'termino_contrato', 'falecimento')),
+  notice_type text CHECK (notice_type IN ('trabalhado', 'indenizado', 'dispensado', 'nao_aplicavel')),
+  notice_reduction text CHECK (notice_reduction IN ('2h_dia', '7_dias', 'nenhuma')),
+  notice_start date,
+  notice_days integer,
+  projected_end date,
+  termination_date date,
+  demissional_exam_id uuid REFERENCES public.employee_medical_exams(id),
+  payment_deadline date,
+  checklist jsonb DEFAULT '{}'::jsonb,
+  notes text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+-- Espelha o status/termination_date do funcionário ao gravar o encerramento.
+CREATE OR REPLACE FUNCTION public.sync_employee_status_on_termination() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE public.employees
+     SET status = CASE
+                     WHEN NEW.termination_date IS NOT NULL AND NEW.termination_date <= now()::date THEN 'desligado'
+                     WHEN NEW.notice_start IS NOT NULL THEN 'aviso_previo'
+                     ELSE status
+                   END,
+         termination_date = NEW.termination_date,
+         updated_at = now()
+   WHERE id = NEW.employee_id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_employee_status_on_termination ON public.employee_terminations;
+CREATE TRIGGER trg_sync_employee_status_on_termination
+  AFTER INSERT OR UPDATE ON public.employee_terminations
+  FOR EACH ROW EXECUTE FUNCTION public.sync_employee_status_on_termination();
+
+CREATE TABLE IF NOT EXISTS public.holidays (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  date date NOT NULL,
+  name text NOT NULL,
+  scope text NOT NULL DEFAULT 'nacional' CHECK (scope IN ('nacional', 'estadual', 'municipal', 'unidade')),
+  workspace_id text,
+  unit_id text REFERENCES public.units(id),
+  recurring boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  UNIQUE (date, COALESCE(unit_id, ''), COALESCE(workspace_id, ''))
+);
+
+INSERT INTO public.holidays (date, name, scope, recurring) VALUES
+  ('2026-01-01', 'Confraternização Universal', 'nacional', true),
+  ('2026-04-21', 'Tiradentes', 'nacional', true),
+  ('2026-05-01', 'Dia do Trabalho', 'nacional', true),
+  ('2026-09-07', 'Independência do Brasil', 'nacional', true),
+  ('2026-10-12', 'Nossa Senhora Aparecida', 'nacional', true),
+  ('2026-11-02', 'Finados', 'nacional', true),
+  ('2026-11-15', 'Proclamação da República', 'nacional', true),
+  ('2026-11-20', 'Consciência Negra', 'nacional', true),
+  ('2026-12-25', 'Natal', 'nacional', true)
+ON CONFLICT (date, COALESCE(unit_id, ''), COALESCE(workspace_id, '')) DO NOTHING;
+
+-- Índices
+CREATE INDEX IF NOT EXISTS idx_employees_unit_id ON public.employees(unit_id);
+CREATE INDEX IF NOT EXISTS idx_employees_status ON public.employees(status);
+CREATE INDEX IF NOT EXISTS idx_employee_dependents_employee ON public.employee_dependents(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON public.employee_documents(employee_id, doc_key);
+CREATE INDEX IF NOT EXISTS idx_employee_time_records_employee_date ON public.employee_time_records(employee_id, work_date);
+CREATE INDEX IF NOT EXISTS idx_employee_time_records_unit_ts ON public.employee_time_records(unit_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_employee_time_adjustments_employee_date ON public.employee_time_adjustments(employee_id, work_date);
+CREATE INDEX IF NOT EXISTS idx_employee_vacation_periods_employee ON public.employee_vacation_periods(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_vacation_schedules_employee ON public.employee_vacation_schedules(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_medical_exams_employee ON public.employee_medical_exams(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_occurrences_employee ON public.employee_occurrences(employee_id);
+CREATE INDEX IF NOT EXISTS idx_holidays_date ON public.holidays(date);
+
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_dependents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_time_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_time_nsr ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_time_adjustments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_timesheet_closures ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_vacation_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_vacation_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_medical_exams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_occurrences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_terminations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.holidays ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'employee_time_records') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.employee_time_records;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'employee_time_adjustments') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.employee_time_adjustments;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'employees') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.employees;
+  END IF;
+END $$;
+
+-- 17.3 Helper de RLS (papel do quiosque CLT)
+CREATE OR REPLACE FUNCTION public.jwt_is_employee_kiosk_for_unit(target_unit text) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT (auth.jwt() -> 'user_metadata' ->> 'role') = 'employee_unit'
+     AND target_unit IS NOT NULL
+     AND (auth.jwt() -> 'user_metadata' ->> 'unit_id') = target_unit;
+$$;
+
+-- 17.4 Policies
+
+DROP POLICY IF EXISTS "clt: leitura e escrita de funcionarios (supervisor)" ON public.employees;
+CREATE POLICY "clt: leitura e escrita de funcionarios (supervisor)" ON public.employees FOR ALL
+  USING (public.jwt_is_supervisor_for_unit(unit_id))
+  WITH CHECK (public.jwt_is_supervisor_for_unit(unit_id));
+-- O quiosque CLT NÃO lê employees diretamente: usa a RPC get_employee_kiosk_roster.
+
+DROP POLICY IF EXISTS "clt: dependentes (supervisor)" ON public.employee_dependents;
+CREATE POLICY "clt: dependentes (supervisor)" ON public.employee_dependents FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: documentos (supervisor)" ON public.employee_documents;
+CREATE POLICY "clt: documentos (supervisor)" ON public.employee_documents FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: leitura de registros de ponto" ON public.employee_time_records;
+CREATE POLICY "clt: leitura de registros de ponto" ON public.employee_time_records FOR SELECT
+  USING (public.jwt_is_supervisor_for_unit(unit_id) OR public.jwt_is_employee_kiosk_for_unit(unit_id));
+-- Sem policy de INSERT/UPDATE/DELETE: toda gravação passa por register_employee_time_record;
+-- UPDATE/DELETE são bloqueados mesmo para o dono da linha pelo trigger de imutabilidade.
+
+DROP POLICY IF EXISTS "clt: leitura e lancamento de ajustes (supervisor)" ON public.employee_time_adjustments;
+CREATE POLICY "clt: leitura e lancamento de ajustes (supervisor)" ON public.employee_time_adjustments FOR ALL
+  USING (public.jwt_is_supervisor_for_unit(unit_id))
+  WITH CHECK (public.jwt_is_supervisor_for_unit(unit_id));
+
+DROP POLICY IF EXISTS "clt: fechamento de competencia (supervisor)" ON public.employee_timesheet_closures;
+CREATE POLICY "clt: fechamento de competencia (supervisor)" ON public.employee_timesheet_closures FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: periodos de ferias (supervisor)" ON public.employee_vacation_periods;
+CREATE POLICY "clt: periodos de ferias (supervisor)" ON public.employee_vacation_periods FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: programacao de ferias (supervisor)" ON public.employee_vacation_schedules;
+CREATE POLICY "clt: programacao de ferias (supervisor)" ON public.employee_vacation_schedules FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: exames ocupacionais (supervisor)" ON public.employee_medical_exams;
+CREATE POLICY "clt: exames ocupacionais (supervisor)" ON public.employee_medical_exams FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: ocorrencias (supervisor)" ON public.employee_occurrences;
+CREATE POLICY "clt: ocorrencias (supervisor)" ON public.employee_occurrences FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: encerramentos (supervisor)" ON public.employee_terminations;
+CREATE POLICY "clt: encerramentos (supervisor)" ON public.employee_terminations FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.employees e WHERE e.id = employee_id AND public.jwt_is_supervisor_for_unit(e.unit_id)));
+
+DROP POLICY IF EXISTS "clt: leitura de feriados" ON public.holidays;
+CREATE POLICY "clt: leitura de feriados" ON public.holidays FOR SELECT
+  USING (
+    (unit_id IS NULL)
+    OR public.jwt_is_supervisor_for_unit(unit_id)
+    OR public.jwt_is_employee_kiosk_for_unit(unit_id)
+    OR (auth.jwt() -> 'user_metadata' ->> 'role') IN ('intern_unit', 'professional_unit', 'intern')
+  );
+
+DROP POLICY IF EXISTS "clt: escrita de feriados (supervisor)" ON public.holidays;
+CREATE POLICY "clt: escrita de feriados (supervisor)" ON public.holidays FOR ALL
+  USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'supervisor')
+  WITH CHECK (auth.jwt() -> 'user_metadata' ->> 'role' = 'supervisor');
+
+-- employee_time_nsr: RLS ligado e NENHUMA policy — só a RPC (SECURITY DEFINER) acessa.
+
+-- 17.5 Funções (SECURITY DEFINER)
+
+-- Lista o roster do quiosque CLT (sem expor employees diretamente ao papel
+-- de quiosque): nome, foto e descritor facial para o matching local, mais o
+-- último tipo de marcação do turno em aberto (para habilitar só os botões
+-- permitidos). Supervisor pode passar p_unit para consultar qualquer unidade
+-- sob sua alçada; o quiosque só enxerga a própria unidade (via JWT).
+CREATE OR REPLACE FUNCTION public.get_employee_kiosk_roster(p_unit text DEFAULT NULL)
+RETURNS TABLE (
+  id uuid,
+  name text,
+  photo text,
+  face_descriptor text,
+  biometric_consent_at timestamp with time zone,
+  last_type text,
+  last_ts timestamp with time zone
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  v_unit := COALESCE(auth.jwt() -> 'user_metadata' ->> 'unit_id', p_unit);
+  IF v_unit IS NULL OR NOT (public.jwt_is_employee_kiosk_for_unit(v_unit) OR public.jwt_is_supervisor_for_unit(v_unit)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  RETURN QUERY
+  SELECT e.id, e.name, e.photo, e.face_descriptor, e.biometric_consent_at,
+         lr.type AS last_type, lr.timestamp AS last_ts
+    FROM public.employees e
+    LEFT JOIN LATERAL (
+      SELECT t.type, t.timestamp
+        FROM public.employee_time_records t
+       WHERE t.employee_id = e.id
+         AND t.timestamp > now() - interval '20 hours'
+       ORDER BY t.timestamp DESC
+       LIMIT 1
+    ) lr ON true
+   WHERE e.unit_id = v_unit
+     AND e.status IN ('ativo', 'aviso_previo')
+   ORDER BY e.name;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.get_employee_kiosk_roster(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_employee_kiosk_roster(text) TO authenticated;
+
+-- Registro de ponto pelo quiosque CLT: valida papel/unidade/consentimento,
+-- checa sequência entrada→intervalo→saída do turno, grava com NSR sequencial
+-- e hash encadeado (por unidade) e nunca permite edição posterior.
+CREATE OR REPLACE FUNCTION public.register_employee_time_record(
+  p_employee_id uuid,
+  p_type text,
+  p_photo text DEFAULT NULL,
+  p_geo jsonb DEFAULT '{}'::jsonb,
+  p_biometric jsonb DEFAULT '{}'::jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_emp public.employees%ROWTYPE;
+  v_clt_enabled boolean;
+  v_last record;
+  v_ts timestamp with time zone := now();
+  v_work_date date;
+  v_nsr bigint;
+  v_prev_hash text;
+  v_new_hash text;
+  v_new_id uuid;
+BEGIN
+  IF p_type NOT IN ('entrada', 'saida', 'intervalo_inicio', 'intervalo_fim') THEN
+    RAISE EXCEPTION 'invalid_type';
+  END IF;
+
+  SELECT * INTO v_emp FROM public.employees WHERE id = p_employee_id;
+  IF NOT FOUND OR v_emp.status NOT IN ('ativo', 'aviso_previo') THEN
+    RAISE EXCEPTION 'employee_inactive';
+  END IF;
+  IF NOT (public.jwt_is_employee_kiosk_for_unit(v_emp.unit_id) OR public.jwt_is_supervisor_for_unit(v_emp.unit_id)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT clt_enabled INTO v_clt_enabled FROM public.units WHERE id = v_emp.unit_id;
+  IF NOT COALESCE(v_clt_enabled, false) THEN
+    RAISE EXCEPTION 'unit_clt_disabled';
+  END IF;
+
+  IF v_emp.biometric_consent_at IS NULL THEN
+    RAISE EXCEPTION 'consent_required';
+  END IF;
+
+  SELECT type, timestamp, work_date INTO v_last
+    FROM public.employee_time_records
+   WHERE employee_id = p_employee_id
+     AND timestamp > v_ts - interval '20 hours'
+   ORDER BY timestamp DESC
+   LIMIT 1;
+
+  IF v_last.type IS NOT NULL AND v_last.type = p_type AND v_last.timestamp > v_ts - interval '60 seconds' THEN
+    RAISE EXCEPTION 'duplicate_record';
+  END IF;
+
+  IF p_type = 'entrada' AND v_last.type IS NOT NULL AND v_last.type <> 'saida' THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+  IF p_type = 'intervalo_inicio' AND (v_last.type IS NULL OR v_last.type NOT IN ('entrada', 'intervalo_fim')) THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+  IF p_type = 'intervalo_fim' AND (v_last.type IS NULL OR v_last.type <> 'intervalo_inicio') THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+  IF p_type = 'saida' AND (v_last.type IS NULL OR v_last.type NOT IN ('entrada', 'intervalo_fim')) THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+
+  v_work_date := CASE WHEN p_type = 'entrada' OR v_last.work_date IS NULL
+                       THEN (v_ts AT TIME ZONE 'America/Belem')::date
+                       ELSE v_last.work_date END;
+
+  -- Contador de NSR/hash por unidade, travado durante a transação.
+  INSERT INTO public.employee_time_nsr (unit_id, last_nsr, last_hash)
+    VALUES (v_emp.unit_id, 0, NULL)
+    ON CONFLICT (unit_id) DO NOTHING;
+
+  PERFORM 1 FROM public.employee_time_nsr WHERE unit_id = v_emp.unit_id FOR UPDATE;
+
+  SELECT last_nsr + 1, last_hash INTO v_nsr, v_prev_hash
+    FROM public.employee_time_nsr WHERE unit_id = v_emp.unit_id;
+
+  v_new_hash := encode(
+    digest(COALESCE(v_prev_hash, '') || v_nsr::text || p_employee_id::text || p_type || v_ts::text, 'sha256'),
+    'hex'
+  );
+
+  INSERT INTO public.employee_time_records (
+    unit_id, nsr, employee_id, employee_name, employee_cpf, type, timestamp, work_date,
+    photo, geo, auth_method, biometric, prev_hash, record_hash, created_by
+  ) VALUES (
+    v_emp.unit_id, v_nsr, p_employee_id, v_emp.name, v_emp.cpf, p_type, v_ts, v_work_date,
+    p_photo, COALESCE(p_geo, '{}'::jsonb), 'facial', COALESCE(p_biometric, '{}'::jsonb),
+    v_prev_hash, v_new_hash, auth.uid()
+  ) RETURNING id INTO v_new_id;
+
+  UPDATE public.employee_time_nsr SET last_nsr = v_nsr, last_hash = v_new_hash WHERE unit_id = v_emp.unit_id;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'id', v_new_id, 'nsr', v_nsr, 'timestamp', v_ts, 'type', p_type,
+    'name', v_emp.name, 'work_date', v_work_date, 'hash', v_new_hash
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.register_employee_time_record(uuid, text, text, jsonb, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.register_employee_time_record(uuid, text, text, jsonb, jsonb) TO authenticated;
+
+-- Fecha/reabre a competência mensal (espelho de ponto) de um funcionário.
+CREATE OR REPLACE FUNCTION public.close_employee_timesheet(p_employee_id uuid, p_competencia text, p_summary jsonb DEFAULT '{}'::jsonb)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  SELECT unit_id INTO v_unit FROM public.employees WHERE id = p_employee_id;
+  IF v_unit IS NULL OR NOT public.jwt_is_supervisor_for_unit(v_unit) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  INSERT INTO public.employee_timesheet_closures (employee_id, competencia, summary, closed_by, closed_at)
+  VALUES (p_employee_id, p_competencia, COALESCE(p_summary, '{}'::jsonb), auth.uid(), now())
+  ON CONFLICT (employee_id, competencia) DO UPDATE
+    SET summary = EXCLUDED.summary, closed_by = EXCLUDED.closed_by, closed_at = now(), reopened_at = NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.close_employee_timesheet(uuid, text, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.close_employee_timesheet(uuid, text, jsonb) TO authenticated;
+
+-- 17.6 Logins de quiosque CLT (um por unidade habilitada do Grupo IB), papel
+-- 'employee_unit'. Ao contrário da seed do módulo PJ (16.6), NÃO apaga/recria
+-- o usuário a cada execução — idempotente sem derrubar sessões já ativas.
+DO $$
+DECLARE
+  units_data jsonb := '[
+    {"email": "clt-parqueshopping@grupoib.internal", "name": "Funcionários Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
+    {"email": "clt-graopara@grupoib.internal",       "name": "Funcionários Faça Amigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
+    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários Clínica A",                   "unit_id": "clinica-a"},
+    {"email": "clt-clinicab@grupoib.internal",       "name": "Funcionários Clínica B",                   "unit_id": "clinica-b"}
+  ]'::jsonb;
+  u jsonb;
+  new_id uuid;
+BEGIN
+  FOR u IN SELECT * FROM jsonb_array_elements(units_data) LOOP
+    IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = (u->>'email')) THEN
+      new_id := gen_random_uuid();
+
+      INSERT INTO auth.users (
+        id, instance_id, email, encrypted_password, email_confirmed_at,
+        raw_app_meta_data, raw_user_meta_data, aud, role, created_at, updated_at,
+        confirmation_token, recovery_token, email_change_token_new, email_change,
+        is_sso_user, is_anonymous
+      ) VALUES (
+        new_id, '00000000-0000-0000-0000-000000000000', u->>'email',
+        crypt('estagio123', gen_salt('bf')), now(),
+        '{"provider": "email", "providers": ["email"]}'::jsonb,
+        jsonb_build_object('name', u->>'name', 'role', 'employee_unit', 'unit_id', u->>'unit_id'),
+        'authenticated', 'authenticated', now(), now(),
+        '', '', '', '', false, false
+      );
+
+      INSERT INTO auth.identities (
+        id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+      ) VALUES (
+        gen_random_uuid(), new_id,
+        jsonb_build_object('sub', new_id::text, 'email', u->>'email'),
+        'email', new_id::text, now(), now(), now()
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-parqueshopping@grupoib.internal' WHERE id = 'faca-amigos-parque-shopping' AND clt_kiosk_email IS NULL;
+UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-graopara@grupoib.internal'       WHERE id = 'faca-amigos-grao-para'       AND clt_kiosk_email IS NULL;
+UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-clinicaa@grupoib.internal'       WHERE id = 'clinica-a'                   AND clt_kiosk_email IS NULL;
+UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-clinicab@grupoib.internal'       WHERE id = 'clinica-b'                   AND clt_kiosk_email IS NULL;
+
+-- 17.7 O quiosque CLT precisa ler a própria unidade (nome/endereço/CNPJ).
+DROP POLICY IF EXISTS "Permitir leitura de unidades para quiosque CLT" ON public.units;
+CREATE POLICY "Permitir leitura de unidades para quiosque CLT"
+    ON public.units FOR SELECT
+    USING (public.jwt_is_employee_kiosk_for_unit(id));
+</content>
