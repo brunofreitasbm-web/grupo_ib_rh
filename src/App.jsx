@@ -7566,18 +7566,42 @@ export default function App() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 }>
-                  {activeAdminTab === 'dashboard'      && <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'frequencia'     && <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'estagiarios'    && <EstagiariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'acompanhamento' && <AcompanhamentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'financeiro'     && <FinanceiroTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'ocorrencias'    && <OcorrenciasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'finalizacao'    && <EncerramentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />}
-                  {activeAdminTab === 'documentos'     && <DocumentosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />}
-                  {activeAdminTab === 'admissional'    && <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'rh'             && <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />}
-                  {activeAdminTab === 'aniversariantes' && <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />}
-                  {activeAdminTab === 'configuracoes'    && <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} />}
+                  <div style={{ display: activeAdminTab === 'dashboard' ? 'block' : 'none' }}>
+                    <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'frequencia' ? 'block' : 'none' }}>
+                    <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'estagiarios' ? 'block' : 'none' }}>
+                    <EstagiariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'acompanhamento' ? 'block' : 'none' }}>
+                    <AcompanhamentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'financeiro' ? 'block' : 'none' }}>
+                    <FinanceiroTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'ocorrencias' ? 'block' : 'none' }}>
+                    <OcorrenciasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'finalizacao' ? 'block' : 'none' }}>
+                    <EncerramentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'documentos' ? 'block' : 'none' }}>
+                    <DocumentosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'admissional' ? 'block' : 'none' }}>
+                    <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'rh' ? 'block' : 'none' }}>
+                    <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'aniversariantes' ? 'block' : 'none' }}>
+                    <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
+                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} />
+                  </div>
                 </Suspense>
               </ErrorBoundary>
             </div>

@@ -239,7 +239,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         {/* Painel de Conteúdo */}
         <div className="lg:col-span-9 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           {/* 1. EMPRESA & UNIDADES */}
-          {activeSubTab === 'empresa' && (
+          <div style={{ display: activeSubTab === 'empresa' ? 'block' : 'none' }}>
             <div className="space-y-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -523,10 +523,10 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
           {/* 2. GEOFENCING & PONTO ELETRÔNICO */}
-          {activeSubTab === 'geofence' && (
+          <div style={{ display: activeSubTab === 'geofence' ? 'block' : 'none' }}>
             <div className="space-y-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -665,10 +665,10 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
           {/* 3. PERMISSÕES & ACESSOS */}
-          {activeSubTab === 'permissoes' && (
+          <div style={{ display: activeSubTab === 'permissoes' ? 'block' : 'none' }}>
             <div className="space-y-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -803,10 +803,10 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                 </table>
               </div>
             </div>
-          )}
+          </div>
 
           {/* 4. NOTIFICAÇÕES & ALERTAS */}
-          {activeSubTab === 'notificacoes' && (
+          <div style={{ display: activeSubTab === 'notificacoes' ? 'block' : 'none' }}>
             <div className="space-y-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -856,10 +856,10 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
           {/* 5. APARÊNCIA & PREFERÊNCIAS */}
-          {activeSubTab === 'aparencia' && (
+          <div style={{ display: activeSubTab === 'aparencia' ? 'block' : 'none' }}>
             <div className="space-y-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -897,7 +897,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                 </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
