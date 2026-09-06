@@ -190,45 +190,57 @@ export const mapRecordToDb = (r) => ({
   days_away: Number(r.daysAway) || 0,
 });
 
-export const mapUnitFromDb = (u) => ({
-  id: u.id,
-  name: u.name,
-  address: u.address,
-  lat: Number(u.lat),
-  lng: Number(u.lng),
-  radiusKm: Number(u.radius_km),
-  radiusM: Number(u.radius_m),
-  workspaceId: u.workspace_id,
-  kioskEmail: u.kiosk_email,
-  biometricRequired: u.biometric_required,
-  razaoSocial: u.razao_social || '',
-  cnpj: u.cnpj || '',
-  phone: u.phone || '',
-  logoUrl: u.logo_url || '',
-  tceCustomText: u.tce_custom_text || '',
-  paeCustomText: u.pae_custom_text || '',
-  declaracaoCustomText: u.declaracao_custom_text || '',
-  fichaCustomText: u.ficha_custom_text || '',
-});
+const safeNum = (val, fallback = 0) => {
+  if (val === undefined || val === null || val === '') return fallback;
+  const n = Number(val);
+  return isNaN(n) ? fallback : n;
+};
 
-export const mapUnitToDb = (u) => ({
-  id: u.id,
-  name: u.name,
-  address: u.address,
-  lat: Number(u.lat),
-  lng: Number(u.lng),
-  radius_km: Number(u.radiusKm),
-  radius_m: Number(u.radiusM),
-  workspace_id: u.workspaceId,
-  kiosk_email: u.kioskEmail,
-  biometric_required: u.biometricRequired,
-  razao_social: u.razaoSocial || null,
-  cnpj: u.cnpj || null,
-  phone: u.phone || null,
-  logo_url: u.logoUrl || null,
-  tce_custom_text: u.tceCustomText || null,
-  pae_custom_text: u.paeCustomText || null,
-  declaracao_custom_text: u.declaracaoCustomText || null,
-  ficha_custom_text: u.fichaCustomText || null,
-});
+export const mapUnitFromDb = (u) => {
+  if (!u) return {};
+  return {
+    id: u.id,
+    name: u.name || '',
+    address: u.address || '',
+    lat: safeNum(u.lat, 0),
+    lng: safeNum(u.lng, 0),
+    radiusKm: safeNum(u.radius_km, 5),
+    radiusM: safeNum(u.radius_m, 5000),
+    workspaceId: u.workspace_id || null,
+    kioskEmail: u.kiosk_email || '',
+    biometricRequired: u.biometric_required || false,
+    razaoSocial: u.razao_social || '',
+    cnpj: u.cnpj || '',
+    phone: u.phone || '',
+    logoUrl: u.logo_url || '',
+    tceCustomText: u.tce_custom_text || '',
+    paeCustomText: u.pae_custom_text || '',
+    declaracaoCustomText: u.declaracao_custom_text || '',
+    fichaCustomText: u.ficha_custom_text || '',
+  };
+};
+
+export const mapUnitToDb = (u) => {
+  if (!u) return {};
+  return {
+    id: u.id,
+    name: u.name || u.nome || '',
+    address: u.address || u.endereco || '',
+    lat: safeNum(u.lat ?? u.latitude, 0),
+    lng: safeNum(u.lng ?? u.longitude, 0),
+    radius_km: safeNum(u.radiusKm ?? u.radius_km, 5),
+    radius_m: safeNum(u.radiusM ?? u.radius_m, 5000),
+    workspace_id: u.workspaceId || u.workspace_id || null,
+    kiosk_email: u.kioskEmail || u.kiosk_email || null,
+    biometric_required: u.biometricRequired !== undefined ? Boolean(u.biometricRequired) : (u.biometric_required !== undefined ? Boolean(u.biometric_required) : false),
+    razao_social: u.razaoSocial || u.razao_social || null,
+    cnpj: u.cnpj || null,
+    phone: u.phone || null,
+    logo_url: u.logoUrl || u.logo_url || null,
+    tce_custom_text: u.tceCustomText || u.tce_custom_text || null,
+    pae_custom_text: u.paeCustomText || u.pae_custom_text || null,
+    declaracao_custom_text: u.declaracaoCustomText || u.declaracao_custom_text || null,
+    ficha_custom_text: u.fichaCustomText || u.ficha_custom_text || null,
+  };
+};
 

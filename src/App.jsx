@@ -2036,9 +2036,16 @@ export default function App() {
   // CONFIGURAÇÃO DAS UNIDADES (coordenadas do GPS)
   // ============================================================
   const persistUnits = useCallback(async (data) => {
-    const dbUnits = data.map(mapUnitToDb);
-    const { error } = await supabase.from('units').upsert(dbUnits);
-    if (error) console.error('Erro ao salvar unidades:', error);
+    try {
+      const dbUnits = data.map(mapUnitToDb);
+      const { error } = await supabase.from('units').upsert(dbUnits);
+      if (error) {
+        const msg = error.message || error.details || error.hint || JSON.stringify(error);
+        console.error('Erro ao salvar unidades no Supabase:', msg, error);
+      }
+    } catch (err) {
+      console.error('Exceção ao persistir unidades:', err);
+    }
   }, []);
 
   const handleSaveUnitFromConfig = useCallback(async (updatedUnit) => {
@@ -2046,8 +2053,9 @@ export default function App() {
       const dbUnit = mapUnitToDb(updatedUnit);
       const { error } = await supabase.from('units').upsert([dbUnit]);
       if (error) {
-        console.error('Erro ao salvar unidade no Supabase:', error);
-        toast.error('Erro ao salvar no banco: ' + error.message);
+        const errorMsg = error.message || error.details || error.hint || JSON.stringify(error);
+        console.error('Erro ao salvar unidade no Supabase:', errorMsg, error);
+        toast.error('Erro ao salvar no banco: ' + (error.message || 'Falha de permissão ou parâmetro inválido'));
       } else {
         setUnits((prev) => {
           const exists = prev.some(u => u.id === updatedUnit.id);
@@ -2059,8 +2067,9 @@ export default function App() {
         toast.success(`Unidade "${updatedUnit.name || updatedUnit.nome}" salva com sucesso!`);
       }
     } catch (err) {
-      console.error('Erro ao salvar unidade:', err);
-      toast.error('Erro ao salvar unidade: ' + err.message);
+      const errDetail = err?.message || 'Falha inesperada ao processar requisição';
+      console.error('Erro ao salvar unidade:', errDetail, err);
+      toast.error('Erro ao salvar unidade: ' + errDetail);
     }
   }, []);
 

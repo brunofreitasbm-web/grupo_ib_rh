@@ -44,6 +44,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     const unitMap = {};
     availableUnits.forEach(u => {
       unitMap[u.id] = {
+        ...u,
         id: u.id,
         name: u.name || u.nome || u.buttonLabel || '',
         razaoSocial: u.razaoSocial || u.razao_social || BRANDING.legalEntityName,
@@ -55,7 +56,13 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         paeCustomText: u.paeCustomText || u.pae_custom_text || '',
         declaracaoCustomText: u.declaracaoCustomText || u.declaracao_custom_text || '',
         fichaCustomText: u.fichaCustomText || u.ficha_custom_text || '',
-        radiusM: u.radiusM || 5000
+        radiusM: u.radiusM || u.radius_m || 5000,
+        radiusKm: u.radiusKm || u.radius_km || 5,
+        lat: u.lat !== undefined ? u.lat : (u.latitude || 0),
+        lng: u.lng !== undefined ? u.lng : (u.longitude || 0),
+        workspaceId: u.workspaceId || u.workspace_id || null,
+        kioskEmail: u.kioskEmail || u.kiosk_email || '',
+        biometricRequired: u.biometricRequired !== undefined ? u.biometricRequired : (u.biometric_required || false),
       };
     });
     setEditingUnits(unitMap);
