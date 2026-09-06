@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateCPF, startOfWeek, formatDistance } from '../helpers';
+import { validateCPF, validateCNPJ, startOfWeek, formatDistance } from '../helpers';
 
 describe('validateCPF', () => {
   it('aceita um CPF válido (com formatação)', () => {
@@ -20,6 +20,28 @@ describe('validateCPF', () => {
 
   it('rejeita CPF com quantidade de dígitos incorreta', () => {
     expect(validateCPF('123456')).toBe(false);
+  });
+});
+
+describe('validateCNPJ', () => {
+  it('aceita um CNPJ válido (com formatação)', () => {
+    expect(validateCNPJ('11.222.333/0001-81')).toBe(true);
+  });
+
+  it('aceita um CNPJ válido (somente dígitos)', () => {
+    expect(validateCNPJ('11222333000181')).toBe(true);
+  });
+
+  it('rejeita CNPJ com dígito verificador incorreto', () => {
+    expect(validateCNPJ('11.222.333/0001-80')).toBe(false);
+  });
+
+  it('rejeita CNPJ com todos os dígitos iguais', () => {
+    expect(validateCNPJ('11111111111111')).toBe(false);
+  });
+
+  it('rejeita CNPJ com quantidade de dígitos incorreta', () => {
+    expect(validateCNPJ('123456')).toBe(false);
   });
 });
 

@@ -211,6 +211,8 @@ export const mapUnitFromDb = (u) => {
     biometricRequired: u.biometric_required || false,
     pjEnabled: u.pj_enabled || false,
     pjKioskEmail: u.pj_kiosk_email || '',
+    pjSelfRegistrationEnabled: u.pj_self_registration_enabled || false,
+    contratoPjCustomText: u.contrato_pj_custom_text || '',
     razaoSocial: u.razao_social || '',
     cnpj: u.cnpj || '',
     phone: u.phone || '',
@@ -242,6 +244,8 @@ export const mapUnitToDb = (u) => {
     biometric_required: u.biometricRequired !== undefined ? Boolean(u.biometricRequired) : (u.biometric_required !== undefined ? Boolean(u.biometric_required) : false),
     pj_enabled: u.pjEnabled !== undefined ? Boolean(u.pjEnabled) : (u.pj_enabled !== undefined ? Boolean(u.pj_enabled) : false),
     pj_kiosk_email: u.pjKioskEmail || u.pj_kiosk_email || null,
+    pj_self_registration_enabled: u.pjSelfRegistrationEnabled !== undefined ? Boolean(u.pjSelfRegistrationEnabled) : (u.pj_self_registration_enabled !== undefined ? Boolean(u.pj_self_registration_enabled) : false),
+    contrato_pj_custom_text: u.contratoPjCustomText || u.contrato_pj_custom_text || null,
     razao_social: u.razaoSocial || u.razao_social || null,
     cnpj: u.cnpj || null,
     phone: u.phone || null,
@@ -264,7 +268,7 @@ export const mapUnitToDb = (u) => {
 // mapeadores de estagiário de propósito: nada aqui deve alimentar as telas de
 // ponto/bolsa de estagiários nem vice-versa.
 // =========================================================================
-export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, cpf, cnpj, razao_social, email, phone, contract_start, contract_end, contract_notes, active, terms_accepted_at, terms_version, photo, created_at';
+export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at';
 
 export const mapProfessionalFromDb = (p) => ({
   id: p.id,
@@ -273,15 +277,51 @@ export const mapProfessionalFromDb = (p) => ({
   profession: p.profession || '',
   councilType: p.council_type || '',
   councilNumber: p.council_number || '',
+  councilUf: p.council_uf || '',
+  councilValidity: p.council_validity || '',
+  specialties: p.specialties || '',
   cpf: p.cpf || '',
   cnpj: p.cnpj || '',
   razaoSocial: p.razao_social || '',
+  nomeFantasia: p.nome_fantasia || '',
+  naturezaJuridica: p.natureza_juridica || '',
+  cnaePrincipal: p.cnae_principal || '',
+  inscricaoMunicipal: p.inscricao_municipal || '',
+  enderecoCep: p.endereco_cep || '',
+  enderecoLogradouro: p.endereco_logradouro || '',
+  enderecoNumero: p.endereco_numero || '',
+  enderecoComplemento: p.endereco_complemento || '',
+  enderecoBairro: p.endereco_bairro || '',
+  enderecoCidade: p.endereco_cidade || '',
+  enderecoUf: p.endereco_uf || '',
   email: p.email || '',
   phone: p.phone || '',
+  bankName: p.bank_name || '',
+  bankAgency: p.bank_agency || '',
+  bankAccount: p.bank_account || '',
+  bankAccountType: p.bank_account_type || '',
+  pixKey: p.pix_key || '',
+  repName: p.rep_name || '',
+  repCpf: p.rep_cpf || '',
+  repRg: p.rep_rg || '',
+  repBirthdate: p.rep_birthdate || '',
+  repEmail: p.rep_email || '',
+  repPhone: p.rep_phone || '',
+  repRole: p.rep_role || '',
+  serviceDescription: p.service_description || '',
+  remunerationModel: p.remuneration_model || '',
+  remunerationValue: p.remuneration_value ?? '',
+  paymentDay: p.payment_day ?? '',
+  noticeDays: p.notice_days ?? '',
   contractStart: p.contract_start || '',
   contractEnd: p.contract_end || '',
   contractNotes: p.contract_notes || '',
   active: p.active !== false,
+  registrationStatus: p.registration_status || 'validated',
+  selfRegisteredAt: p.self_registered_at || null,
+  autonomyDeclarationAcceptedAt: p.autonomy_declaration_accepted_at || null,
+  autonomyDeclarationVersion: p.autonomy_declaration_version || '',
+  lgpdConsentAcceptedAt: p.lgpd_consent_accepted_at || null,
   termsAcceptedAt: p.terms_accepted_at || null,
   termsVersion: p.terms_version || '',
   photo: p.photo || '',
@@ -294,11 +334,42 @@ export const mapProfessionalToDb = (p) => ({
   profession: p.profession || null,
   council_type: p.councilType || null,
   council_number: p.councilNumber || null,
+  council_uf: p.councilUf || null,
+  council_validity: p.councilValidity || null,
+  specialties: p.specialties || null,
   cpf: p.cpf || null,
   cnpj: p.cnpj || null,
   razao_social: p.razaoSocial || null,
+  nome_fantasia: p.nomeFantasia || null,
+  natureza_juridica: p.naturezaJuridica || null,
+  cnae_principal: p.cnaePrincipal || null,
+  inscricao_municipal: p.inscricaoMunicipal || null,
+  endereco_cep: p.enderecoCep || null,
+  endereco_logradouro: p.enderecoLogradouro || null,
+  endereco_numero: p.enderecoNumero || null,
+  endereco_complemento: p.enderecoComplemento || null,
+  endereco_bairro: p.enderecoBairro || null,
+  endereco_cidade: p.enderecoCidade || null,
+  endereco_uf: p.enderecoUf || null,
   email: p.email || null,
   phone: p.phone || null,
+  bank_name: p.bankName || null,
+  bank_agency: p.bankAgency || null,
+  bank_account: p.bankAccount || null,
+  bank_account_type: p.bankAccountType || null,
+  pix_key: p.pixKey || null,
+  rep_name: p.repName || null,
+  rep_cpf: p.repCpf || null,
+  rep_rg: p.repRg || null,
+  rep_birthdate: p.repBirthdate || null,
+  rep_email: p.repEmail || null,
+  rep_phone: p.repPhone || null,
+  rep_role: p.repRole || null,
+  service_description: p.serviceDescription || null,
+  remuneration_model: p.remunerationModel || null,
+  remuneration_value: p.remunerationValue === '' || p.remunerationValue == null ? null : Number(p.remunerationValue),
+  payment_day: p.paymentDay === '' || p.paymentDay == null ? null : Number(p.paymentDay),
+  notice_days: p.noticeDays === '' || p.noticeDays == null ? null : Number(p.noticeDays),
   contract_start: p.contractStart || null,
   contract_end: p.contractEnd || null,
   contract_notes: p.contractNotes || null,
@@ -343,6 +414,17 @@ export const professionalRpcErrorMessage = (err) => {
   if (msg.includes('sequence_no_entry')) return 'Não há entrada registrada hoje. Registre a entrada antes da saída.';
   if (msg.includes('professional_inactive')) return 'Cadastro inativo. Procure a administração.';
   if (msg.includes('unit_pj_disabled')) return 'O registro de prestadores não está habilitado nesta unidade.';
+  if (msg.includes('professional_pending_validation')) return 'Este cadastro ainda não foi validado pela administração.';
+  if (msg.includes('self_registration_disabled')) return 'O autocadastro não está habilitado para esta unidade.';
+  if (msg.includes('duplicate_cnpj')) return 'Já existe um prestador cadastrado com este CNPJ nesta unidade.';
+  if (msg.includes('duplicate_cpf')) return 'Já existe um prestador cadastrado com o CPF deste representante nesta unidade.';
+  if (msg.includes('missing_required_fields')) return 'Preencha todos os campos obrigatórios do cadastro.';
+  if (msg.includes('autonomy_declaration_required')) return 'É necessário aceitar a Declaração de Autonomia do Prestador de Serviços.';
+  if (msg.includes('lgpd_consent_required')) return 'É necessário aceitar o consentimento de tratamento de dados (LGPD).';
+  if (msg.includes('invalid_doc_key')) return 'Tipo de documento inválido.';
+  if (msg.includes('invalid_file_size')) return 'Arquivo inválido ou excede o limite de 2MB.';
+  if (msg.includes('invalid_token') || msg.includes('token_expired')) return 'Sessão de envio de documentos expirada. Reinicie o cadastro.';
+  if (msg.includes('upload_limit_reached')) return 'Limite de anexos deste cadastro atingido.';
   if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';
   return msg || 'Erro inesperado.';
 };

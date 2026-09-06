@@ -17,8 +17,13 @@ import { toast } from 'sonner';
 // de folha — o vínculo é comercial (CNPJ/NF), não trabalhista. Ver plano do
 // módulo PJ, seção 1 (blindagem jurídica).
 const emptyForm = {
-  unitId: '', name: '', profession: '', councilType: '', councilNumber: '',
-  cpf: '', cnpj: '', razaoSocial: '', email: '', phone: '',
+  unitId: '', name: '', profession: '', councilType: '', councilNumber: '', councilUf: '', councilValidity: '', specialties: '',
+  cpf: '', cnpj: '', razaoSocial: '', nomeFantasia: '', naturezaJuridica: '', cnaePrincipal: '', inscricaoMunicipal: '',
+  enderecoCep: '', enderecoLogradouro: '', enderecoNumero: '', enderecoComplemento: '', enderecoBairro: '', enderecoCidade: '', enderecoUf: '',
+  email: '', phone: '',
+  bankName: '', bankAgency: '', bankAccount: '', bankAccountType: 'Conta Corrente', pixKey: '',
+  repName: '', repCpf: '', repRg: '', repBirthdate: '', repEmail: '', repPhone: '', repRole: '',
+  serviceDescription: '', remunerationModel: '', remunerationValue: '', paymentDay: '', noticeDays: 30,
   contractStart: '', contractEnd: '', contractNotes: '', active: true,
 };
 
@@ -71,13 +76,24 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
 
   const openEdit = (p) => {
     setEditingId(p.id);
-    setForm({
-      unitId: p.unitId, name: p.name, profession: p.profession, councilType: p.councilType,
-      councilNumber: p.councilNumber, cpf: p.cpf, cnpj: p.cnpj, razaoSocial: p.razaoSocial,
-      email: p.email, phone: p.phone, contractStart: p.contractStart, contractEnd: p.contractEnd,
-      contractNotes: p.contractNotes, active: p.active,
-    });
+    // Reaproveita todos os campos mapeados (mapProfessionalFromDb já usa as
+    // mesmas chaves de emptyForm) — inclui o que o próprio prestador enviou
+    // no autocadastro, para o RH conferir/corrigir antes de validar.
+    setForm({ ...emptyForm, ...p });
     setShowManage(true);
+  };
+
+  const handleValidateRegistration = async (p) => {
+    if (!window.confirm(`Validar o cadastro de "${p.name}"? Após validado, será possível definir o PIN e liberar o registro de presença.`)) return;
+    try {
+      const { error } = await supabase.from('professionals').update({ registration_status: 'validated' }).eq('id', p.id);
+      if (error) throw error;
+      toast.success('Cadastro validado com sucesso.');
+      fetchData();
+    } catch (err) {
+      console.error('Erro ao validar cadastro do prestador:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -186,10 +202,24 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                     >
                       {p.active ? 'Ativo' : 'Inativo'}
                     </button>
+                    {p.registrationStatus === 'pending_validation' && (
+                      <button
+                        onClick={() => handleValidateRegistration(p)}
+                        className="block mt-1 text-[9px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800 hover:bg-amber-200"
+                        title="Cadastro enviado pelo próprio prestador — clique para validar"
+                      >
+                        ⚠️ Validar Cadastro
+                      </button>
+                    )}
                   </td>
                   <td className="p-3 text-right">
                     <div className="flex justify-end gap-1.5">
-                      <button onClick={() => setPinModalId(p.id)} className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded" title="Definir/Resetar PIN">
+                      <button
+                        onClick={() => setPinModalId(p.id)}
+                        disabled={p.registrationStatus === 'pending_validation'}
+                        className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={p.registrationStatus === 'pending_validation' ? 'Valide o cadastro antes de definir o PIN' : 'Definir/Resetar PIN'}
+                      >
                         <KeyRound size={13} />
                       </button>
                       <button onClick={() => openEdit(p)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Editar">
@@ -227,24 +257,88 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                 <option value="">Selecione...</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </Field>
-              <Field label="Profissão" value={form.profession} onChange={(v) => setForm({ ...form, profession: v })} placeholder="Ex.: Psicólogo(a)" />
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Conselho" value={form.councilType} onChange={(v) => setForm({ ...form, councilType: v })} placeholder="CRP, CRM..." />
-                <Field label="Nº Registro" value={form.councilNumber} onChange={(v) => setForm({ ...form, councilNumber: v })} />
-              </div>
               <Field label="CNPJ" value={form.cnpj} onChange={(v) => setForm({ ...form, cnpj: v })} />
               <Field label="Razão Social" value={form.razaoSocial} onChange={(v) => setForm({ ...form, razaoSocial: v })} />
-              <Field label="CPF (opcional)" value={form.cpf} onChange={(v) => setForm({ ...form, cpf: v })} />
+              <Field label="Nome Fantasia" value={form.nomeFantasia} onChange={(v) => setForm({ ...form, nomeFantasia: v })} />
+              <Field label="Natureza Jurídica" value={form.naturezaJuridica} onChange={(v) => setForm({ ...form, naturezaJuridica: v })} />
+              <Field label="CNAE Principal" value={form.cnaePrincipal} onChange={(v) => setForm({ ...form, cnaePrincipal: v })} />
+              <Field label="Inscrição Municipal" value={form.inscricaoMunicipal} onChange={(v) => setForm({ ...form, inscricaoMunicipal: v })} />
               <Field label="E-mail" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
               <Field label="Telefone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Vigência início" type="date" value={form.contractStart} onChange={(v) => setForm({ ...form, contractStart: v })} />
-                <Field label="Vigência fim" type="date" value={form.contractEnd} onChange={(v) => setForm({ ...form, contractEnd: v })} />
+
+              <div className="md:col-span-2 border-t border-gray-100 pt-3 mt-1">
+                <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Endereço da sede</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <Field label="CEP" value={form.enderecoCep} onChange={(v) => setForm({ ...form, enderecoCep: v })} />
+                  <div className="md:col-span-2"><Field label="Logradouro" value={form.enderecoLogradouro} onChange={(v) => setForm({ ...form, enderecoLogradouro: v })} /></div>
+                  <Field label="Número" value={form.enderecoNumero} onChange={(v) => setForm({ ...form, enderecoNumero: v })} />
+                  <Field label="Complemento" value={form.enderecoComplemento} onChange={(v) => setForm({ ...form, enderecoComplemento: v })} />
+                  <Field label="Bairro" value={form.enderecoBairro} onChange={(v) => setForm({ ...form, enderecoBairro: v })} />
+                  <Field label="Cidade" value={form.enderecoCidade} onChange={(v) => setForm({ ...form, enderecoCidade: v })} />
+                  <Field label="UF" value={form.enderecoUf} onChange={(v) => setForm({ ...form, enderecoUf: v })} />
+                </div>
               </div>
-              <div className="md:col-span-2">
-                <Field label="Observações do contrato" as="textarea" value={form.contractNotes} onChange={(v) => setForm({ ...form, contractNotes: v })} />
+
+              <div className="md:col-span-2 border-t border-gray-100 pt-3 mt-1">
+                <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Habilitação Profissional</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Field label="Profissão" value={form.profession} onChange={(v) => setForm({ ...form, profession: v })} placeholder="Ex.: Psicólogo(a)" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="Conselho" value={form.councilType} onChange={(v) => setForm({ ...form, councilType: v })} placeholder="CRP, CRM..." />
+                    <Field label="Nº Registro" value={form.councilNumber} onChange={(v) => setForm({ ...form, councilNumber: v })} />
+                    <Field label="UF" value={form.councilUf} onChange={(v) => setForm({ ...form, councilUf: v })} />
+                  </div>
+                  <Field label="Validade do registro" type="date" value={form.councilValidity} onChange={(v) => setForm({ ...form, councilValidity: v })} />
+                  <Field label="Especialidades" value={form.specialties} onChange={(v) => setForm({ ...form, specialties: v })} />
+                </div>
               </div>
-              <label className="flex items-center gap-2 text-xs font-medium text-gray-600 md:col-span-2">
+
+              <div className="md:col-span-2 border-t border-gray-100 pt-3 mt-1">
+                <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Representante Legal</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Field label="Nome completo" value={form.repName} onChange={(v) => setForm({ ...form, repName: v })} />
+                  <Field label="Qualificação" value={form.repRole} onChange={(v) => setForm({ ...form, repRole: v })} placeholder="Ex.: sócio-administrador" />
+                  <Field label="CPF" value={form.repCpf} onChange={(v) => setForm({ ...form, repCpf: v })} />
+                  <Field label="RG" value={form.repRg} onChange={(v) => setForm({ ...form, repRg: v })} />
+                  <Field label="Data de nascimento" type="date" value={form.repBirthdate} onChange={(v) => setForm({ ...form, repBirthdate: v })} />
+                  <Field label="E-mail" type="email" value={form.repEmail} onChange={(v) => setForm({ ...form, repEmail: v })} />
+                  <Field label="Telefone" value={form.repPhone} onChange={(v) => setForm({ ...form, repPhone: v })} />
+                </div>
+              </div>
+
+              <div className="md:col-span-2 border-t border-gray-100 pt-3 mt-1">
+                <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Dados Bancários (pagamento contra NF)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Field label="Banco" value={form.bankName} onChange={(v) => setForm({ ...form, bankName: v })} />
+                  <Field label="Tipo de conta" as="select" value={form.bankAccountType} onChange={(v) => setForm({ ...form, bankAccountType: v })}>
+                    <option>Conta Corrente</option>
+                    <option>Conta Poupança</option>
+                  </Field>
+                  <Field label="Agência" value={form.bankAgency} onChange={(v) => setForm({ ...form, bankAgency: v })} />
+                  <Field label="Conta" value={form.bankAccount} onChange={(v) => setForm({ ...form, bankAccount: v })} />
+                  <div className="md:col-span-2"><Field label="Chave PIX" value={form.pixKey} onChange={(v) => setForm({ ...form, pixKey: v })} /></div>
+                </div>
+              </div>
+
+              <div className="md:col-span-2 border-t border-gray-100 pt-3 mt-1">
+                <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Objeto e Condições Comerciais</h4>
+                <div className="md:col-span-2 mb-2">
+                  <Field label="Descrição dos serviços" as="textarea" value={form.serviceDescription} onChange={(v) => setForm({ ...form, serviceDescription: v })} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Field label="Modelo de remuneração" value={form.remunerationModel} onChange={(v) => setForm({ ...form, remunerationModel: v })} />
+                  <Field label="Valor de referência (R$)" type="number" value={form.remunerationValue} onChange={(v) => setForm({ ...form, remunerationValue: v })} />
+                  <Field label="Dia de pagamento" type="number" value={form.paymentDay} onChange={(v) => setForm({ ...form, paymentDay: v })} />
+                  <Field label="Aviso prévio (dias)" type="number" value={form.noticeDays} onChange={(v) => setForm({ ...form, noticeDays: v })} />
+                  <Field label="Vigência início" type="date" value={form.contractStart} onChange={(v) => setForm({ ...form, contractStart: v })} />
+                  <Field label="Vigência fim" type="date" value={form.contractEnd} onChange={(v) => setForm({ ...form, contractEnd: v })} />
+                </div>
+                <div className="md:col-span-2 mt-2">
+                  <Field label="Observações do contrato" as="textarea" value={form.contractNotes} onChange={(v) => setForm({ ...form, contractNotes: v })} />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs font-medium text-gray-600 md:col-span-2 border-t border-gray-100 pt-3 mt-1">
                 <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
                 Prestador ativo (aparece no quiosque de registro de presença)
               </label>

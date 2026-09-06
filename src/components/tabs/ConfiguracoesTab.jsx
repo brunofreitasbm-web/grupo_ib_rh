@@ -66,6 +66,8 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         biometricRequired: u.biometricRequired !== undefined ? u.biometricRequired : (u.biometric_required || false),
         pjEnabled: u.pjEnabled !== undefined ? u.pjEnabled : (u.pj_enabled || false),
         pjKioskEmail: u.pjKioskEmail || u.pj_kiosk_email || '',
+        pjSelfRegistrationEnabled: u.pjSelfRegistrationEnabled !== undefined ? u.pjSelfRegistrationEnabled : (u.pj_self_registration_enabled || false),
+        contratoPjCustomText: u.contratoPjCustomText || u.contrato_pj_custom_text || '',
       };
     });
     setEditingUnits(unitMap);
@@ -536,6 +538,24 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                                       className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-teal-500"
                                     />
                                     <p className="text-[10px] text-slate-400 mt-1">Precisa corresponder à conta de quiosque cadastrada no Supabase para esta unidade.</p>
+                                  </div>
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 pt-1 border-t border-slate-100">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!uData.pjSelfRegistrationEnabled}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'pjSelfRegistrationEnabled', e.target.checked)}
+                                    />
+                                    Permitir autocadastro público de {BRANDING.professionalLabels?.singular || 'Prestador(a)'} nesta unidade
+                                  </label>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Cláusulas Aditivas do Contrato de Prestação de Serviços</label>
+                                    <textarea
+                                      rows={3}
+                                      value={uData.contratoPjCustomText}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'contratoPjCustomText', e.target.value)}
+                                      placeholder="Cláusulas específicas desta unidade a incluir no contrato pré-pronto do prestador PJ..."
+                                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-teal-500 font-mono"
+                                    />
                                   </div>
                                 </div>
                               </div>

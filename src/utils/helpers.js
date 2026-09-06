@@ -39,6 +39,44 @@ export const validateCPF = (cpf) => {
   return true;
 };
 
+// Validação de CNPJ (mod-11, 14 dígitos) — usada no autocadastro de
+// Profissionais PJ (dados da pessoa jurídica contratada).
+export const validateCNPJ = (cnpj) => {
+  const clean = String(cnpj || '').replace(/[^\d]/g, '');
+  if (clean.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(clean)) return false;
+
+  const calcDigit = (base) => {
+    const weights = base.length === 12
+      ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = base.split('').reduce((acc, digit, idx) => acc + parseInt(digit, 10) * weights[idx], 0);
+    const rest = sum % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+
+  const base12 = clean.substring(0, 12);
+  const digit1 = calcDigit(base12);
+  if (digit1 !== parseInt(clean.charAt(12), 10)) return false;
+
+  const digit2 = calcDigit(base12 + String(digit1));
+  if (digit2 !== parseInt(clean.charAt(13), 10)) return false;
+
+  return true;
+};
+
+// Escapa texto de estagiário/prestador antes de interpolar em templates HTML
+// de documentos (TCE, PAE, contrato PJ, etc.) — evita XSS via campos livres.
+export const escapeHtmlForDocument = (value) => {
+  if (value === null || value === undefined) return value;
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 export const formatDate = (isoString) =>
   new Date(isoString).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 

@@ -2398,3 +2398,397 @@ CREATE POLICY "Permitir leitura de unidades para quiosque CLT"
     ON public.units FOR SELECT
     USING (public.jwt_is_employee_kiosk_for_unit(id));
 </content>
+
+
+-- =========================================================================
+-- 18. AUTOCADASTRO DE PROFISSIONAIS PJ + CONTRATO PRÉ-PRONTO (Grupo IB)
+-- Permite que o próprio prestador PJ preencha seu cadastro completo (dados
+-- da PJ, habilitação profissional, representante legal e anexos) sem estar
+-- logado, espelhando o "Cadastro Obrigatório" dos estagiários — mas com
+-- deduplicação e validação de unidade feitas no servidor (o cliente anon não
+-- lê `professionals` por RLS), o que a rotina de estagiário não faz. O
+-- cadastro nasce 'pending_validation' e só produz PIN/registra presença após
+-- o RH validar (18.6). Ver seção 16 para o restante do módulo PJ.
+-- Idempotente: pode ser rodado de novo sem duplicar/quebrar nada.
+-- =========================================================================
+
+-- 18.1 Colunas novas em public.professionals
+ALTER TABLE public.professionals
+  -- Controle do autocadastro
+  ADD COLUMN IF NOT EXISTS registration_status text NOT NULL DEFAULT 'validated',
+  ADD COLUMN IF NOT EXISTS self_registered_at timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS autonomy_declaration_accepted_at timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS autonomy_declaration_version text,
+  ADD COLUMN IF NOT EXISTS lgpd_consent_accepted_at timestamp with time zone,
+  -- Dados da Pessoa Jurídica / endereço
+  ADD COLUMN IF NOT EXISTS nome_fantasia text,
+  ADD COLUMN IF NOT EXISTS natureza_juridica text,
+  ADD COLUMN IF NOT EXISTS cnae_principal text,
+  ADD COLUMN IF NOT EXISTS inscricao_municipal text,
+  ADD COLUMN IF NOT EXISTS endereco_cep text,
+  ADD COLUMN IF NOT EXISTS endereco_logradouro text,
+  ADD COLUMN IF NOT EXISTS endereco_numero text,
+  ADD COLUMN IF NOT EXISTS endereco_complemento text,
+  ADD COLUMN IF NOT EXISTS endereco_bairro text,
+  ADD COLUMN IF NOT EXISTS endereco_cidade text,
+  ADD COLUMN IF NOT EXISTS endereco_uf text,
+  -- Dados bancários da PJ (pagamento contra Nota Fiscal)
+  ADD COLUMN IF NOT EXISTS bank_name text,
+  ADD COLUMN IF NOT EXISTS bank_agency text,
+  ADD COLUMN IF NOT EXISTS bank_account text,
+  ADD COLUMN IF NOT EXISTS bank_account_type text,
+  ADD COLUMN IF NOT EXISTS pix_key text,
+  -- Habilitação profissional
+  ADD COLUMN IF NOT EXISTS council_uf text,
+  ADD COLUMN IF NOT EXISTS council_validity date,
+  ADD COLUMN IF NOT EXISTS specialties text,
+  -- Representante legal (pessoa física que assina pela PJ)
+  ADD COLUMN IF NOT EXISTS rep_name text,
+  ADD COLUMN IF NOT EXISTS rep_cpf text,
+  ADD COLUMN IF NOT EXISTS rep_rg text,
+  ADD COLUMN IF NOT EXISTS rep_birthdate date,
+  ADD COLUMN IF NOT EXISTS rep_email text,
+  ADD COLUMN IF NOT EXISTS rep_phone text,
+  ADD COLUMN IF NOT EXISTS rep_role text,
+  -- Objeto e condições comerciais (alimentam o contrato)
+  ADD COLUMN IF NOT EXISTS service_description text,
+  ADD COLUMN IF NOT EXISTS remuneration_model text,
+  ADD COLUMN IF NOT EXISTS remuneration_value numeric,
+  ADD COLUMN IF NOT EXISTS payment_day integer,
+  ADD COLUMN IF NOT EXISTS notice_days integer;
+
+CREATE INDEX IF NOT EXISTS idx_professionals_registration_status ON public.professionals(registration_status);
+
+-- 18.2 Colunas novas em public.units
+ALTER TABLE public.units
+  ADD COLUMN IF NOT EXISTS pj_self_registration_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS contrato_pj_custom_text text;
+
+-- 18.3 Token de upload de anexos do autocadastro (usado só entre o insert do
+-- cadastro e o envio dos anexos, sem sessão). RLS ligada e SEM policies —
+-- mesmo padrão de public.professional_pins (16.2): só as RPCs SECURITY
+-- DEFINER abaixo a leem/escrevem.
+CREATE TABLE IF NOT EXISTS public.professional_self_registration_tokens (
+  professional_id uuid PRIMARY KEY REFERENCES public.professionals(id) ON DELETE CASCADE,
+  token_hash text NOT NULL,
+  expires_at timestamp with time zone NOT NULL,
+  uploads_used integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now()
+);
+ALTER TABLE public.professional_self_registration_tokens ENABLE ROW LEVEL SECURITY;
+-- Nenhuma policy — inacessível pela API além das RPCs abaixo.
+
+-- 18.4 RPC: cria o cadastro pendente do prestador (anônimo, quiosque PJ ou
+-- supervisor). Faz no servidor a validação de unidade e a deduplicação que o
+-- cliente anônimo não consegue fazer via SELECT (RLS bloqueia).
+CREATE OR REPLACE FUNCTION public.create_professional_self_registration(
+  p_unit_id text,
+  p_name text,
+  p_cnpj text,
+  p_razao_social text,
+  p_nome_fantasia text,
+  p_natureza_juridica text,
+  p_cnae_principal text,
+  p_inscricao_municipal text,
+  p_endereco_cep text,
+  p_endereco_logradouro text,
+  p_endereco_numero text,
+  p_endereco_complemento text,
+  p_endereco_bairro text,
+  p_endereco_cidade text,
+  p_endereco_uf text,
+  p_profession text,
+  p_council_type text,
+  p_council_number text,
+  p_council_uf text,
+  p_council_validity date,
+  p_specialties text,
+  p_rep_name text,
+  p_rep_cpf text,
+  p_rep_rg text,
+  p_rep_birthdate date,
+  p_rep_email text,
+  p_rep_phone text,
+  p_rep_role text,
+  p_email text,
+  p_phone text,
+  p_bank_name text,
+  p_bank_agency text,
+  p_bank_account text,
+  p_bank_account_type text,
+  p_pix_key text,
+  p_service_description text,
+  p_remuneration_model text,
+  p_remuneration_value numeric,
+  p_payment_day integer,
+  p_notice_days integer,
+  p_contract_start date,
+  p_autonomy_declaration_accepted boolean,
+  p_autonomy_declaration_version text,
+  p_lgpd_consent_accepted boolean
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  caller_role text := auth.jwt() -> 'user_metadata' ->> 'role';
+  caller_unit text := auth.jwt() -> 'user_metadata' ->> 'unit_id';
+  v_unit public.units%ROWTYPE;
+  v_cnpj_clean text := regexp_replace(COALESCE(p_cnpj, ''), '[^0-9]', '', 'g');
+  v_cpf_clean text := regexp_replace(COALESCE(p_rep_cpf, ''), '[^0-9]', '', 'g');
+  v_final_status text := 'pending_validation';
+  v_new_id uuid;
+  v_token text;
+BEGIN
+  -- Apenas anônimo (quiosque de autocadastro), quiosque PJ da própria
+  -- unidade, ou supervisor podem chamar esta função.
+  IF caller_role IS NOT NULL
+     AND caller_role NOT IN ('professional_unit', 'supervisor') THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  IF caller_role = 'professional_unit' AND caller_unit IS DISTINCT FROM p_unit_id THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF trim(COALESCE(p_name, '')) = '' OR trim(COALESCE(p_cnpj, '')) = ''
+     OR trim(COALESCE(p_razao_social, '')) = '' OR trim(COALESCE(p_profession, '')) = ''
+     OR trim(COALESCE(p_council_type, '')) = '' OR trim(COALESCE(p_council_number, '')) = ''
+     OR trim(COALESCE(p_rep_name, '')) = '' OR trim(COALESCE(p_rep_cpf, '')) = '' THEN
+    RAISE EXCEPTION 'missing_required_fields';
+  END IF;
+  IF NOT COALESCE(p_autonomy_declaration_accepted, false) THEN
+    RAISE EXCEPTION 'autonomy_declaration_required';
+  END IF;
+  IF NOT COALESCE(p_lgpd_consent_accepted, false) THEN
+    RAISE EXCEPTION 'lgpd_consent_required';
+  END IF;
+
+  -- Supervisor pode cadastrar já validado e em qualquer unidade do seu
+  -- workspace; os demais chamadores (anon/quiosque) sempre nascem pendentes,
+  -- e só em unidade que aceite autocadastro.
+  IF caller_role = 'supervisor' THEN
+    SELECT * INTO v_unit FROM public.units WHERE id = p_unit_id;
+    IF NOT FOUND OR NOT public.jwt_has_workspace_access(v_unit.workspace_id) THEN
+      RAISE EXCEPTION 'not authorized';
+    END IF;
+    v_final_status := 'validated';
+  ELSE
+    SELECT * INTO v_unit FROM public.units WHERE id = p_unit_id;
+    IF NOT FOUND OR NOT COALESCE(v_unit.pj_enabled, false) OR NOT COALESCE(v_unit.pj_self_registration_enabled, false) THEN
+      RAISE EXCEPTION 'self_registration_disabled';
+    END IF;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.professionals p
+     WHERE p.unit_id = p_unit_id
+       AND regexp_replace(COALESCE(p.cnpj, ''), '[^0-9]', '', 'g') = v_cnpj_clean
+       AND v_cnpj_clean <> ''
+  ) THEN
+    RAISE EXCEPTION 'duplicate_cnpj';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.professionals p
+     WHERE p.unit_id = p_unit_id
+       AND regexp_replace(COALESCE(p.rep_cpf, ''), '[^0-9]', '', 'g') = v_cpf_clean
+       AND v_cpf_clean <> ''
+  ) THEN
+    RAISE EXCEPTION 'duplicate_cpf';
+  END IF;
+
+  INSERT INTO public.professionals (
+    unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties,
+    cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal,
+    endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf,
+    email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key,
+    rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role,
+    service_description, remuneration_model, remuneration_value, payment_day, notice_days,
+    contract_start, active, registration_status, self_registered_at,
+    autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at
+  ) VALUES (
+    p_unit_id, trim(p_name), NULLIF(trim(p_profession), ''), NULLIF(trim(p_council_type), ''), NULLIF(trim(p_council_number), ''),
+    NULLIF(trim(p_council_uf), ''), p_council_validity, NULLIF(trim(p_specialties), ''),
+    NULLIF(v_cpf_clean, ''), NULLIF(v_cnpj_clean, ''), NULLIF(trim(p_razao_social), ''), NULLIF(trim(p_nome_fantasia), ''),
+    NULLIF(trim(p_natureza_juridica), ''), NULLIF(trim(p_cnae_principal), ''), NULLIF(trim(p_inscricao_municipal), ''),
+    NULLIF(trim(p_endereco_cep), ''), NULLIF(trim(p_endereco_logradouro), ''), NULLIF(trim(p_endereco_numero), ''),
+    NULLIF(trim(p_endereco_complemento), ''), NULLIF(trim(p_endereco_bairro), ''), NULLIF(trim(p_endereco_cidade), ''), NULLIF(trim(p_endereco_uf), ''),
+    NULLIF(trim(p_email), ''), NULLIF(trim(p_phone), ''), NULLIF(trim(p_bank_name), ''), NULLIF(trim(p_bank_agency), ''),
+    NULLIF(trim(p_bank_account), ''), NULLIF(trim(p_bank_account_type), ''), NULLIF(trim(p_pix_key), ''),
+    NULLIF(trim(p_rep_name), ''), NULLIF(v_cpf_clean, ''), NULLIF(trim(p_rep_rg), ''), p_rep_birthdate,
+    NULLIF(trim(p_rep_email), ''), NULLIF(trim(p_rep_phone), ''), NULLIF(trim(p_rep_role), ''),
+    NULLIF(trim(p_service_description), ''), NULLIF(trim(p_remuneration_model), ''), p_remuneration_value, p_payment_day, p_notice_days,
+    p_contract_start, true, v_final_status, CASE WHEN v_final_status = 'pending_validation' THEN now() ELSE NULL END,
+    now(), NULLIF(trim(p_autonomy_declaration_version), ''), now()
+  ) RETURNING id INTO v_new_id;
+
+  IF v_final_status = 'pending_validation' THEN
+    v_token := encode(gen_random_bytes(24), 'hex');
+    INSERT INTO public.professional_self_registration_tokens (professional_id, token_hash, expires_at, uploads_used)
+    VALUES (v_new_id, digest(v_token, 'sha256'), now() + interval '60 minutes', 0)
+    ON CONFLICT (professional_id) DO UPDATE
+      SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, uploads_used = 0, created_at = now();
+    RETURN jsonb_build_object('ok', true, 'professional_id', v_new_id, 'upload_token', v_token, 'registration_status', v_final_status);
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'professional_id', v_new_id, 'registration_status', v_final_status);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.create_professional_self_registration(
+  text, text, text, text, text, text, text, text, text, text, text, text, text, text, text,
+  text, text, text, text, date, text, text, text, text, date, text, text, text, text, text,
+  text, text, text, text, text, text, text, numeric, integer, integer, date, boolean, text, boolean
+) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_professional_self_registration(
+  text, text, text, text, text, text, text, text, text, text, text, text, text, text, text,
+  text, text, text, text, date, text, text, text, text, date, text, text, text, text, text,
+  text, text, text, text, text, text, text, numeric, integer, integer, date, boolean, text, boolean
+) TO anon, authenticated;
+
+-- 18.5 RPC: anexa um documento do autocadastro usando o token de upload
+-- (sem sessão). Um arquivo por chamada; allowlist fixa de doc_key; limite de
+-- ~2MB em base64 por arquivo e no máximo 8 uploads por cadastro.
+CREATE OR REPLACE FUNCTION public.attach_professional_self_registration_document(
+  p_professional_id uuid,
+  p_token text,
+  p_doc_key text,
+  p_content text,
+  p_meta jsonb DEFAULT '{}'::jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_row public.professional_self_registration_tokens%ROWTYPE;
+BEGIN
+  IF p_doc_key NOT IN ('cartao_cnpj', 'contrato_social', 'carteira_conselho', 'comprovante_endereco', 'doc_identidade_representante') THEN
+    RAISE EXCEPTION 'invalid_doc_key';
+  END IF;
+  IF length(COALESCE(p_content, '')) = 0 OR length(p_content) > 2800000 THEN
+    RAISE EXCEPTION 'invalid_file_size';
+  END IF;
+
+  SELECT * INTO v_row FROM public.professional_self_registration_tokens WHERE professional_id = p_professional_id FOR UPDATE;
+  IF NOT FOUND OR v_row.token_hash <> digest(COALESCE(p_token, ''), 'sha256') THEN
+    RAISE EXCEPTION 'invalid_token';
+  END IF;
+  IF v_row.expires_at < now() THEN
+    RAISE EXCEPTION 'token_expired';
+  END IF;
+  IF v_row.uploads_used >= 8 THEN
+    RAISE EXCEPTION 'upload_limit_reached';
+  END IF;
+
+  INSERT INTO public.professional_documents (professional_id, doc_key, content, meta)
+  VALUES (p_professional_id, p_doc_key, p_content, COALESCE(p_meta, '{}'::jsonb))
+  ON CONFLICT (professional_id, doc_key) DO UPDATE
+    SET content = EXCLUDED.content, meta = EXCLUDED.meta, created_at = now();
+
+  UPDATE public.professional_self_registration_tokens
+     SET uploads_used = uploads_used + 1
+   WHERE professional_id = p_professional_id;
+
+  RETURN jsonb_build_object('ok', true, 'doc_key', p_doc_key);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.attach_professional_self_registration_document(uuid, text, text, text, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attach_professional_self_registration_document(uuid, text, text, text, jsonb) TO anon, authenticated;
+
+-- 18.6 Um cadastro pendente não pode receber PIN nem registrar presença —
+-- só depois que o RH validar (registration_status = 'validated').
+CREATE OR REPLACE FUNCTION public.set_professional_pin(p_professional_id uuid, p_pin text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+  v_status text;
+BEGIN
+  SELECT unit_id, registration_status INTO v_unit, v_status FROM public.professionals WHERE id = p_professional_id;
+  IF v_unit IS NULL OR NOT public.jwt_is_supervisor_for_unit(v_unit) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  IF v_status IS DISTINCT FROM 'validated' THEN
+    RAISE EXCEPTION 'professional_pending_validation';
+  END IF;
+  IF NOT public.is_valid_professional_pin(p_pin) THEN
+    RAISE EXCEPTION 'pin_invalid_format';
+  END IF;
+
+  INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, updated_at)
+  VALUES (p_professional_id, crypt(p_pin, gen_salt('bf')), 0, NULL, now())
+  ON CONFLICT (professional_id) DO UPDATE
+    SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL, updated_at = now();
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_professional_pin(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_professional_pin(uuid, text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.register_professional_presence(
+  p_professional_id uuid,
+  p_pin text,
+  p_action text,
+  p_geo jsonb DEFAULT '{}'::jsonb,
+  p_note text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_prof public.professionals%ROWTYPE;
+  v_pj_enabled boolean;
+  v_last_action text;
+  v_new_id uuid;
+  v_ts timestamp with time zone := now();
+BEGIN
+  IF p_action NOT IN ('entrada', 'saida') THEN
+    RAISE EXCEPTION 'invalid_action';
+  END IF;
+
+  SELECT * INTO v_prof FROM public.professionals WHERE id = p_professional_id;
+  IF NOT FOUND OR NOT v_prof.active THEN
+    RAISE EXCEPTION 'professional_inactive';
+  END IF;
+  IF v_prof.registration_status IS DISTINCT FROM 'validated' THEN
+    RAISE EXCEPTION 'professional_pending_validation';
+  END IF;
+  IF NOT (public.jwt_is_professional_kiosk_for_unit(v_prof.unit_id) OR public.jwt_is_supervisor_for_unit(v_prof.unit_id)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  SELECT pj_enabled INTO v_pj_enabled FROM public.units WHERE id = v_prof.unit_id;
+  IF NOT COALESCE(v_pj_enabled, false) THEN
+    RAISE EXCEPTION 'unit_pj_disabled';
+  END IF;
+
+  PERFORM public.verify_professional_pin_internal(p_professional_id, p_pin);
+
+  IF v_prof.terms_accepted_at IS NULL THEN
+    RAISE EXCEPTION 'terms_not_accepted';
+  END IF;
+
+  SELECT action INTO v_last_action
+    FROM public.professional_presence
+   WHERE professional_id = p_professional_id
+     AND (timestamp AT TIME ZONE 'America/Belem')::date = (v_ts AT TIME ZONE 'America/Belem')::date
+   ORDER BY timestamp DESC
+   LIMIT 1;
+
+  IF p_action = 'entrada' AND v_last_action = 'entrada' THEN
+    RAISE EXCEPTION 'sequence_open_entry';
+  END IF;
+  IF p_action = 'saida' AND (v_last_action IS NULL OR v_last_action <> 'entrada') THEN
+    RAISE EXCEPTION 'sequence_no_entry';
+  END IF;
+
+  INSERT INTO public.professional_presence (professional_id, professional_name, unit_id, action, timestamp, auth_method, geo, note, created_by)
+  VALUES (p_professional_id, v_prof.name, v_prof.unit_id, p_action, v_ts, 'pin', COALESCE(p_geo, '{}'::jsonb), NULLIF(trim(p_note), ''), auth.uid())
+  RETURNING id INTO v_new_id;
+
+  RETURN jsonb_build_object('ok', true, 'id', v_new_id, 'timestamp', v_ts, 'action', p_action, 'name', v_prof.name);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.register_professional_presence(uuid, text, text, jsonb, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.register_professional_presence(uuid, text, text, jsonb, text) TO authenticated;
+
+-- 18.7 Quiosque PJ só lista prestadores já validados.
+DROP POLICY IF EXISTS "pj: leitura de profissionais" ON public.professionals;
+CREATE POLICY "pj: leitura de profissionais" ON public.professionals FOR SELECT
+  USING (
+    public.jwt_is_supervisor_for_unit(unit_id)
+    OR (public.jwt_is_professional_kiosk_for_unit(unit_id) AND registration_status = 'validated')
+  );
+
+-- 18.8 Habilita autocadastro nas unidades do Grupo IB que já têm o módulo PJ ligado.
+UPDATE public.units SET pj_self_registration_enabled = true
+ WHERE workspace_id = 'grupoib' AND pj_enabled = true AND pj_self_registration_enabled = false;

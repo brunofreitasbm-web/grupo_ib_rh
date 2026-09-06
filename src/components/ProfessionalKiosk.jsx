@@ -34,9 +34,10 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
     try {
       const { data, error: fetchError } = await supabase
         .from('professionals')
-        .select('id, unit_id, name, active, terms_accepted_at, terms_version')
+        .select('id, unit_id, name, active, terms_accepted_at, terms_version, registration_status')
         .eq('unit_id', unit.id)
         .eq('active', true)
+        .eq('registration_status', 'validated')
         .order('name', { ascending: true });
       if (fetchError) throw fetchError;
       setProfessionals((data || []).map(mapProfessionalFromDb));

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Eye, Trash, Upload, Loader2, X, Download, Plus } from 'lucide-react';
+import { FileText, Eye, Trash, Upload, Loader2, X, Download, Plus, ScrollText, Printer } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFriendlyDbErrorMessage } from '../../utils/mappings';
+import { getProfessionalContractHtml, getMissingContractFields } from '../../utils/professionalContract';
 import { toast } from 'sonner';
 
 // Documentos de Profissionais PJ: contrato de prestação de serviços, dados de
@@ -13,7 +14,7 @@ const FIXED_DOC_TYPES = [
   { key: 'conselho', label: 'Registro no Conselho Profissional' },
 ];
 
-export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitIds = [] }) {
+export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitIds = [], units = [], branding }) {
   const [professionals, setProfessionals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState('');
@@ -25,6 +26,8 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
   const [nfValor, setNfValor] = useState('');
 
   const [viewDoc, setViewDoc] = useState(null); // { base64, name, type }
+  const [contractPreview, setContractPreview] = useState(null); // { html } | null
+  const [savingContract, setSavingContract] = useState(false);
 
   const fetchProfessionals = useCallback(async () => {
     try {
@@ -137,6 +140,63 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
     return docKey;
   };
 
+  const selectedProfessional = professionals.find((p) => p.id === selectedId) || null;
+
+  // Emissão do contrato pré-pronto (ver ./utils/professionalContract). Só
+  // habilitado para cadastro já validado pelo RH e sem pendências de campo —
+  // evita gerar um documento com lacunas.
+  const handleEmitContract = () => {
+    if (!selectedProfessional) return;
+    if (selectedProfessional.registrationStatus && selectedProfessional.registrationStatus !== 'validated') {
+      toast.error('Este cadastro ainda não foi validado. Valide o cadastro em Profissionais PJ antes de emitir o contrato.');
+      return;
+    }
+    const missing = getMissingContractFields(selectedProfessional);
+    if (missing.length > 0) {
+      toast.error(`Complete os dados antes de emitir o contrato: ${missing.join(', ')}.`);
+      return;
+    }
+    const unit = units.find((u) => u.id === selectedProfessional.unitId) || null;
+    const html = getProfessionalContractHtml(selectedProfessional, unit, branding);
+    setContractPreview({ html });
+  };
+
+  const handlePrintContract = () => {
+    if (!contractPreview) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { toast.error('Não foi possível abrir a janela de impressão. Verifique o bloqueador de pop-ups.'); return; }
+    printWindow.document.write(`<html><head><title>Contrato de Prestação de Serviços</title></head><body>${contractPreview.html}</body></html>`);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+      setTimeout(() => printWindow.close(), 500);
+    };
+  };
+
+  // Arquiva a minuta emitida em professional_documents (doc_key 'contrato'),
+  // para histórico — mesma tabela usada pelo upload manual do RH.
+  const handleSaveContractToDossie = async () => {
+    if (!contractPreview || !selectedId) return;
+    setSavingContract(true);
+    try {
+      const { error } = await supabase.from('professional_documents').upsert({
+        professional_id: selectedId,
+        doc_key: 'contrato',
+        content: `data:text/html;charset=utf-8;base64,${btoa(unescape(encodeURIComponent(contractPreview.html)))}`,
+        meta: { name: 'Contrato de Prestação de Serviços.html', type: 'contrato', emitidoEm: new Date().toISOString() },
+      });
+      if (error) throw error;
+      toast.success('Minuta arquivada no dossiê do prestador.');
+      fetchDocs(selectedId);
+    } catch (err) {
+      console.error('Erro ao arquivar contrato:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setSavingContract(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -151,6 +211,14 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
           <FileText size={20} className="text-teal-600" /> Contratos &amp; Notas Fiscais
         </h2>
+        {selectedId && (
+          <button
+            onClick={handleEmitContract}
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-3 rounded-lg text-xs"
+          >
+            <ScrollText size={14} /> Emitir Contrato
+          </button>
+        )}
       </div>
 
       <div className="p-4 space-y-4">
@@ -282,6 +350,38 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
             >
               <Download size={13} /> Baixar Arquivo
             </a>
+          </div>
+        </div>
+      )}
+
+      {contractPreview && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-3xl relative h-[90vh] flex flex-col">
+            <button onClick={() => setContractPreview(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-white rounded-full p-1.5 border border-gray-200">
+              <X size={18} />
+            </button>
+            <h3 className="text-base font-bold text-gray-800 mb-1">Contrato de Prestação de Serviços — Minuta</h3>
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mb-3">
+              Documento gerado automaticamente a partir do cadastro do prestador. Revise com o jurídico antes de qualquer assinatura.
+            </p>
+            <div className="flex-1 w-full bg-white rounded-xl overflow-y-auto border border-slate-200 mb-4 p-2">
+              <div dangerouslySetInnerHTML={{ __html: contractPreview.html }} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleSaveContractToDossie}
+                disabled={savingContract}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 px-3 rounded-lg text-xs inline-flex items-center gap-1 disabled:opacity-50"
+              >
+                {savingContract ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Arquivar no Dossiê
+              </button>
+              <button
+                onClick={handlePrintContract}
+                className="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs inline-flex items-center gap-1"
+              >
+                <Printer size={13} /> Imprimir / Salvar PDF
+              </button>
+            </div>
           </div>
         </div>
       )}

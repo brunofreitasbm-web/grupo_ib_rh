@@ -43,6 +43,11 @@ export const WORKSPACES = {
       'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
       'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
       'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+    // Autocadastro de Profissionais PJ (ver ProfessionalSelfRegistration.jsx)
+    // — desligado neste site junto com o restante do módulo PJ.
+    showProfessionalSelfRegistration: false,
+    autonomyDeclarationVersion: '1.0',
+    autonomyDeclarationText: '',
     // Módulo de Funcionários CLT — ver EmployeeKiosk.jsx. Desligado neste site
     // (a Porto Terapia hoje não usa o hub para empregados CLT).
     showEmployeesModule: false,
@@ -139,6 +144,29 @@ export const WORKSPACES = {
       'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
       'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
       'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+    // Autocadastro de Profissionais PJ (ver ProfessionalSelfRegistration.jsx)
+    // — o próprio prestador preenche seu cadastro completo (dados da PJ,
+    // habilitação, representante legal e anexos) sem estar logado, nascendo
+    // 'pending_validation' até o RH validar. Ver seção 18 de supabase_schema.sql.
+    showProfessionalSelfRegistration: true,
+    autonomyDeclarationVersion: '1.0',
+    // Aceite obrigatório e versionado, separado do consentimento LGPD — é a
+    // peça central da blindagem de vínculo trabalhista deste módulo.
+    autonomyDeclarationText:
+      'Declaro, para os fins do contrato de prestação de serviços a ser firmado, que atuo com ' +
+      'plena autonomia técnica e organizacional na execução dos serviços, sem subordinação, ' +
+      'pessoalidade ou habitualidade em relação à contratante; que defino livremente minha agenda ' +
+      'e forma de atendimento; que posso me fazer substituir por preposto(a) habilitado(a); que não ' +
+      'atendo a esta contratante em regime de exclusividade; e que sou responsável pelos tributos, ' +
+      'encargos previdenciários e obrigações civis decorrentes da minha atividade como pessoa ' +
+      'jurídica. Este cadastro e o contrato dele decorrente têm natureza exclusivamente civil, sem ' +
+      'qualquer vínculo empregatício com a contratante. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+    // Cláusulas padrão do contrato de prestação de serviços pré-preenchido
+    // (ver ./utils/professionalContract.js); cada unidade pode complementar
+    // com units.contrato_pj_custom_text.
+    contractDefaultClauses:
+      '[MINUTA GERADA AUTOMATICAMENTE — SUJEITA A REVISÃO JURÍDICA ANTES DA ASSINATURA. ' +
+      'TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
     // Módulo de Funcionários CLT (empregados) — ver EmployeeKiosk.jsx. Ligado
     // no Grupo IB: terceiro tipo de vínculo do hub de RH, ao lado de
     // Estagiários e Profissionais PJ. Ao contrário do PJ, este módulo se
