@@ -3,6 +3,7 @@ import {
   Building2, 
   MapPin, 
   ShieldCheck, 
+  ShieldAlert,
   Bell, 
   Palette, 
   Save, 
