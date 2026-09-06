@@ -1350,3 +1350,369 @@ ALTER TABLE public.units
   ADD COLUMN IF NOT EXISTS ficha_custom_text text;
 
 
+
+-- =========================================================================
+-- 16. MÓDULO PROFISSIONAIS PJ (prestadores de serviço) — Grupo IB
+-- Tabelas próprias, separadas de interns/records, para que a presença de
+-- prestadores nunca se misture com o ponto/bolsa de estagiários. Isolamento
+-- feito no servidor via papel de quiosque próprio ('professional_unit'):
+--   * intern_unit não aparece em nenhuma policy das tabelas professional_*
+--   * professional_unit não aparece nas policies de interns/records
+--   * supervisor (com jwt_has_workspace_access) administra ambos
+-- Idempotente: pode ser rodado de novo sem duplicar/quebrar nada.
+-- =========================================================================
+
+-- 16.1 Colunas em units: habilita o módulo por unidade e define o login de quiosque PJ
+ALTER TABLE public.units
+  ADD COLUMN IF NOT EXISTS pj_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS pj_kiosk_email text;
+
+UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-parqueshopping@grupoib.internal' WHERE id = 'faca-amigos-parque-shopping' AND pj_kiosk_email IS NULL;
+UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-graopara@grupoib.internal'       WHERE id = 'faca-amigos-grao-para'       AND pj_kiosk_email IS NULL;
+UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-clinicaa@grupoib.internal'       WHERE id = 'clinica-a'                   AND pj_kiosk_email IS NULL;
+UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-clinicab@grupoib.internal'       WHERE id = 'clinica-b'                   AND pj_kiosk_email IS NULL;
+
+-- 16.2 Tabelas
+CREATE TABLE IF NOT EXISTS public.professionals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  unit_id text NOT NULL REFERENCES public.units(id),
+  name text NOT NULL,
+  profession text,
+  council_type text,
+  council_number text,
+  cpf text,
+  cnpj text,
+  razao_social text,
+  email text,
+  phone text,
+  contract_start date,
+  contract_end date,
+  contract_notes text,
+  active boolean NOT NULL DEFAULT true,
+  terms_accepted_at timestamp with time zone,
+  terms_version text,
+  photo text,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+-- PIN em tabela própria, SEM policies: só as funções SECURITY DEFINER abaixo a acessam.
+CREATE TABLE IF NOT EXISTS public.professional_pins (
+  professional_id uuid PRIMARY KEY REFERENCES public.professionals(id) ON DELETE CASCADE,
+  pin_hash text NOT NULL,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  locked_until timestamp with time zone,
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.professional_presence (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  professional_id uuid REFERENCES public.professionals(id) ON DELETE SET NULL,
+  professional_name text,
+  unit_id text REFERENCES public.units(id) ON DELETE SET NULL,
+  action text NOT NULL CHECK (action IN ('entrada', 'saida')),
+  timestamp timestamp with time zone NOT NULL DEFAULT now(),
+  auth_method text NOT NULL DEFAULT 'pin',
+  geo jsonb DEFAULT '{}'::jsonb,
+  note text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.professional_documents (
+  professional_id uuid REFERENCES public.professionals(id) ON DELETE CASCADE,
+  doc_key text NOT NULL,
+  content text NOT NULL,
+  meta jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (professional_id, doc_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_professionals_unit_id ON public.professionals(unit_id);
+CREATE INDEX IF NOT EXISTS idx_professional_presence_professional ON public.professional_presence(professional_id);
+CREATE INDEX IF NOT EXISTS idx_professional_presence_unit ON public.professional_presence(unit_id);
+CREATE INDEX IF NOT EXISTS idx_professional_presence_timestamp ON public.professional_presence(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_professional_documents_prof ON public.professional_documents(professional_id, doc_key);
+
+ALTER TABLE public.professionals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.professional_pins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.professional_presence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.professional_documents ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'professional_presence') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.professional_presence;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'professionals') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.professionals;
+  END IF;
+END $$;
+
+-- 16.3 Helpers de RLS
+CREATE OR REPLACE FUNCTION public.jwt_is_supervisor_for_unit(target_unit text) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT (auth.jwt() -> 'user_metadata' ->> 'role') = 'supervisor'
+     AND EXISTS (SELECT 1 FROM public.units u WHERE u.id = target_unit AND public.jwt_has_workspace_access(u.workspace_id));
+$$;
+
+CREATE OR REPLACE FUNCTION public.jwt_is_professional_kiosk_for_unit(target_unit text) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT (auth.jwt() -> 'user_metadata' ->> 'role') = 'professional_unit'
+     AND target_unit IS NOT NULL
+     AND (auth.jwt() -> 'user_metadata' ->> 'unit_id') = target_unit;
+$$;
+
+-- 16.4 Policies
+DROP POLICY IF EXISTS "pj: leitura de profissionais" ON public.professionals;
+CREATE POLICY "pj: leitura de profissionais" ON public.professionals FOR SELECT
+  USING (public.jwt_is_supervisor_for_unit(unit_id) OR public.jwt_is_professional_kiosk_for_unit(unit_id));
+
+DROP POLICY IF EXISTS "pj: escrita de profissionais (supervisor)" ON public.professionals;
+CREATE POLICY "pj: escrita de profissionais (supervisor)" ON public.professionals FOR ALL
+  USING (public.jwt_is_supervisor_for_unit(unit_id))
+  WITH CHECK (public.jwt_is_supervisor_for_unit(unit_id));
+
+DROP POLICY IF EXISTS "pj: leitura de presenca" ON public.professional_presence;
+CREATE POLICY "pj: leitura de presenca" ON public.professional_presence FOR SELECT
+  USING (public.jwt_is_supervisor_for_unit(unit_id) OR public.jwt_is_professional_kiosk_for_unit(unit_id));
+
+-- Quiosque só insere via RPC (register_professional_presence); inserção direta é do supervisor.
+DROP POLICY IF EXISTS "pj: escrita de presenca (supervisor)" ON public.professional_presence;
+CREATE POLICY "pj: escrita de presenca (supervisor)" ON public.professional_presence FOR ALL
+  USING (public.jwt_is_supervisor_for_unit(unit_id))
+  WITH CHECK (public.jwt_is_supervisor_for_unit(unit_id));
+
+DROP POLICY IF EXISTS "pj: documentos (supervisor)" ON public.professional_documents;
+CREATE POLICY "pj: documentos (supervisor)" ON public.professional_documents FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.professionals p WHERE p.id = professional_id AND public.jwt_is_supervisor_for_unit(p.unit_id)))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.professionals p WHERE p.id = professional_id AND public.jwt_is_supervisor_for_unit(p.unit_id)));
+
+-- professional_pins: RLS ligado e NENHUMA policy — inacessível pela API.
+
+-- 16.5 Funções (SECURITY DEFINER)
+
+-- Regra de PIN: exatamente 6 dígitos, sem sequências triviais.
+CREATE OR REPLACE FUNCTION public.is_valid_professional_pin(p_pin text) RETURNS boolean
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT p_pin ~ '^[0-9]{6}$'
+     AND p_pin !~ '^(\d)\1{5}$'
+     AND p_pin NOT IN ('123456', '654321', '012345', '543210', '112233', '123123', '111222', '222333');
+$$;
+
+-- Supervisor define/reseta o PIN de um prestador.
+CREATE OR REPLACE FUNCTION public.set_professional_pin(p_professional_id uuid, p_pin text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  SELECT unit_id INTO v_unit FROM public.professionals WHERE id = p_professional_id;
+  IF v_unit IS NULL OR NOT public.jwt_is_supervisor_for_unit(v_unit) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  IF NOT public.is_valid_professional_pin(p_pin) THEN
+    RAISE EXCEPTION 'pin_invalid_format';
+  END IF;
+
+  INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, updated_at)
+  VALUES (p_professional_id, crypt(p_pin, gen_salt('bf')), 0, NULL, now())
+  ON CONFLICT (professional_id) DO UPDATE
+    SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL, updated_at = now();
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_professional_pin(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_professional_pin(uuid, text) TO authenticated;
+
+-- Verificação interna de PIN com bloqueio (5 erros → 15 min). Não exposta à API.
+CREATE OR REPLACE FUNCTION public.verify_professional_pin_internal(p_professional_id uuid, p_pin text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_row public.professional_pins%ROWTYPE;
+BEGIN
+  SELECT * INTO v_row FROM public.professional_pins WHERE professional_id = p_professional_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'pin_not_set';
+  END IF;
+  IF v_row.locked_until IS NOT NULL AND v_row.locked_until > now() THEN
+    RAISE EXCEPTION 'pin_locked';
+  END IF;
+  IF v_row.pin_hash <> crypt(COALESCE(p_pin, ''), v_row.pin_hash) THEN
+    UPDATE public.professional_pins
+       SET failed_attempts = failed_attempts + 1,
+           locked_until = CASE WHEN failed_attempts + 1 >= 5 THEN now() + interval '15 minutes' ELSE NULL END,
+           updated_at = now()
+     WHERE professional_id = p_professional_id;
+    RAISE EXCEPTION 'pin_invalid';
+  END IF;
+  UPDATE public.professional_pins
+     SET failed_attempts = 0, locked_until = NULL
+   WHERE professional_id = p_professional_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.verify_professional_pin_internal(uuid, text) FROM PUBLIC, anon, authenticated;
+
+-- Prestador altera o próprio PIN a partir do quiosque da sua unidade.
+CREATE OR REPLACE FUNCTION public.change_professional_pin(p_professional_id uuid, p_current_pin text, p_new_pin text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  SELECT unit_id INTO v_unit FROM public.professionals WHERE id = p_professional_id AND active;
+  IF v_unit IS NULL OR NOT (public.jwt_is_professional_kiosk_for_unit(v_unit) OR public.jwt_is_supervisor_for_unit(v_unit)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  IF NOT public.is_valid_professional_pin(p_new_pin) THEN
+    RAISE EXCEPTION 'pin_invalid_format';
+  END IF;
+  PERFORM public.verify_professional_pin_internal(p_professional_id, p_current_pin);
+  UPDATE public.professional_pins
+     SET pin_hash = crypt(p_new_pin, gen_salt('bf')), failed_attempts = 0, locked_until = NULL, updated_at = now()
+   WHERE professional_id = p_professional_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.change_professional_pin(uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.change_professional_pin(uuid, text, text) TO authenticated;
+
+-- Aceite do termo de ciência (1ª utilização), validado pelo PIN.
+CREATE OR REPLACE FUNCTION public.accept_professional_terms(p_professional_id uuid, p_pin text, p_version text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  SELECT unit_id INTO v_unit FROM public.professionals WHERE id = p_professional_id AND active;
+  IF v_unit IS NULL OR NOT (public.jwt_is_professional_kiosk_for_unit(v_unit) OR public.jwt_is_supervisor_for_unit(v_unit)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  PERFORM public.verify_professional_pin_internal(p_professional_id, p_pin);
+  UPDATE public.professionals
+     SET terms_accepted_at = now(), terms_version = p_version
+   WHERE id = p_professional_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.accept_professional_terms(uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.accept_professional_terms(uuid, text, text) TO authenticated;
+
+-- Registro de presença pelo quiosque: valida papel/unidade, PIN, sequência
+-- entrada→saída do dia e insere. GPS é meramente informativo (jsonb livre).
+CREATE OR REPLACE FUNCTION public.register_professional_presence(
+  p_professional_id uuid,
+  p_pin text,
+  p_action text,
+  p_geo jsonb DEFAULT '{}'::jsonb,
+  p_note text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_prof public.professionals%ROWTYPE;
+  v_pj_enabled boolean;
+  v_last_action text;
+  v_new_id uuid;
+  v_ts timestamp with time zone := now();
+BEGIN
+  IF p_action NOT IN ('entrada', 'saida') THEN
+    RAISE EXCEPTION 'invalid_action';
+  END IF;
+
+  SELECT * INTO v_prof FROM public.professionals WHERE id = p_professional_id;
+  IF NOT FOUND OR NOT v_prof.active THEN
+    RAISE EXCEPTION 'professional_inactive';
+  END IF;
+  IF NOT (public.jwt_is_professional_kiosk_for_unit(v_prof.unit_id) OR public.jwt_is_supervisor_for_unit(v_prof.unit_id)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  SELECT pj_enabled INTO v_pj_enabled FROM public.units WHERE id = v_prof.unit_id;
+  IF NOT COALESCE(v_pj_enabled, false) THEN
+    RAISE EXCEPTION 'unit_pj_disabled';
+  END IF;
+
+  PERFORM public.verify_professional_pin_internal(p_professional_id, p_pin);
+
+  IF v_prof.terms_accepted_at IS NULL THEN
+    RAISE EXCEPTION 'terms_not_accepted';
+  END IF;
+
+  SELECT action INTO v_last_action
+    FROM public.professional_presence
+   WHERE professional_id = p_professional_id
+     AND (timestamp AT TIME ZONE 'America/Belem')::date = (v_ts AT TIME ZONE 'America/Belem')::date
+   ORDER BY timestamp DESC
+   LIMIT 1;
+
+  IF p_action = 'entrada' AND v_last_action = 'entrada' THEN
+    RAISE EXCEPTION 'sequence_open_entry';
+  END IF;
+  IF p_action = 'saida' AND (v_last_action IS NULL OR v_last_action <> 'entrada') THEN
+    RAISE EXCEPTION 'sequence_no_entry';
+  END IF;
+
+  INSERT INTO public.professional_presence (professional_id, professional_name, unit_id, action, timestamp, auth_method, geo, note, created_by)
+  VALUES (p_professional_id, v_prof.name, v_prof.unit_id, p_action, v_ts, 'pin', COALESCE(p_geo, '{}'::jsonb), NULLIF(trim(p_note), ''), auth.uid())
+  RETURNING id INTO v_new_id;
+
+  RETURN jsonb_build_object('ok', true, 'id', v_new_id, 'timestamp', v_ts, 'action', p_action, 'name', v_prof.name);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.register_professional_presence(uuid, text, text, jsonb, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.register_professional_presence(uuid, text, text, jsonb, text) TO authenticated;
+
+-- Indica ao painel se o prestador já tem PIN (sem expor o hash).
+CREATE OR REPLACE FUNCTION public.professional_has_pin(p_professional_id uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  SELECT unit_id INTO v_unit FROM public.professionals WHERE id = p_professional_id;
+  IF v_unit IS NULL OR NOT (public.jwt_is_supervisor_for_unit(v_unit) OR public.jwt_is_professional_kiosk_for_unit(v_unit)) THEN
+    RETURN false;
+  END IF;
+  RETURN EXISTS (SELECT 1 FROM public.professional_pins WHERE professional_id = p_professional_id);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.professional_has_pin(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.professional_has_pin(uuid) TO authenticated;
+
+-- 16.6 Logins de quiosque PJ (um por unidade do Grupo IB), papel 'professional_unit'.
+DO $$
+DECLARE
+  units_data jsonb := '[
+    {"email": "pj-parqueshopping@grupoib.internal", "name": "Prestadores Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
+    {"email": "pj-graopara@grupoib.internal",       "name": "Prestadores Faça Amigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
+    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores Clínica A",                   "unit_id": "clinica-a"},
+    {"email": "pj-clinicab@grupoib.internal",       "name": "Prestadores Clínica B",                   "unit_id": "clinica-b"}
+  ]'::jsonb;
+  u jsonb;
+  new_id uuid;
+BEGIN
+  FOR u IN SELECT * FROM jsonb_array_elements(units_data) LOOP
+    DELETE FROM auth.users WHERE email = (u->>'email');
+    new_id := gen_random_uuid();
+
+    INSERT INTO auth.users (
+      id, instance_id, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, aud, role, created_at, updated_at,
+      confirmation_token, recovery_token, email_change_token_new, email_change,
+      is_sso_user, is_anonymous
+    ) VALUES (
+      new_id, '00000000-0000-0000-0000-000000000000', u->>'email',
+      crypt('estagio123', gen_salt('bf')), now(),
+      '{"provider": "email", "providers": ["email"]}'::jsonb,
+      jsonb_build_object('name', u->>'name', 'role', 'professional_unit', 'unit_id', u->>'unit_id'),
+      'authenticated', 'authenticated', now(), now(),
+      '', '', '', '', false, false
+    );
+
+    INSERT INTO auth.identities (
+      id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+    ) VALUES (
+      gen_random_uuid(), new_id,
+      jsonb_build_object('sub', new_id::text, 'email', u->>'email'),
+      'email', new_id::text, now(), now(), now()
+    );
+  END LOOP;
+END $$;
+
+-- 16.7 O quiosque PJ precisa ler a própria unidade (nome/endereço). A policy de
+-- leitura de units não contemplava o papel 'professional_unit'.
+DROP POLICY IF EXISTS "Permitir leitura de unidades para quiosque PJ" ON public.units;
+CREATE POLICY "Permitir leitura de unidades para quiosque PJ"
+    ON public.units FOR SELECT
+    USING (public.jwt_is_professional_kiosk_for_unit(id));

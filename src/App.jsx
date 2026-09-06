@@ -48,8 +48,15 @@ const DossieTab = lazyWithRetry(() => import('./components/tabs/DossieTab'));
 const AlertasRhTab = lazyWithRetry(() => import('./components/tabs/AlertasRhTab'));
 const AniversariantesTab = lazyWithRetry(() => import('./components/tabs/AniversariantesTab'));
 const ConfiguracoesTab = lazyWithRetry(() => import('./components/tabs/ConfiguracoesTab'));
+// Abas do módulo Profissionais PJ (prestadores de serviço) — separadas das
+// abas de estagiário de propósito (ver plano do módulo PJ, seção 3.5).
+const ProfissionaisTab = lazyWithRetry(() => import('./components/tabs/ProfissionaisTab'));
+const PresencaProfissionaisTab = lazyWithRetry(() => import('./components/tabs/PresencaProfissionaisTab'));
+const ProducaoProfissionaisTab = lazyWithRetry(() => import('./components/tabs/ProducaoProfissionaisTab'));
+const DocumentosProfissionaisTab = lazyWithRetry(() => import('./components/tabs/DocumentosProfissionaisTab'));
 import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
+import ProfessionalKiosk from './components/ProfessionalKiosk';
 
 
 
@@ -148,6 +155,10 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('kiosk'); // 'landing' | 'kiosk' | 'admin'
   const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
+  // Módulo do painel administrativo: estagiários (padrão) ou Profissionais PJ.
+  // Mantidos em telas totalmente separadas — nenhum componente é compartilhado
+  // entre os dois exceto Configurações (ver plano do módulo PJ).
+  const [adminModule, setAdminModule] = useState('interns');
   const [records, setRecords] = useState([]);
   const [interns, setInterns] = useState([]);
   const [internsLoaded, setInternsLoaded] = useState(false);
@@ -180,6 +191,9 @@ export default function App() {
 
   // Estados de Login
   const [loggedInIntern, setLoggedInIntern] = useState(null);
+  // Sessão do quiosque de Profissionais PJ — separada de loggedInIntern de
+  // propósito (papel 'professional_unit', ver handleSession e supabase_schema.sql seção 16).
+  const [professionalKiosk, setProfessionalKiosk] = useState(null);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -491,6 +505,16 @@ export default function App() {
         setSelectedIntern('');
         setSelectedUnit(unitId || '');
         setLoginError('');
+      } else if (role === 'professional_unit') {
+        // Quiosque de Profissionais PJ (prestadores de serviço) — papel próprio,
+        // isolado no servidor de 'intern_unit' (ver supabase_schema.sql, seção 16).
+        setLoggedInIntern(null);
+        setProfessionalKiosk({
+          unitId: userObj.user_metadata?.unit_id || '',
+          name: userObj.user_metadata?.name || 'Profissionais PJ',
+        });
+        setCurrentView('pj_kiosk');
+        setLoginError('');
       } else {
         console.error('Usuário sem papel (role) definido.');
         setLoginError('Esta conta não possui permissão de acesso (papel indefinido).');
@@ -499,6 +523,7 @@ export default function App() {
     } else {
       setUser(null);
       setLoggedInIntern(null);
+      setProfessionalKiosk(null);
       setSelectedIntern('');
       setCurrentView('kiosk');
     }
@@ -589,13 +614,14 @@ export default function App() {
 
   useEffect(() => {
     const handleOnline = async () => {
-      const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
+      const offlineStorageKey = `offline_records_${BRANDING.id || 'porto-terapia'}`;
+      const offlineRecords = JSON.parse(localStorage.getItem(offlineStorageKey) || '[]');
       if (offlineRecords.length > 0) {
         toast.info(`Sincronizando ${offlineRecords.length} ponto(s) salvo(s) offline...`);
         try {
           const { error } = await supabase.from('records').insert(offlineRecords.map(mapRecordToDb));
           if (error) throw error;
-          localStorage.removeItem('offline_records');
+          localStorage.removeItem(offlineStorageKey);
           toast.success('Pontos offline sincronizados com sucesso!');
           fetchRecords();
         } catch (error) {
@@ -1029,6 +1055,37 @@ export default function App() {
     }
   };
 
+  // Login direto sem senha para o quiosque de Profissionais PJ por unidade.
+  const handleDirectProfessionalLogin = async (unitOption) => {
+    setLoginError('');
+    setGpsLoading(true);
+    const kioskUnit = BRANDING.kioskUnits.find((ku) => ku.id === unitOption);
+    const email = kioskUnit?.professionalKioskEmail || '';
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: 'estagio123',
+      });
+
+      if (!error) {
+        setProfessionalKiosk({
+          unitId: unitOption,
+          name: kioskUnit?.professionalButtonLabel || 'Profissionais PJ',
+        });
+        setCurrentView('pj_kiosk');
+      } else {
+        console.error('Erro ao acessar quiosque PJ da unidade:', error);
+        toast.error('Não foi possível acessar o quiosque de profissionais desta unidade. Tente novamente ou contate a administração.');
+      }
+    } catch (err) {
+      console.error('Erro ao acessar quiosque PJ da unidade:', err);
+      toast.error('Não foi possível acessar o quiosque de profissionais desta unidade. Verifique sua conexão e tente novamente.');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     stopCamera();
     try {
@@ -1343,7 +1400,9 @@ export default function App() {
   }, []);
 
   const runAutomaticBackupCheck = useCallback(async () => {
-    const savedConfig = localStorage.getItem('app_configuracoes');
+    const configStorageKey = `app_configuracoes_${BRANDING.id || 'porto-terapia'}`;
+    const backupDateStorageKey = `${BRANDING.id || 'porto-terapia'}_last_backup_date`;
+    const savedConfig = localStorage.getItem(configStorageKey);
     if (!savedConfig) return;
     const config = JSON.parse(savedConfig);
 
@@ -1351,7 +1410,7 @@ export default function App() {
     if (interval === 'desativado') return;
 
     const email = config.emailBackup || config.emailNotificacoes || BRANDING.rhEmail;
-    const lastBackupStr = localStorage.getItem('porto_last_backup_date');
+    const lastBackupStr = localStorage.getItem(backupDateStorageKey);
     const now = Date.now();
 
     let shouldBackup = false;
@@ -1371,7 +1430,7 @@ export default function App() {
         toast.info(`Iniciando backup automático (${interval})...`);
         setTimeout(() => {
           toast.success(`Backup programado enviado com sucesso para o e-mail: ${email}`);
-          localStorage.setItem('porto_last_backup_date', new Date().toISOString());
+          localStorage.setItem(backupDateStorageKey, new Date().toISOString());
         }, 1500);
 
       } catch (err) {
@@ -1749,9 +1808,10 @@ export default function App() {
       console.error('Erro ao salvar:', error);
       if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('Network') || error.message.includes('fetch'))) {
         toast.info('O ponto foi salvo offline e será sincronizado quando houver internet.');
-        const offlineRecords = JSON.parse(localStorage.getItem('offline_records') || '[]');
+        const offlineStorageKey = `offline_records_${BRANDING.id || 'porto-terapia'}`;
+        const offlineRecords = JSON.parse(localStorage.getItem(offlineStorageKey) || '[]');
         offlineRecords.push(newRecord);
-        localStorage.setItem('offline_records', JSON.stringify(offlineRecords));
+        localStorage.setItem(offlineStorageKey, JSON.stringify(offlineRecords));
         stopCamera();
         setShowSuccess(true);
         setTimeout(() => {
@@ -2575,6 +2635,36 @@ export default function App() {
                       );
                     })}
                   </div>
+
+                  {BRANDING.showProfessionalsModule && (
+                    <div className="pt-2">
+                      <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-2 px-1">
+                        {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                      </p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {BRANDING.kioskUnits.filter((ku) => ku.professionalKioskEmail).map((ku) => (
+                          <button
+                            key={`pj-${ku.id}`}
+                            type="button"
+                            onClick={() => handleDirectProfessionalLogin(ku.id)}
+                            disabled={gpsLoading}
+                            className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-teal-500 hover:bg-teal-50 transition-all flex items-center gap-4 text-left group disabled:opacity-50"
+                          >
+                            <div className="p-2.5 rounded-lg bg-teal-100 text-teal-700 group-hover:bg-teal-200 transition-colors">
+                              <Building2 size={20} />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-bold text-gray-800 text-sm">{ku.professionalButtonLabel || `Profissionais PJ - ${ku.buttonLabel}`}</h4>
+                                <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-teal-100 text-teal-800">PIN</span>
+                              </div>
+                              <p className="text-[10px] text-gray-500">Registro de presença por PIN de 6 dígitos</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
                     <button
@@ -7441,7 +7531,7 @@ export default function App() {
   // PAINEL DA SUPERVISÃO (admin)
   // ============================================================
   const renderAdmin = () => {
-    const adminNavItems = [
+    const internNavItems = [
       { id: 'dashboard',       label: 'Dashboard',               icon: '📊' },
       { id: 'estagiarios',     label: 'Estagiários',             icon: '👤' },
       { id: 'documentos',      label: 'Documentos',              icon: '🖨️' },
@@ -7455,6 +7545,20 @@ export default function App() {
       { id: 'aniversariantes', label: 'Aniversariantes',         icon: '🎂' },
       { id: 'configuracoes',    label: 'Configurações',           icon: '⚙️' },
     ];
+
+    const professionalLabels = BRANDING.professionalLabels || { plural: 'Profissionais PJ' };
+    const professionalNavItems = [
+      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: '👥' },
+      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: '🗓️' },
+      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: '🧾' },
+      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: '📄' },
+      { id: 'configuracoes',    label: 'Configurações',           icon: '⚙️' },
+    ];
+
+    // Módulo PJ só aparece para quem tem BRANDING.showProfessionalsModule
+    // (Grupo IB) — a Porto Terapia nunca vê o toggle nem as abas de PJ.
+    const showModuleToggle = !!BRANDING.showProfessionalsModule;
+    const adminNavItems = adminModule === 'professionals' && showModuleToggle ? professionalNavItems : internNavItems;
 
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
@@ -7495,6 +7599,37 @@ export default function App() {
                       {ws.displayName}
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+            {showModuleToggle && (
+              <div>
+                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                  Módulo
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setAdminModule('interns'); setActiveAdminTab('dashboard'); }}
+                    className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                      adminModule === 'interns'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
+                    }`}
+                  >
+                    Estagiários
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_profissionais'); }}
+                    className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                      adminModule === 'professionals'
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-teal-400'
+                    }`}
+                  >
+                    {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                  </button>
                 </div>
               </div>
             )}
@@ -7573,7 +7708,7 @@ export default function App() {
         <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
           <div className="max-w-7xl mx-auto space-y-6">
 
-            {hoursAlerts.length > 0 && (
+            {adminModule !== 'professionals' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
                 <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2 text-sm">
                   <AlertTriangle size={18} /> Atenção: Limite de Carga Horária Excedido ({LABOR.maxDailyHours}h/dia)
@@ -7632,6 +7767,18 @@ export default function App() {
                   </div>
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
                     <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'pj_profissionais' ? 'block' : 'none' }}>
+                    <ProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'pj_presenca' ? 'block' : 'none' }}>
+                    <PresencaProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'pj_producao' ? 'block' : 'none' }}>
+                    <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
+                    <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
                 </Suspense>
               </ErrorBoundary>
@@ -7701,6 +7848,17 @@ export default function App() {
         renderRecadastroSection()
       ) : currentView === 'autogestao_biometria' ? (
         renderAutogestaoBiometria()
+      ) : currentView === 'pj_kiosk' && professionalKiosk ? (
+        <ProfessionalKiosk
+          unit={
+            units.find((u) => u.id === professionalKiosk.unitId) || (() => {
+              const ku = BRANDING.kioskUnits.find((k) => k.id === professionalKiosk.unitId);
+              return { id: professionalKiosk.unitId, name: ku?.buttonLabel || professionalKiosk.unitId, address: ku?.address || '' };
+            })()
+          }
+          branding={BRANDING}
+          onLogout={handleLogout}
+        />
       ) : (
         renderAdmin()
       )}

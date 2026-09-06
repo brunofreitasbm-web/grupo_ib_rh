@@ -26,6 +26,23 @@ export const WORKSPACES = {
     // Domínio usado quando um estagiário é cadastrado sem e-mail próprio
     // (vira <usuario>@<fallbackInternEmailDomain>).
     fallbackInternEmailDomain: 'portoterapia.com',
+    // Módulo de Profissionais PJ (prestadores de serviço) — ver ProfessionalKiosk.jsx.
+    // Desligado neste site: a Porto Terapia hoje só controla estagiários.
+    showProfessionalsModule: false,
+    professionalTermsVersion: '1.0',
+    professionalLabels: {
+      singular: 'Prestador(a)',
+      plural: 'Profissionais PJ',
+      presence: 'Registro de Presença',
+      production: 'Apuração de Produção',
+    },
+    professionalTermsText:
+      'Este registro de presença serve exclusivamente para organização de agenda, ' +
+      'segurança do local e conferência dos serviços prestados para fins de faturamento. ' +
+      'Ele não constitui, e não deve ser interpretado como, controle de jornada de trabalho, ' +
+      'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
+      'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
+      'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
     // Contas com role 'supervisor' que podem logar nomeadas neste site
     // (resolveAdminKey). Qualquer outro texto digitado cai no "supervisor"
     // genérico. O e-mail de cada uma é o mesmo em auth.users nos dois sites
@@ -93,6 +110,24 @@ export const WORKSPACES = {
     phone: '(91) 99999-0000',
     showSupervisionChat: false,
     fallbackInternEmailDomain: 'grupoib.internal',
+    // Módulo de Profissionais PJ (prestadores de serviço) — ver ProfessionalKiosk.jsx.
+    // Vocabulário e regras deliberadamente distintos do estágio, para não sugerir
+    // vínculo empregatício (ver seção 1 do plano de implementação do módulo).
+    showProfessionalsModule: true,
+    professionalTermsVersion: '1.0',
+    professionalLabels: {
+      singular: 'Prestador(a)',
+      plural: 'Profissionais PJ',
+      presence: 'Registro de Presença',
+      production: 'Apuração de Produção',
+    },
+    professionalTermsText:
+      'Este registro de presença serve exclusivamente para organização de agenda, ' +
+      'segurança do local e conferência dos serviços prestados para fins de faturamento. ' +
+      'Ele não constitui, e não deve ser interpretado como, controle de jornada de trabalho, ' +
+      'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
+      'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
+      'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
     // Somente o Bruno é admin nomeado neste site (mesma conta Supabase de
     // sempre); Guimelly/Isabella continuam com acesso de dados ao Grupo IB
     // (workspace_scope inclui "all"), mas não aparecem como opção de login
@@ -106,6 +141,8 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Faça Amigos Parque Shopping',
         loginLabel: 'Estagiário - Faça Amigos Parque Shopping',
         kioskEmail: 'parqueshopping@grupoib.internal',
+        professionalButtonLabel: 'Profissionais PJ - Faça Amigos Parque Shopping',
+        professionalKioskEmail: 'pj-parqueshopping@grupoib.internal',
         razaoSocial: 'Faça Amigos Parque Shopping Serviços Médicos LTDA',
         cnpj: '00.000.000/0001-01',
         address: 'Rod. Augusto Montenegro, 4300 - Parque Shopping, Belém - PA',
@@ -117,6 +154,8 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Faça Amigos Grão Pará',
         loginLabel: 'Estagiário - Faça Amigos Grão Pará',
         kioskEmail: 'graopara@grupoib.internal',
+        professionalButtonLabel: 'Profissionais PJ - Faça Amigos Grão Pará',
+        professionalKioskEmail: 'pj-graopara@grupoib.internal',
         razaoSocial: 'Faça Amigos Grão Pará Serviços Médicos LTDA',
         cnpj: '00.000.000/0001-02',
         address: 'Av. Centenário, 1050 - Shopping Bosque Grão Pará, Belém - PA',
@@ -128,6 +167,8 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Clínica A',
         loginLabel: 'Estagiário - Clínica A',
         kioskEmail: 'clinicaa@grupoib.internal',
+        professionalButtonLabel: 'Profissionais PJ - Clínica A',
+        professionalKioskEmail: 'pj-clinicaa@grupoib.internal',
         razaoSocial: 'Clínica A Serviços de Saúde LTDA',
         cnpj: '00.000.000/0001-03',
         address: 'Av. Nazaré, 800 - Nazaré, Belém - PA',
@@ -139,6 +180,8 @@ export const WORKSPACES = {
         buttonLabel: 'Estagiários - Clínica B',
         loginLabel: 'Estagiário - Clínica B',
         kioskEmail: 'clinicab@grupoib.internal',
+        professionalButtonLabel: 'Profissionais PJ - Clínica B',
+        professionalKioskEmail: 'pj-clinicab@grupoib.internal',
         razaoSocial: 'Clínica B Serviços de Saúde LTDA',
         cnpj: '00.000.000/0001-04',
         address: 'Av. Conselheiro Furtado, 1500 - Cremação, Belém - PA',

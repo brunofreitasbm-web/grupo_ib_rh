@@ -209,6 +209,8 @@ export const mapUnitFromDb = (u) => {
     workspaceId: u.workspace_id || null,
     kioskEmail: u.kiosk_email || '',
     biometricRequired: u.biometric_required || false,
+    pjEnabled: u.pj_enabled || false,
+    pjKioskEmail: u.pj_kiosk_email || '',
     razaoSocial: u.razao_social || '',
     cnpj: u.cnpj || '',
     phone: u.phone || '',
@@ -233,6 +235,8 @@ export const mapUnitToDb = (u) => {
     workspace_id: u.workspaceId || u.workspace_id || null,
     kiosk_email: u.kioskEmail || u.kiosk_email || null,
     biometric_required: u.biometricRequired !== undefined ? Boolean(u.biometricRequired) : (u.biometric_required !== undefined ? Boolean(u.biometric_required) : false),
+    pj_enabled: u.pjEnabled !== undefined ? Boolean(u.pjEnabled) : (u.pj_enabled !== undefined ? Boolean(u.pj_enabled) : false),
+    pj_kiosk_email: u.pjKioskEmail || u.pj_kiosk_email || null,
     razao_social: u.razaoSocial || u.razao_social || null,
     cnpj: u.cnpj || null,
     phone: u.phone || null,
@@ -244,3 +248,91 @@ export const mapUnitToDb = (u) => {
   };
 };
 
+// =========================================================================
+// MÓDULO PROFISSIONAIS PJ (prestadores de serviço) — tabelas professionals,
+// professional_presence e professional_documents. Mantidas separadas dos
+// mapeadores de estagiário de propósito: nada aqui deve alimentar as telas de
+// ponto/bolsa de estagiários nem vice-versa.
+// =========================================================================
+export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, cpf, cnpj, razao_social, email, phone, contract_start, contract_end, contract_notes, active, terms_accepted_at, terms_version, photo, created_at';
+
+export const mapProfessionalFromDb = (p) => ({
+  id: p.id,
+  unitId: p.unit_id,
+  name: p.name,
+  profession: p.profession || '',
+  councilType: p.council_type || '',
+  councilNumber: p.council_number || '',
+  cpf: p.cpf || '',
+  cnpj: p.cnpj || '',
+  razaoSocial: p.razao_social || '',
+  email: p.email || '',
+  phone: p.phone || '',
+  contractStart: p.contract_start || '',
+  contractEnd: p.contract_end || '',
+  contractNotes: p.contract_notes || '',
+  active: p.active !== false,
+  termsAcceptedAt: p.terms_accepted_at || null,
+  termsVersion: p.terms_version || '',
+  photo: p.photo || '',
+  createdAt: p.created_at,
+});
+
+export const mapProfessionalToDb = (p) => ({
+  unit_id: p.unitId,
+  name: (p.name || '').trim(),
+  profession: p.profession || null,
+  council_type: p.councilType || null,
+  council_number: p.councilNumber || null,
+  cpf: p.cpf || null,
+  cnpj: p.cnpj || null,
+  razao_social: p.razaoSocial || null,
+  email: p.email || null,
+  phone: p.phone || null,
+  contract_start: p.contractStart || null,
+  contract_end: p.contractEnd || null,
+  contract_notes: p.contractNotes || null,
+  active: p.active !== false,
+  photo: p.photo || null,
+});
+
+export const PROFESSIONAL_PRESENCE_SELECT_FIELDS = 'id, professional_id, professional_name, unit_id, action, timestamp, auth_method, geo, note, created_by, created_at';
+
+export const mapProfessionalPresenceFromDb = (r) => ({
+  id: r.id,
+  professionalId: r.professional_id,
+  professionalName: r.professional_name,
+  unitId: r.unit_id,
+  action: r.action,
+  timestamp: r.timestamp,
+  authMethod: r.auth_method || 'pin',
+  geo: r.geo || {},
+  note: r.note || '',
+  createdBy: r.created_by || null,
+});
+
+// Regra de PIN espelhada da função SQL is_valid_professional_pin (validação
+// antecipada no front; a autoridade final é o banco).
+const TRIVIAL_PINS = new Set(['123456', '654321', '012345', '543210', '112233', '123123', '111222', '222333']);
+export const isValidProfessionalPin = (pin) => {
+  const p = String(pin || '');
+  if (!/^[0-9]{6}$/.test(p)) return false;
+  if (/^(\d)\1{5}$/.test(p)) return false;
+  return !TRIVIAL_PINS.has(p);
+};
+
+// Traduz os códigos de erro lançados pelas RPCs do módulo PJ.
+export const professionalRpcErrorMessage = (err) => {
+  const msg = String(err?.message || err || '');
+  if (msg.includes('pin_not_set')) return 'Este prestador ainda não possui PIN. Solicite a definição do PIN à administração.';
+  if (msg.includes('pin_locked')) return 'PIN bloqueado temporariamente por excesso de tentativas. Aguarde 15 minutos e tente novamente.';
+  if (msg.includes('pin_invalid_format')) return 'O PIN deve ter exatamente 6 dígitos e não pode ser uma sequência óbvia (ex.: 123456, 000000).';
+  if (msg.includes('pin_invalid')) return 'PIN incorreto.';
+  if (msg.includes('terms_not_accepted')) return 'É necessário aceitar o termo de ciência antes do primeiro registro.';
+  if (msg.includes('sequence_open_entry')) return 'Já existe uma entrada em aberto hoje. Registre a saída primeiro.';
+  if (msg.includes('sequence_no_entry')) return 'Não há entrada registrada hoje. Registre a entrada antes da saída.';
+  if (msg.includes('professional_inactive')) return 'Cadastro inativo. Procure a administração.';
+  if (msg.includes('unit_pj_disabled')) return 'O registro de prestadores não está habilitado nesta unidade.';
+  if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';
+  return msg || 'Erro inesperado.';
+};

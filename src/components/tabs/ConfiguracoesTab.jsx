@@ -64,14 +64,18 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         workspaceId: u.workspaceId || u.workspace_id || null,
         kioskEmail: u.kioskEmail || u.kiosk_email || '',
         biometricRequired: u.biometricRequired !== undefined ? u.biometricRequired : (u.biometric_required || false),
+        pjEnabled: u.pjEnabled !== undefined ? u.pjEnabled : (u.pj_enabled || false),
+        pjKioskEmail: u.pjKioskEmail || u.pj_kiosk_email || '',
       };
     });
     setEditingUnits(unitMap);
   }, [units]);
 
   // Default Settings State
+  const storageKey = `app_configuracoes_${BRANDING.id || 'porto-terapia'}`;
+
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem('app_configuracoes');
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -135,20 +139,20 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } else {
-      localStorage.setItem(`unit_config_${unitId}`, JSON.stringify(unitData));
+      localStorage.setItem(`unit_config_${BRANDING.id}_${unitId}`, JSON.stringify(unitData));
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     }
   };
 
   const handleSave = () => {
-    localStorage.setItem('app_configuracoes', JSON.stringify(settings));
+    localStorage.setItem(storageKey, JSON.stringify(settings));
     // Salva também todas as unidades
     Object.values(editingUnits).forEach(uData => {
       if (onSaveUnit) {
         onSaveUnit(uData);
       } else {
-        localStorage.setItem(`unit_config_${uData.id}`, JSON.stringify(uData));
+        localStorage.setItem(`unit_config_${BRANDING.id}_${uData.id}`, JSON.stringify(uData));
       }
     });
     setSavedSuccess(true);
@@ -156,8 +160,8 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
   };
 
   const handleReset = () => {
-    if (window.confirm('Deseja restaurar as configurações padrão?')) {
-      localStorage.removeItem('app_configuracoes');
+    if (window.confirm('Deseja restaurar as configurações padrão deste workspace?')) {
+      localStorage.removeItem(storageKey);
       window.location.reload();
     }
   };
@@ -506,6 +510,36 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                                 </div>
                               </div>
                             </div>
+
+                            {/* 4. Profissionais PJ — só no site do Grupo IB */}
+                            {BRANDING.showProfessionalsModule && (
+                              <div>
+                                <h4 className="text-xs font-bold text-teal-900 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                                  {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                                </h4>
+                                <div className="space-y-3">
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!uData.pjEnabled}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'pjEnabled', e.target.checked)}
+                                    />
+                                    Habilitar registro de presença de Profissionais PJ nesta unidade
+                                  </label>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">E-mail do Quiosque PJ</label>
+                                    <input
+                                      type="text"
+                                      value={uData.pjKioskEmail}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'pjKioskEmail', e.target.value)}
+                                      placeholder="pj-nomedaunidade@grupoib.internal"
+                                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-teal-500"
+                                    />
+                                    <p className="text-[10px] text-slate-400 mt-1">Precisa corresponder à conta de quiosque cadastrada no Supabase para esta unidade.</p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
 
                             <div className="pt-3 border-t border-slate-200 flex justify-end">
                               <button

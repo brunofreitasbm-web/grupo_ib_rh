@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateHoursSummary, calculateHoursAlerts } from '../hoursCalculations';
+import { calculateHoursSummary, calculateHoursAlerts, calculateProfessionalProduction } from '../hoursCalculations';
 
 // Quarta-feira, 12/06/2024 (horário local) — usada como "agora" de referência.
 // Segunda-feira da mesma semana: 10/06/2024.
@@ -114,5 +114,73 @@ describe('calculateHoursAlerts', () => {
     ];
     const alerts = calculateHoursAlerts(records, interns, 'all', 6);
     expect(alerts).toHaveLength(0);
+  });
+});
+
+describe('calculateProfessionalProduction', () => {
+  const professionals = [
+    { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a' },
+    { id: 'p2', name: 'Marcos Lima', unitId: 'clinica-b' },
+  ];
+
+  function presenceRecord(professionalId, action, y, m, d, h, min, unitId) {
+    return {
+      professionalId,
+      action,
+      timestamp: new Date(y, m, d, h, min).toISOString(),
+      unitId,
+    };
+  }
+
+  it('soma horas e dias com presença por prestador na competência', () => {
+    const presence = [
+      presenceRecord('p1', 'entrada', 2024, 5, 10, 9, 0, 'clinica-a'),
+      presenceRecord('p1', 'saida', 2024, 5, 10, 12, 0, 'clinica-a'),
+      presenceRecord('p1', 'entrada', 2024, 5, 12, 14, 0, 'clinica-a'),
+      presenceRecord('p1', 'saida', 2024, 5, 12, 18, 0, 'clinica-a'),
+    ];
+    const rows = calculateProfessionalProduction(presence, professionals, '2024-06', 'all');
+    const carla = rows.find((r) => r.professional.id === 'p1');
+    expect(carla.totalHours).toBeCloseTo(7, 5);
+    expect(carla.daysPresent).toBe(2);
+  });
+
+  it('ignora registros de outra competência', () => {
+    const presence = [
+      presenceRecord('p1', 'entrada', 2024, 4, 10, 9, 0, 'clinica-a'),
+      presenceRecord('p1', 'saida', 2024, 4, 10, 12, 0, 'clinica-a'),
+    ];
+    const rows = calculateProfessionalProduction(presence, professionals, '2024-06', 'all');
+    const carla = rows.find((r) => r.professional.id === 'p1');
+    expect(carla.totalHours).toBe(0);
+    expect(carla.daysPresent).toBe(0);
+  });
+
+  it('filtra por unidade', () => {
+    const presence = [
+      presenceRecord('p1', 'entrada', 2024, 5, 10, 9, 0, 'clinica-a'),
+      presenceRecord('p1', 'saida', 2024, 5, 10, 12, 0, 'clinica-a'),
+      presenceRecord('p2', 'entrada', 2024, 5, 10, 9, 0, 'clinica-b'),
+      presenceRecord('p2', 'saida', 2024, 5, 10, 11, 0, 'clinica-b'),
+    ];
+    const rows = calculateProfessionalProduction(presence, professionals, '2024-06', 'clinica-a');
+    expect(rows.map((r) => r.professional.id)).toEqual(['p1']);
+  });
+
+  it('inclui prestadores sem presença com 0h/0 dias', () => {
+    const rows = calculateProfessionalProduction([], professionals, '2024-06', 'all');
+    expect(rows).toHaveLength(2);
+    rows.forEach((r) => {
+      expect(r.totalHours).toBe(0);
+      expect(r.daysPresent).toBe(0);
+    });
+  });
+
+  it('turno em aberto (entrada sem saída) não soma horas mas conta como dia presente', () => {
+    const presence = [presenceRecord('p1', 'entrada', 2024, 5, 10, 9, 0, 'clinica-a')];
+    const rows = calculateProfessionalProduction(presence, professionals, '2024-06', 'all');
+    const carla = rows.find((r) => r.professional.id === 'p1');
+    expect(carla.totalHours).toBe(0);
+    expect(carla.daysPresent).toBe(1);
   });
 });
