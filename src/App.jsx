@@ -632,6 +632,7 @@ export default function App() {
   }, [user]);
 
   const fetchPendingChatCount = useCallback(async () => {
+    if (!BRANDING.showSupervisionChat) return;
     if (!user || user.user_metadata?.role !== 'supervisor') return;
     const { data, error } = await supabase
       .from('records')
@@ -645,6 +646,7 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    if (!BRANDING.showSupervisionChat) return;
     if (user && user.user_metadata?.role === 'supervisor') {
       fetchPendingChatCount();
     }
@@ -711,14 +713,14 @@ export default function App() {
     const channel = supabase
       .channel('records-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
-        if (isSupervisor && payload.eventType === 'INSERT' && payload.new?.action === 'supervisor_chat') {
+        if (BRANDING.showSupervisionChat && isSupervisor && payload.eventType === 'INSERT' && payload.new?.action === 'supervisor_chat') {
           toast.info(`Novo chamado recebido de ${payload.new.intern_name}: "${payload.new.justification?.substring(0, 30)}..."`, {
             onClick: () => setActiveAdminTab('rh'),
             autoClose: 8000
           });
         }
         fetchRecords();
-        if (isSupervisor) fetchPendingChatCount();
+        if (BRANDING.showSupervisionChat && isSupervisor) fetchPendingChatCount();
       })
       .subscribe();
     return () => {
@@ -767,7 +769,7 @@ export default function App() {
 
   // Garante a existência do estagiário "TEste" para testes do usuário
   useEffect(() => {
-    if (user && user.user_metadata?.role === 'supervisor' && internsLoaded) {
+    if (BRANDING.id === 'porto-terapia' && user && user.user_metadata?.role === 'supervisor' && internsLoaded) {
       const hasTest = interns.some(i => i.name.toLowerCase() === 'teste');
       if (!hasTest) {
         supabase.rpc('create_intern_user', {

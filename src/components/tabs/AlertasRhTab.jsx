@@ -22,21 +22,20 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
 
       if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
 
-      const { data: chatData } = await supabase
-        .from('records')
-        .select('*')
-        .eq('action', 'supervisor_chat')
-        .order('timestamp', { ascending: false })
-        .limit(300);
+      if (BRANDING.showSupervisionChat) {
+        const { data: chatData } = await supabase
+          .from('records')
+          .select('*')
+          .eq('action', 'supervisor_chat')
+          .order('timestamp', { ascending: false })
+          .limit(300);
 
-      // Chats ("Chamados & Dúvidas") não têm um filtro de unidade próprio hoje —
-      // cruzamos pelo intern_id cru contra os estagiários de unidades restritas
-      // se houver alguma restrição ativa.
-      if (chatData) {
-        const restrictedInternIds = new Set(
-          (internsData || []).filter(i => restrictedUnitIds.includes(i.unit_id)).map(i => i.id)
-        );
-        setChatRecords(chatData.filter(c => !restrictedInternIds.has(c.intern_id)));
+        if (chatData) {
+          const restrictedInternIds = new Set(
+            (internsData || []).filter(i => restrictedUnitIds.includes(i.unit_id)).map(i => i.id)
+          );
+          setChatRecords(chatData.filter(c => !restrictedInternIds.has(c.intern_id)));
+        }
       }
     } catch (err) {
       console.error('Erro ao buscar dados do RH:', err);
