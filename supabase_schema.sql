@@ -2792,3 +2792,394 @@ CREATE POLICY "pj: leitura de profissionais" ON public.professionals FOR SELECT
 -- 18.8 Habilita autocadastro nas unidades do Grupo IB que já têm o módulo PJ ligado.
 UPDATE public.units SET pj_self_registration_enabled = true
  WHERE workspace_id = 'grupoib' AND pj_enabled = true AND pj_self_registration_enabled = false;
+
+-- =========================================================================
+-- 19. AUTOCADASTRO DE FUNCIONÁRIOS CLT (Grupo IB)
+-- Espelha o autocadastro de Profissionais PJ (seção 18): o próprio candidato
+-- a funcionário preenche dados pessoais/documentais e biometria facial (com
+-- liveness ativo, mesmo componente da Autogestão de Biometria do estagiário)
+-- sem estar logado; o cadastro nasce 'pending_validation' e SEM os campos que
+-- são atribuição do RH (cargo, salário, tipo de contrato, jornada, data de
+-- admissão) — esses continuam null/default até a validação em FuncionariosTab
+-- (mesma tela de sempre, que já reaproveita qualquer campo pré-preenchido).
+-- Idempotente: pode ser rodado de novo sem duplicar/quebrar nada.
+-- =========================================================================
+
+-- 19.1 Colunas novas em public.employees (controle do autocadastro) e relaxa
+-- admission_date, que deixa de poder ser exigido no INSERT: um cadastro
+-- pendente ainda não tem data de admissão definida pelo RH.
+ALTER TABLE public.employees
+  ADD COLUMN IF NOT EXISTS registration_status text NOT NULL DEFAULT 'validated',
+  ADD COLUMN IF NOT EXISTS self_registered_at timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS lgpd_consent_accepted_at timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS lgpd_consent_version text;
+ALTER TABLE public.employees ALTER COLUMN admission_date DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_employees_registration_status ON public.employees(registration_status);
+
+-- 19.2 Colunas novas em public.units
+ALTER TABLE public.units
+  ADD COLUMN IF NOT EXISTS clt_self_registration_enabled boolean NOT NULL DEFAULT false;
+
+-- 19.3 Token de upload de anexos do autocadastro — mesmo padrão de
+-- professional_self_registration_tokens (18.3): RLS ligada e SEM policies,
+-- só as RPCs SECURITY DEFINER abaixo o leem/escrevem.
+CREATE TABLE IF NOT EXISTS public.employee_self_registration_tokens (
+  employee_id uuid PRIMARY KEY REFERENCES public.employees(id) ON DELETE CASCADE,
+  token_hash text NOT NULL,
+  expires_at timestamp with time zone NOT NULL,
+  uploads_used integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now()
+);
+ALTER TABLE public.employee_self_registration_tokens ENABLE ROW LEVEL SECURITY;
+-- Nenhuma policy — inacessível pela API além das RPCs abaixo.
+
+-- 19.4 RPC: cria o cadastro pendente do funcionário (anônimo/quiosque de
+-- autocadastro, ou supervisor). A biometria facial (vetor de 128-d + termo de
+-- consentimento) é capturada ao vivo no client via BiometricEnrollment.jsx
+-- (liveness ativo) e enviada já pronta neste mesmo INSERT — diferente dos
+-- documentos, é um único campo, não precisa do mecanismo de token/anexo.
+CREATE OR REPLACE FUNCTION public.create_employee_self_registration(
+  p_unit_id text,
+  p_name text,
+  p_cpf text,
+  p_rg text,
+  p_rg_issuer text,
+  p_birthdate date,
+  p_sex text,
+  p_marital_status text,
+  p_education text,
+  p_nationality text,
+  p_birthplace text,
+  p_mother_name text,
+  p_father_name text,
+  p_phone text,
+  p_email text,
+  p_address jsonb,
+  p_ctps_number text,
+  p_ctps_series text,
+  p_ctps_uf text,
+  p_pis text,
+  p_voter_title text,
+  p_reservist_cert text,
+  p_cnh text,
+  p_cnh_category text,
+  p_bank_name text,
+  p_bank_agency text,
+  p_bank_account text,
+  p_bank_account_type text,
+  p_pix_key text,
+  p_dependents jsonb,
+  p_face_descriptor text,
+  p_biometric_consent_accepted boolean,
+  p_biometric_consent_version text,
+  p_lgpd_consent_accepted boolean
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  caller_role text := auth.jwt() -> 'user_metadata' ->> 'role';
+  v_unit public.units%ROWTYPE;
+  v_cpf_clean text := regexp_replace(COALESCE(p_cpf, ''), '[^0-9]', '', 'g');
+  v_final_status text := 'pending_validation';
+  v_new_id uuid;
+  v_token text;
+  v_dep jsonb;
+BEGIN
+  -- Apenas anônimo (tela pública de autocadastro) ou supervisor podem chamar.
+  IF caller_role IS NOT NULL AND caller_role <> 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF trim(COALESCE(p_name, '')) = '' OR v_cpf_clean = '' THEN
+    RAISE EXCEPTION 'missing_required_fields';
+  END IF;
+  IF NOT COALESCE(p_biometric_consent_accepted, false) OR COALESCE(trim(p_face_descriptor), '') = '' THEN
+    RAISE EXCEPTION 'biometric_required';
+  END IF;
+  IF NOT COALESCE(p_lgpd_consent_accepted, false) THEN
+    RAISE EXCEPTION 'lgpd_consent_required';
+  END IF;
+
+  -- Supervisor pode cadastrar já validado em qualquer unidade do seu
+  -- workspace; os demais chamadores (anon) sempre nascem pendentes, e só em
+  -- unidade que aceite autocadastro.
+  IF caller_role = 'supervisor' THEN
+    SELECT * INTO v_unit FROM public.units WHERE id = p_unit_id;
+    IF NOT FOUND OR NOT public.jwt_has_workspace_access(v_unit.workspace_id) THEN
+      RAISE EXCEPTION 'not authorized';
+    END IF;
+    v_final_status := 'validated';
+  ELSE
+    SELECT * INTO v_unit FROM public.units WHERE id = p_unit_id;
+    IF NOT FOUND OR NOT COALESCE(v_unit.clt_enabled, false) OR NOT COALESCE(v_unit.clt_self_registration_enabled, false) THEN
+      RAISE EXCEPTION 'self_registration_disabled';
+    END IF;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.employees e
+     WHERE e.unit_id = p_unit_id
+       AND regexp_replace(COALESCE(e.cpf, ''), '[^0-9]', '', 'g') = v_cpf_clean
+  ) THEN
+    RAISE EXCEPTION 'duplicate_cpf';
+  END IF;
+
+  INSERT INTO public.employees (
+    unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace,
+    mother_name, father_name, phone, email, address,
+    ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category,
+    bank_name, bank_agency, bank_account, bank_account_type, pix_key,
+    admission_date, status, face_descriptor, biometric_consent_at, biometric_consent_version,
+    registration_status, self_registered_at, lgpd_consent_accepted_at, lgpd_consent_version
+  ) VALUES (
+    p_unit_id, trim(p_name), v_cpf_clean, NULLIF(trim(p_rg), ''), NULLIF(trim(p_rg_issuer), ''), p_birthdate,
+    NULLIF(p_sex, ''), NULLIF(trim(p_marital_status), ''), NULLIF(trim(p_education), ''),
+    NULLIF(trim(p_nationality), ''), NULLIF(trim(p_birthplace), ''), NULLIF(trim(p_mother_name), ''), NULLIF(trim(p_father_name), ''),
+    NULLIF(trim(p_phone), ''), NULLIF(trim(p_email), ''), COALESCE(p_address, '{}'::jsonb),
+    NULLIF(trim(p_ctps_number), ''), NULLIF(trim(p_ctps_series), ''), NULLIF(trim(p_ctps_uf), ''), NULLIF(trim(p_pis), ''),
+    NULLIF(trim(p_voter_title), ''), NULLIF(trim(p_reservist_cert), ''), NULLIF(trim(p_cnh), ''), NULLIF(trim(p_cnh_category), ''),
+    NULLIF(trim(p_bank_name), ''), NULLIF(trim(p_bank_agency), ''), NULLIF(trim(p_bank_account), ''), NULLIF(trim(p_bank_account_type), ''), NULLIF(trim(p_pix_key), ''),
+    NULL, 'ativo', p_face_descriptor, now(), NULLIF(trim(p_biometric_consent_version), ''),
+    v_final_status, CASE WHEN v_final_status = 'pending_validation' THEN now() ELSE NULL END, now(), NULL
+  ) RETURNING id INTO v_new_id;
+
+  IF p_dependents IS NOT NULL THEN
+    FOR v_dep IN SELECT * FROM jsonb_array_elements(p_dependents) LOOP
+      IF trim(COALESCE(v_dep->>'name', '')) <> '' THEN
+        INSERT INTO public.employee_dependents (employee_id, name, cpf, birthdate, relationship, for_ir, for_salario_familia)
+        VALUES (
+          v_new_id, trim(v_dep->>'name'), NULLIF(regexp_replace(COALESCE(v_dep->>'cpf', ''), '[^0-9]', '', 'g'), ''),
+          NULLIF(v_dep->>'birthdate', '')::date, NULLIF(trim(v_dep->>'relationship'), ''),
+          COALESCE((v_dep->>'forIr')::boolean, true), COALESCE((v_dep->>'forSalarioFamilia')::boolean, false)
+        );
+      END IF;
+    END LOOP;
+  END IF;
+
+  IF v_final_status = 'pending_validation' THEN
+    v_token := encode(gen_random_bytes(24), 'hex');
+    INSERT INTO public.employee_self_registration_tokens (employee_id, token_hash, expires_at, uploads_used)
+    VALUES (v_new_id, digest(v_token, 'sha256'), now() + interval '60 minutes', 0)
+    ON CONFLICT (employee_id) DO UPDATE
+      SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, uploads_used = 0, created_at = now();
+    RETURN jsonb_build_object('ok', true, 'employee_id', v_new_id, 'upload_token', v_token, 'registration_status', v_final_status);
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'employee_id', v_new_id, 'registration_status', v_final_status);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.create_employee_self_registration(
+  text, text, text, text, text, date, text, text, text, text, text, text, text, text, text, jsonb,
+  text, text, text, text, text, text, text, text, text, text, text, text, text, jsonb, text, boolean, text, boolean
+) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_employee_self_registration(
+  text, text, text, text, text, date, text, text, text, text, text, text, text, text, text, jsonb,
+  text, text, text, text, text, text, text, text, text, text, text, text, text, jsonb, text, boolean, text, boolean
+) TO anon, authenticated;
+
+-- 19.5 RPC: anexa um documento do autocadastro usando o token de upload (sem
+-- sessão). Allowlist restrita ao subconjunto de ADMISSIONAL_DOCUMENTS que faz
+-- sentido o próprio candidato enviar — o restante (ASO, ficha de registro,
+-- contrato assinado, termos gerados etc.) é produzido/coletado pelo RH depois
+-- da validação. Limite de ~2MB em base64 por arquivo, no máximo 12 uploads.
+CREATE OR REPLACE FUNCTION public.attach_employee_self_registration_document(
+  p_employee_id uuid,
+  p_token text,
+  p_doc_key text,
+  p_content text,
+  p_meta jsonb DEFAULT '{}'::jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_row public.employee_self_registration_tokens%ROWTYPE;
+BEGIN
+  IF p_doc_key NOT IN (
+    'rg_cnh', 'cpf', 'ctps_digital', 'pis', 'comprovante_residencia', 'titulo_eleitor',
+    'certificado_reservista', 'certidao_nascimento_casamento', 'certidao_cpf_dependentes',
+    'cartao_vacinacao_filhos', 'comprovante_escolaridade', 'foto_3x4'
+  ) THEN
+    RAISE EXCEPTION 'invalid_doc_key';
+  END IF;
+  IF length(COALESCE(p_content, '')) = 0 OR length(p_content) > 2800000 THEN
+    RAISE EXCEPTION 'invalid_file_size';
+  END IF;
+
+  SELECT * INTO v_row FROM public.employee_self_registration_tokens WHERE employee_id = p_employee_id FOR UPDATE;
+  IF NOT FOUND OR v_row.token_hash <> digest(COALESCE(p_token, ''), 'sha256') THEN
+    RAISE EXCEPTION 'invalid_token';
+  END IF;
+  IF v_row.expires_at < now() THEN
+    RAISE EXCEPTION 'token_expired';
+  END IF;
+  IF v_row.uploads_used >= 12 THEN
+    RAISE EXCEPTION 'upload_limit_reached';
+  END IF;
+
+  INSERT INTO public.employee_documents (employee_id, doc_key, content, meta)
+  VALUES (p_employee_id, p_doc_key, p_content, COALESCE(p_meta, '{}'::jsonb))
+  ON CONFLICT (employee_id, doc_key) DO UPDATE
+    SET content = EXCLUDED.content, meta = EXCLUDED.meta, created_at = now();
+
+  UPDATE public.employee_self_registration_tokens
+     SET uploads_used = uploads_used + 1
+   WHERE employee_id = p_employee_id;
+
+  RETURN jsonb_build_object('ok', true, 'doc_key', p_doc_key);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.attach_employee_self_registration_document(uuid, text, text, text, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attach_employee_self_registration_document(uuid, text, text, text, jsonb) TO anon, authenticated;
+
+-- 19.6 Um cadastro pendente não pode registrar ponto — get_employee_kiosk_roster
+-- e register_employee_time_record (17.5) já filtram por status/consentimento,
+-- mas não por registration_status; reforça aqui para nunca listar/registrar
+-- ponto de quem ainda não foi validado pelo RH.
+CREATE OR REPLACE FUNCTION public.get_employee_kiosk_roster(p_unit text DEFAULT NULL)
+RETURNS TABLE (
+  id uuid,
+  name text,
+  photo text,
+  face_descriptor text,
+  biometric_consent_at timestamp with time zone,
+  last_type text,
+  last_ts timestamp with time zone
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  v_unit := COALESCE(auth.jwt() -> 'user_metadata' ->> 'unit_id', p_unit);
+  IF v_unit IS NULL OR NOT (public.jwt_is_employee_kiosk_for_unit(v_unit) OR public.jwt_is_supervisor_for_unit(v_unit)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  RETURN QUERY
+  SELECT e.id, e.name, e.photo, e.face_descriptor, e.biometric_consent_at,
+         lr.type AS last_type, lr.timestamp AS last_ts
+    FROM public.employees e
+    LEFT JOIN LATERAL (
+      SELECT t.type, t.timestamp
+        FROM public.employee_time_records t
+       WHERE t.employee_id = e.id
+         AND t.timestamp > now() - interval '20 hours'
+       ORDER BY t.timestamp DESC
+       LIMIT 1
+    ) lr ON true
+   WHERE e.unit_id = v_unit
+     AND e.status IN ('ativo', 'aviso_previo')
+     AND e.registration_status = 'validated'
+   ORDER BY e.name;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.get_employee_kiosk_roster(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_employee_kiosk_roster(text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.register_employee_time_record(
+  p_employee_id uuid,
+  p_type text,
+  p_photo text DEFAULT NULL,
+  p_geo jsonb DEFAULT '{}'::jsonb,
+  p_biometric jsonb DEFAULT '{}'::jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_emp public.employees%ROWTYPE;
+  v_clt_enabled boolean;
+  v_last record;
+  v_ts timestamp with time zone := now();
+  v_work_date date;
+  v_nsr bigint;
+  v_prev_hash text;
+  v_new_hash text;
+  v_new_id uuid;
+BEGIN
+  IF p_type NOT IN ('entrada', 'saida', 'intervalo_inicio', 'intervalo_fim') THEN
+    RAISE EXCEPTION 'invalid_type';
+  END IF;
+
+  SELECT * INTO v_emp FROM public.employees WHERE id = p_employee_id;
+  IF NOT FOUND OR v_emp.status NOT IN ('ativo', 'aviso_previo') THEN
+    RAISE EXCEPTION 'employee_inactive';
+  END IF;
+  IF v_emp.registration_status IS DISTINCT FROM 'validated' THEN
+    RAISE EXCEPTION 'employee_pending_validation';
+  END IF;
+  IF NOT (public.jwt_is_employee_kiosk_for_unit(v_emp.unit_id) OR public.jwt_is_supervisor_for_unit(v_emp.unit_id)) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT clt_enabled INTO v_clt_enabled FROM public.units WHERE id = v_emp.unit_id;
+  IF NOT COALESCE(v_clt_enabled, false) THEN
+    RAISE EXCEPTION 'unit_clt_disabled';
+  END IF;
+
+  IF v_emp.biometric_consent_at IS NULL THEN
+    RAISE EXCEPTION 'consent_required';
+  END IF;
+
+  SELECT type, timestamp, work_date INTO v_last
+    FROM public.employee_time_records
+   WHERE employee_id = p_employee_id
+     AND timestamp > v_ts - interval '20 hours'
+   ORDER BY timestamp DESC
+   LIMIT 1;
+
+  IF v_last.type IS NOT NULL AND v_last.type = p_type AND v_last.timestamp > v_ts - interval '60 seconds' THEN
+    RAISE EXCEPTION 'duplicate_record';
+  END IF;
+
+  IF p_type = 'entrada' AND v_last.type IS NOT NULL AND v_last.type <> 'saida' THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+  IF p_type = 'intervalo_inicio' AND (v_last.type IS NULL OR v_last.type NOT IN ('entrada', 'intervalo_fim')) THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+  IF p_type = 'intervalo_fim' AND (v_last.type IS NULL OR v_last.type <> 'intervalo_inicio') THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+  IF p_type = 'saida' AND (v_last.type IS NULL OR v_last.type NOT IN ('entrada', 'intervalo_fim')) THEN
+    RAISE EXCEPTION 'sequence_invalid';
+  END IF;
+
+  v_work_date := CASE WHEN p_type = 'entrada' OR v_last.work_date IS NULL
+                       THEN (v_ts AT TIME ZONE 'America/Belem')::date
+                       ELSE v_last.work_date END;
+
+  -- Contador de NSR/hash por unidade, travado durante a transação.
+  INSERT INTO public.employee_time_nsr (unit_id, last_nsr, last_hash)
+    VALUES (v_emp.unit_id, 0, NULL)
+    ON CONFLICT (unit_id) DO NOTHING;
+
+  PERFORM 1 FROM public.employee_time_nsr WHERE unit_id = v_emp.unit_id FOR UPDATE;
+
+  SELECT last_nsr + 1, last_hash INTO v_nsr, v_prev_hash
+    FROM public.employee_time_nsr WHERE unit_id = v_emp.unit_id;
+
+  v_new_hash := encode(
+    digest(COALESCE(v_prev_hash, '') || v_nsr::text || p_employee_id::text || p_type || v_ts::text, 'sha256'),
+    'hex'
+  );
+
+  INSERT INTO public.employee_time_records (
+    unit_id, nsr, employee_id, employee_name, employee_cpf, type, timestamp, work_date,
+    photo, geo, auth_method, biometric, prev_hash, record_hash, created_by
+  ) VALUES (
+    v_emp.unit_id, v_nsr, p_employee_id, v_emp.name, v_emp.cpf, p_type, v_ts, v_work_date,
+    p_photo, COALESCE(p_geo, '{}'::jsonb), 'facial', COALESCE(p_biometric, '{}'::jsonb),
+    v_prev_hash, v_new_hash, auth.uid()
+  ) RETURNING id INTO v_new_id;
+
+  UPDATE public.employee_time_nsr SET last_nsr = v_nsr, last_hash = v_new_hash WHERE unit_id = v_emp.unit_id;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'id', v_new_id, 'nsr', v_nsr, 'timestamp', v_ts, 'type', p_type,
+    'name', v_emp.name, 'work_date', v_work_date, 'hash', v_new_hash
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.register_employee_time_record(uuid, text, text, jsonb, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.register_employee_time_record(uuid, text, text, jsonb, jsonb) TO authenticated;
+
+-- 19.7 Habilita autocadastro nas unidades do Grupo IB que já têm o módulo CLT ligado.
+UPDATE public.units SET clt_self_registration_enabled = true
+ WHERE workspace_id = 'grupoib' AND clt_enabled = true AND clt_self_registration_enabled = false;

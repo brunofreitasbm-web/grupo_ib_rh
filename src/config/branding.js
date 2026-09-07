@@ -52,6 +52,10 @@ export const WORKSPACES = {
     // (a Porto Terapia hoje não usa o hub para empregados CLT).
     showEmployeesModule: false,
     biometricConsentVersion: '1.0',
+    // Autocadastro de Funcionários CLT (ver EmployeeSelfRegistration.jsx) —
+    // desligado neste site junto com o restante do módulo CLT.
+    showEmployeeSelfRegistration: false,
+    employeeLgpdConsentVersion: '1.0',
     employeeLabels: {
       singular: 'Funcionário(a)',
       plural: 'Funcionários CLT',
@@ -173,6 +177,14 @@ export const WORKSPACES = {
     // aproxima deliberadamente de controle de jornada (Portaria MTP 671/2021).
     showEmployeesModule: true,
     biometricConsentVersion: '1.0',
+    // Autocadastro de Funcionários CLT (ver EmployeeSelfRegistration.jsx) — o
+    // próprio candidato preenche dados pessoais/documentais e a biometria
+    // facial (captura ao vivo com liveness, mesmo componente da Autogestão de
+    // Biometria do estagiário) sem estar logado, nascendo 'pending_validation'
+    // até o RH validar e completar cargo/salário/contrato/admissão. Ver
+    // seção 19 de supabase_schema.sql.
+    showEmployeeSelfRegistration: true,
+    employeeLgpdConsentVersion: '1.0',
     employeeLabels: {
       singular: 'Funcionário(a)',
       plural: 'Funcionários CLT',

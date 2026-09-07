@@ -226,6 +226,7 @@ export const mapUnitFromDb = (u) => {
     cltToleranceMinutes: safeNum(u.clt_tolerance_minutes, 5),
     cltGeofenceRequired: u.clt_geofence_required !== false,
     cltCustomContractText: u.clt_custom_contract_text || '',
+    cltSelfRegistrationEnabled: u.clt_self_registration_enabled || false,
   };
 };
 
@@ -259,6 +260,7 @@ export const mapUnitToDb = (u) => {
     clt_tolerance_minutes: safeNum(u.cltToleranceMinutes ?? u.clt_tolerance_minutes, 5),
     clt_geofence_required: (u.cltGeofenceRequired ?? u.clt_geofence_required) !== false,
     clt_custom_contract_text: u.cltCustomContractText || u.clt_custom_contract_text || null,
+    clt_self_registration_enabled: u.cltSelfRegistrationEnabled !== undefined ? Boolean(u.cltSelfRegistrationEnabled) : (u.clt_self_registration_enabled !== undefined ? Boolean(u.clt_self_registration_enabled) : false),
   };
 };
 
@@ -437,7 +439,7 @@ export const professionalRpcErrorMessage = (err) => {
 
 // Inclui photo e face_descriptor: necessários para o matching biométrico no
 // quiosque CLT. Usada no cadastro (FuncionariosTab) e onde a foto é exibida.
-export const EMPLOYEE_SELECT_FIELDS = 'id, unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace, mother_name, father_name, phone, email, address, ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category, bank_name, bank_agency, bank_account, bank_account_type, pix_key, job_title, cbo, department, admission_date, contract_type, experience_first_end, experience_second_end, contract_end, base_salary, weekly_hours, schedule, work_regime, night_work, hours_bank, hours_bank_started_at, vt_opted, vt_daily_cost, vr_opted, health_plan, union_name, cba_reference, photo, face_descriptor, biometric_consent_at, biometric_consent_version, status, termination_date, notes, created_at, updated_at';
+export const EMPLOYEE_SELECT_FIELDS = 'id, unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace, mother_name, father_name, phone, email, address, ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category, bank_name, bank_agency, bank_account, bank_account_type, pix_key, job_title, cbo, department, admission_date, contract_type, experience_first_end, experience_second_end, contract_end, base_salary, weekly_hours, schedule, work_regime, night_work, hours_bank, hours_bank_started_at, vt_opted, vt_daily_cost, vr_opted, health_plan, union_name, cba_reference, photo, face_descriptor, biometric_consent_at, biometric_consent_version, status, termination_date, notes, registration_status, self_registered_at, lgpd_consent_accepted_at, lgpd_consent_version, created_at, updated_at';
 
 // Versão enxuta para listas/tabelas — nunca carrega photo/face_descriptor.
 export const EMPLOYEE_LIST_FIELDS = 'id, unit_id, name, cpf, job_title, department, admission_date, contract_type, status, weekly_hours, hours_bank, birthdate';
@@ -501,6 +503,10 @@ export const mapEmployeeFromDb = (e) => ({
   status: e.status || 'ativo',
   terminationDate: e.termination_date || '',
   notes: e.notes || '',
+  registrationStatus: e.registration_status || 'validated',
+  selfRegisteredAt: e.self_registered_at || null,
+  lgpdConsentAcceptedAt: e.lgpd_consent_accepted_at || null,
+  lgpdConsentVersion: e.lgpd_consent_version || '',
   createdAt: e.created_at,
   updatedAt: e.updated_at,
 });
@@ -807,6 +813,16 @@ export const employeeRpcErrorMessage = (err) => {
   if (msg.includes('sequence_invalid')) return 'Marcação fora de sequência (verifique se já bateu entrada/intervalo/saída hoje).';
   if (msg.includes('duplicate_record')) return 'Esta marcação já foi registrada há poucos segundos.';
   if (msg.includes('time_record_immutable')) return 'Registros de ponto não podem ser alterados ou excluídos. Lance um ajuste com justificativa.';
+  if (msg.includes('employee_pending_validation')) return 'Este cadastro ainda não foi validado pelo RH.';
+  if (msg.includes('self_registration_disabled')) return 'O autocadastro não está habilitado para esta unidade.';
+  if (msg.includes('duplicate_cpf')) return 'Já existe um funcionário cadastrado com este CPF nesta unidade.';
+  if (msg.includes('missing_required_fields')) return 'Preencha todos os campos obrigatórios do cadastro.';
+  if (msg.includes('biometric_required')) return 'É necessário concluir a captura da biometria facial e aceitar o termo de consentimento.';
+  if (msg.includes('lgpd_consent_required')) return 'É necessário aceitar o consentimento de tratamento de dados (LGPD).';
+  if (msg.includes('invalid_doc_key')) return 'Tipo de documento inválido.';
+  if (msg.includes('invalid_file_size')) return 'Arquivo inválido ou excede o limite de 2MB.';
+  if (msg.includes('invalid_token') || msg.includes('token_expired')) return 'Sessão de envio de documentos expirada. Reinicie o cadastro.';
+  if (msg.includes('upload_limit_reached')) return 'Limite de anexos deste cadastro atingido.';
   if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';
   if (msg.includes('invalid_type')) return 'Tipo de marcação inválido.';
   return msg || 'Erro inesperado.';

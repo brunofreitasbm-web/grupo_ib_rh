@@ -205,6 +205,19 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
     }
   };
 
+  const handleValidateRegistration = async (emp) => {
+    if (!window.confirm(`Validar o cadastro de "${emp.name}"? Complete cargo, salário, jornada e data de admissão antes ou depois de validar.`)) return;
+    try {
+      const { error } = await supabase.from('employees').update({ registration_status: 'validated' }).eq('id', emp.id);
+      if (error) throw error;
+      toast.success('Cadastro validado com sucesso.');
+      fetchData();
+    } catch (err) {
+      console.error('Erro ao validar cadastro do funcionário:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    }
+  };
+
   const handleDelete = async (emp) => {
     if (!window.confirm(`Remover o cadastro de "${emp.name}"? Se já houver registros de ponto, a exclusão será bloqueada — use o Desligamento nesse caso.`)) return;
     try {
@@ -288,6 +301,15 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${STATUS_BADGE_CLASSES[status.color] || STATUS_BADGE_CLASSES.slate}`}>
                         {status.label}
                       </span>
+                      {emp.registrationStatus === 'pending_validation' && (
+                        <button
+                          onClick={() => handleValidateRegistration(emp)}
+                          className="block mt-1 text-[9px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          title="Cadastro enviado pelo próprio candidato — clique para validar"
+                        >
+                          ⚠️ Validar Cadastro
+                        </button>
+                      )}
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex justify-end gap-1.5">

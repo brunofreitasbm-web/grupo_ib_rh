@@ -73,6 +73,8 @@ import EmployeeKiosk from './components/EmployeeKiosk';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
+// Autocadastro de Funcionários CLT (sem sessão) — mesmo motivo do lazy acima.
+const EmployeeSelfRegistration = lazyWithRetry(() => import('./components/EmployeeSelfRegistration'));
 
 
 
@@ -2920,6 +2922,27 @@ export default function App() {
                       })
                     )}
                   </div>
+
+                  {BRANDING.showEmployeeSelfRegistration && (
+                    <div className="border-t border-gray-100 pt-4 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentView('clt_autocadastro')}
+                        className="w-full p-4 border-2 border-dashed border-indigo-300 rounded-xl bg-indigo-50/30 hover:bg-indigo-50 hover:border-indigo-500 transition-all flex items-center justify-between text-left group"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
+                            <Sparkles size={20} className="animate-pulse text-indigo-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-indigo-800 text-sm">⚠️ Cadastro Obrigatório de {BRANDING.employeeLabels?.singular || 'Funcionário(a)'}</h4>
+                            <p className="text-[10px] text-indigo-600/80">Faça o seu cadastro completo, incluindo biometria facial, para a admissão</p>
+                          </div>
+                        </div>
+                        <span className="text-indigo-500 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -8127,6 +8150,19 @@ export default function App() {
           }>
             <ProfessionalSelfRegistration
               units={units}
+              branding={BRANDING}
+              onCancel={() => setCurrentView('kiosk')}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      ) : currentView === 'clt_autocadastro' ? (
+        <ErrorBoundary>
+          <Suspense fallback={
+            <div className="min-h-screen flex justify-center items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            </div>
+          }>
+            <EmployeeSelfRegistration
               branding={BRANDING}
               onCancel={() => setCurrentView('kiosk')}
             />
