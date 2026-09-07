@@ -1863,7 +1863,7 @@ CREATE TABLE IF NOT EXISTS public.employee_time_nsr (
 );
 
 CREATE OR REPLACE FUNCTION public.forbid_time_record_mutation() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   RAISE EXCEPTION 'time_record_immutable';
 END;
@@ -2004,7 +2004,7 @@ CREATE TABLE IF NOT EXISTS public.employee_terminations (
 
 -- Espelha o status/termination_date do funcionário ao gravar o encerramento.
 CREATE OR REPLACE FUNCTION public.sync_employee_status_on_termination() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   UPDATE public.employees
      SET status = CASE
@@ -2032,9 +2032,13 @@ CREATE TABLE IF NOT EXISTS public.holidays (
   workspace_id text,
   unit_id text REFERENCES public.units(id),
   recurring boolean NOT NULL DEFAULT false,
-  created_at timestamp with time zone DEFAULT now(),
-  UNIQUE (date, COALESCE(unit_id, ''), COALESCE(workspace_id, ''))
+  created_at timestamp with time zone DEFAULT now()
 );
+
+-- Postgres não aceita expressões (COALESCE) em UNIQUE de tabela — precisa de
+-- índice único de expressão; o ON CONFLICT abaixo casa com este índice.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_holidays_unique_date_scope
+  ON public.holidays (date, COALESCE(unit_id, ''), COALESCE(workspace_id, ''));
 
 INSERT INTO public.holidays (date, name, scope, recurring) VALUES
   ('2026-01-01', 'Confraternização Universal', 'nacional', true),
@@ -2397,7 +2401,6 @@ DROP POLICY IF EXISTS "Permitir leitura de unidades para quiosque CLT" ON public
 CREATE POLICY "Permitir leitura de unidades para quiosque CLT"
     ON public.units FOR SELECT
     USING (public.jwt_is_employee_kiosk_for_unit(id));
-</content>
 
 
 -- =========================================================================
