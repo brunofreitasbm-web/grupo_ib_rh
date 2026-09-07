@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { FileText, Printer, Download } from 'lucide-react';
+import { FileText, Printer, Download, Upload } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
   mapProfessionalFromDb,
@@ -9,16 +9,18 @@ import {
 } from '../../utils/mappings';
 import { calculateProfessionalProduction } from '../../utils/hoursCalculations';
 import { BRANDING } from '../../config/branding';
+import NfseUploadModal from '../NfseUploadModal';
 
 // Apuração mensal de produção de Profissionais PJ: dias com presença e total
 // de horas na competência, apresentado como base de conferência para a Nota
 // Fiscal — nunca como "folha de pagamento" (ver plano do módulo PJ, seção 1).
-export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [] }) {
+export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [], branding }) {
   const [professionals, setProfessionals] = useState([]);
   const [presence, setPresence] = useState([]);
   const [nfDocs, setNfDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthKey, setMonthKey] = useState(new Date().toISOString().substring(0, 7));
+  const [showNfseModal, setShowNfseModal] = useState(false);
 
   const labels = BRANDING.professionalLabels || { production: 'Apuração de Produção' };
 
@@ -89,6 +91,12 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
             onChange={(e) => setMonthKey(e.target.value)}
             className="p-2 border border-gray-300 rounded-lg text-xs bg-white"
           />
+          <button
+            onClick={() => setShowNfseModal(true)}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm"
+          >
+            <Upload size={14} /> Enviar NFSe (PDF)
+          </button>
           <button onClick={handleExportCSV} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700" title="Exportar CSV">
             <Download size={14} />
           </button>
@@ -126,6 +134,15 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
           </tbody>
         </table>
       </div>
+
+      <NfseUploadModal
+        isOpen={showNfseModal}
+        onClose={() => {
+          setShowNfseModal(false);
+          fetchData();
+        }}
+        branding={branding}
+      />
     </div>
   );
 }

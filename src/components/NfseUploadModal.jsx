@@ -4,11 +4,11 @@ import { supabase } from '../supabase';
 import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFriendlyDbErrorMessage } from '../utils/mappings';
 import { toast } from 'sonner';
 
-export default function NfseUploadModal({ isOpen, onClose, branding, initialUnitId = '' }) {
+export default function NfseUploadModal({ isOpen, onClose, branding, initialUnitId = '', initialProfessionalId = '' }) {
   const [professionals, setProfessionals] = useState([]);
   const [loadingProfs, setLoadingProfs] = useState(true);
 
-  const [selectedId, setSelectedId] = useState('');
+  const [selectedId, setSelectedId] = useState(initialProfessionalId || '');
   const [competencia, setCompetencia] = useState(() => new Date().toISOString().substring(0, 7));
   const [numeroNf, setNumeroNf] = useState('');
   const [valor, setValor] = useState('');
@@ -19,6 +19,12 @@ export default function NfseUploadModal({ isOpen, onClose, branding, initialUnit
 
   useEffect(() => {
     if (!isOpen) return;
+
+    if (initialProfessionalId) {
+      setSelectedId(initialProfessionalId);
+    } else {
+      setSelectedId('');
+    }
 
     const fetchProfessionals = async () => {
       setLoadingProfs(true);
@@ -48,7 +54,7 @@ export default function NfseUploadModal({ isOpen, onClose, branding, initialUnit
     fetchProfessionals();
     setError('');
     setSuccessData(null);
-  }, [isOpen, initialUnitId]);
+  }, [isOpen, initialUnitId, initialProfessionalId]);
 
   if (!isOpen) return null;
 

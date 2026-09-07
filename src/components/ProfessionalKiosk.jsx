@@ -268,16 +268,16 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
                 />
               )}
 
-              {!selectedId && (
-                <div className="pt-2 border-t border-gray-100 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowNfseModal(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors shadow-sm"
-                  >
-                    <FileText size={16} className="text-emerald-600" />
-                    <span>Enviar NFSe (Nota Fiscal PDF)</span>
-                  </button>
+              <div className="pt-3 border-t border-gray-100 space-y-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNfseModal(true)}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors shadow-sm"
+                >
+                  <FileText size={16} className="text-emerald-600" />
+                  <span>Enviar NFSe (Nota Fiscal PDF)</span>
+                </button>
+                {!selectedId && (
                   <button
                     type="button"
                     onClick={resetForm}
@@ -285,8 +285,8 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
                   >
                     <ArrowLeft size={11} /> Voltar
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -307,6 +307,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
         onClose={() => setShowNfseModal(false)}
         branding={branding}
         initialUnitId={unit.id}
+        initialProfessionalId={selectedId}
       />
     </div>
   );

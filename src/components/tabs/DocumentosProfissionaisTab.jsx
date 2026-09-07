@@ -5,6 +5,8 @@ import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFri
 import { getProfessionalContractHtml, getMissingContractFields } from '../../utils/professionalContract';
 import { toast } from 'sonner';
 
+import NfseUploadModal from '../NfseUploadModal';
+
 // Documentos de Profissionais PJ: contrato de prestação de serviços, dados de
 // CNPJ/conselho e Notas Fiscais por competência. Tabela própria
 // (professional_documents), independente de document_contents (estagiários).
@@ -24,6 +26,7 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
   const [nfMonth, setNfMonth] = useState(new Date().toISOString().substring(0, 7));
   const [nfNumero, setNfNumero] = useState('');
   const [nfValor, setNfValor] = useState('');
+  const [showNfseModal, setShowNfseModal] = useState(false);
 
   const [viewDoc, setViewDoc] = useState(null); // { base64, name, type }
   const [contractPreview, setContractPreview] = useState(null); // { html } | null
@@ -269,18 +272,26 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
 
   return (
     <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
           <FileText size={20} className="text-teal-600" /> Contratos &amp; Notas Fiscais (NFSe)
         </h2>
-        {selectedId && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleEmitContract}
-            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-3 rounded-lg text-xs"
+            onClick={() => setShowNfseModal(true)}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm"
           >
-            <ScrollText size={14} /> Emitir Contrato
+            <Upload size={14} /> Enviar NFSe (PDF)
           </button>
-        )}
+          {selectedId && (
+            <button
+              onClick={handleEmitContract}
+              className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-3 rounded-lg text-xs"
+            >
+              <ScrollText size={14} /> Emitir Contrato
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
@@ -508,6 +519,16 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
           </div>
         </div>
       )}
+
+      <NfseUploadModal
+        isOpen={showNfseModal}
+        onClose={() => {
+          setShowNfseModal(false);
+          if (selectedId) fetchDocs(selectedId);
+        }}
+        branding={branding}
+        initialProfessionalId={selectedId}
+      />
     </div>
   );
 }
