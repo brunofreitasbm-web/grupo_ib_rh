@@ -620,6 +620,14 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                                       Exigir geolocalização dentro do raio da unidade
                                     </label>
                                   </div>
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 pt-1 border-t border-slate-100">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!uData.cltSelfRegistrationEnabled}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'cltSelfRegistrationEnabled', e.target.checked)}
+                                    />
+                                    Permitir autocadastro público de {BRANDING.employeeLabels?.singular || 'Funcionário(a)'} nesta unidade
+                                  </label>
                                   <div>
                                     <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Cláusulas Aditivas dos Contratos CLT</label>
                                     <textarea
