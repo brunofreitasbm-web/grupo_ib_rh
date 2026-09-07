@@ -72,6 +72,7 @@ import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
 import EmployeeKiosk from './components/EmployeeKiosk';
+import NfseUploadModal from './components/NfseUploadModal';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
@@ -184,6 +185,7 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+  const [showGlobalNfseModal, setShowGlobalNfseModal] = useState(false);
 
   // Pré-carrega os modelos de biometria facial assim que o app monta, para que
   // o cadastro público (onde o upload da foto tem só 20s de orçamento total)
@@ -2976,26 +2978,48 @@ export default function App() {
                     })}
                   </div>
 
-                  {BRANDING.showProfessionalSelfRegistration && (
-                    <div className="border-t border-gray-100 pt-4 mt-2">
+                  <div className="border-t border-gray-100 pt-4 mt-2 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowGlobalNfseModal(true)}
+                      className="w-full p-3.5 border-2 border-emerald-300 rounded-xl bg-emerald-50/70 hover:bg-emerald-100 hover:border-emerald-500 transition-all flex items-center justify-between text-left group shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-emerald-600 text-white rounded-lg group-hover:scale-105 transition-all shadow-sm">
+                          <FileText size={18} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-emerald-900 text-xs flex items-center gap-1.5">
+                            <span>Enviar NFSe (Nota Fiscal PDF)</span>
+                            <span className="bg-emerald-200 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider">Autônomo</span>
+                          </h4>
+                          <p className="text-[10px] text-emerald-700">Upload autônomo mensal da NFSe para repasse</p>
+                        </div>
+                      </div>
+                      <span className="text-emerald-700 font-bold text-xs bg-white border border-emerald-300 py-1 px-2.5 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-sm flex items-center gap-1">
+                        <Upload size={12} /> Enviar &rarr;
+                      </span>
+                    </button>
+
+                    {BRANDING.showProfessionalSelfRegistration && (
                       <button
                         type="button"
                         onClick={() => setCurrentView('pj_autocadastro')}
-                        className="w-full p-4 border-2 border-dashed border-teal-300 rounded-xl bg-teal-50/30 hover:bg-teal-50 hover:border-teal-500 transition-all flex items-center justify-between text-left group"
+                        className="w-full p-3.5 border-2 border-dashed border-teal-300 rounded-xl bg-teal-50/30 hover:bg-teal-50 hover:border-teal-500 transition-all flex items-center justify-between text-left group"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="p-2.5 bg-teal-100 text-teal-600 rounded-lg group-hover:bg-teal-200 transition-colors">
-                            <Sparkles size={20} className="animate-pulse text-teal-600" />
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-teal-100 text-teal-600 rounded-lg group-hover:bg-teal-200 transition-colors">
+                            <Sparkles size={18} className="animate-pulse text-teal-600" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-teal-800 text-sm">📋 Cadastro Obrigatório de {BRANDING.professionalLabels?.singular || 'Prestador(a)'}</h4>
-                            <p className="text-[10px] text-teal-600/80">Faça o seu cadastro completo para emissão do contrato de prestação de serviços</p>
+                            <h4 className="font-bold text-teal-800 text-xs">📋 Cadastro Obrigatório de {BRANDING.professionalLabels?.singular || 'Prestador(a)'}</h4>
+                            <p className="text-[10px] text-teal-600/80">Cadastro completo para contrato de prestação de serviços</p>
                           </div>
                         </div>
                         <span className="text-teal-500 font-bold text-xs bg-white border border-teal-200 py-1 px-2.5 rounded-lg group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -8242,6 +8266,12 @@ export default function App() {
           onSelectAction={handleOmnibarAction}
         />
       )}
+
+      <NfseUploadModal
+        isOpen={showGlobalNfseModal}
+        onClose={() => setShowGlobalNfseModal(false)}
+        branding={BRANDING}
+      />
     </>
   );
 }

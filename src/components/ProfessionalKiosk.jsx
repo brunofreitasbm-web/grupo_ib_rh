@@ -162,6 +162,27 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
           </p>
         </div>
 
+        {/* Banner de Ação Rápida de Envio Autônomo de NFSe */}
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-3 text-white flex items-center justify-between border-b border-emerald-500/30 shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-md">
+              <FileText size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="text-xs font-bold leading-tight">Enviar NFSe (Nota Fiscal PDF)</p>
+              <p className="text-[10px] text-emerald-100 opacity-90">Upload autônomo mensal para repasse</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowNfseModal(true)}
+            className="bg-white text-emerald-800 hover:bg-emerald-50 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center gap-1 shrink-0"
+          >
+            <Upload size={13} className="text-emerald-600" />
+            <span>Enviar NFSe</span>
+          </button>
+        </div>
+
         <div className="p-6">
           {success ? (
             <div className="py-12 flex flex-col items-center justify-center text-center animate-fade-in">
