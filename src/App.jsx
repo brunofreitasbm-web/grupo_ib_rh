@@ -2989,11 +2989,10 @@ export default function App() {
                           <FileText size={18} />
                         </div>
                         <div>
-                          <h4 className="font-bold text-emerald-900 text-xs flex items-center gap-1.5">
+                          <h4 className="font-bold text-emerald-900 text-xs">
                             <span>Enviar NFSe (Nota Fiscal PDF)</span>
-                            <span className="bg-emerald-200 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider">Autônomo</span>
                           </h4>
-                          <p className="text-[10px] text-emerald-700">Upload autônomo mensal da NFSe para repasse</p>
+                          <p className="text-[10px] text-emerald-700">Upload mensal da NFSe para repasse</p>
                         </div>
                       </div>
                       <span className="text-emerald-700 font-bold text-xs bg-white border border-emerald-300 py-1 px-2.5 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-sm flex items-center gap-1">

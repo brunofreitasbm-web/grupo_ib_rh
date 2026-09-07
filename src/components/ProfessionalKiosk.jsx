@@ -162,7 +162,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
           </p>
         </div>
 
-        {/* Banner de Ação Rápida de Envio Autônomo de NFSe */}
+        {/* Banner de Ação Rápida de Envio de NFSe */}
         <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-3 text-white flex items-center justify-between border-b border-emerald-500/30 shadow-sm">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-md">
@@ -170,7 +170,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
             </div>
             <div>
               <p className="text-xs font-bold leading-tight">Enviar NFSe (Nota Fiscal PDF)</p>
-              <p className="text-[10px] text-emerald-100 opacity-90">Upload autônomo mensal para repasse</p>
+              <p className="text-[10px] text-emerald-100 opacity-90">Upload mensal para repasse</p>
             </div>
           </div>
           <button
