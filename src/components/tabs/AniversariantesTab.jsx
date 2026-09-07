@@ -4,6 +4,17 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
 
+// Campos enxutos por vínculo (só o necessário para a lista de aniversariantes,
+// evitando puxar colunas pesadas como face_descriptor/endereco/schedule).
+const PROFESSIONAL_BIRTHDAY_FIELDS = 'id, unit_id, name, profession, birthdate, active, photo';
+const EMPLOYEE_BIRTHDAY_FIELDS = 'id, unit_id, name, job_title, birthdate, status, photo';
+
+const TYPE_LABELS = {
+  intern: 'Estagiário',
+  professional: BRANDING.professionalLabels?.singular || 'Profissional PJ',
+  employee: BRANDING.employeeLabels?.singular || 'Funcionário CLT',
+};
+
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
@@ -25,7 +36,7 @@ const MONTH_COLORS = [
 ];
 
 export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] }) {
-  const [interns, setInterns] = useState([]);
+  const [people, setPeople] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -33,45 +44,64 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
   const [editBirthday, setEditBirthday] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const showProfessionals = !!BRANDING.showProfessionalsModule;
+  const showEmployees = !!BRANDING.showEmployeesModule;
+
   const fetchData = useCallback(async () => {
     try {
-      const { data: internsData } = await supabase
-        .from('interns')
-        .select(INTERN_SELECT_FIELDS)
-        .order('name', { ascending: true });
-      const { data: unitsData } = await supabase
-        .from('units')
-        .select('*');
-      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      const queries = [
+        supabase.from('interns').select(INTERN_SELECT_FIELDS).order('name', { ascending: true }),
+        supabase.from('units').select('*'),
+      ];
+      if (showProfessionals) queries.push(supabase.from('professionals').select(PROFESSIONAL_BIRTHDAY_FIELDS).order('name', { ascending: true }));
+      if (showEmployees) queries.push(supabase.from('employees').select(EMPLOYEE_BIRTHDAY_FIELDS).order('name', { ascending: true }));
+
+      const [{ data: internsData }, { data: unitsData }, { data: professionalsData } = {}, { data: employeesData } = {}] = await Promise.all(queries);
+
+      const merged = [
+        ...(internsData || []).map(mapInternFromDb).map(i => ({ ...i, personType: 'intern', role: i.course || '—', active: i.active !== false })),
+        ...(showProfessionals ? (professionalsData || []) : []).map(p => ({
+          id: p.id, unitId: p.unit_id, name: p.name, birthdate: p.birthdate || '', photo: p.photo || '',
+          role: p.profession || '—', shift: '', personType: 'professional', active: p.active !== false,
+        })),
+        ...(showEmployees ? (employeesData || []) : []).map(e => ({
+          id: e.id, unitId: e.unit_id, name: e.name, birthdate: e.birthdate || '', photo: e.photo || '',
+          role: e.job_title || '—', shift: '', personType: 'employee', active: e.status !== 'desligado',
+        })),
+      ].filter(p => !restrictedUnitIds.includes(p.unitId));
+
       if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
+      setPeople(merged);
     } catch (err) {
       console.error('Erro ao carregar aniversariantes:', err);
     } finally {
       setLoading(false);
     }
-  }, [restrictedUnitIds]);
+  }, [restrictedUnitIds, showProfessionals, showEmployees]);
 
   useEffect(() => {
     fetchData();
-    const channel = supabase
-      .channel('aniversariantes-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => fetchData())
-      .subscribe();
+    const tables = ['interns', ...(showProfessionals ? ['professionals'] : []), ...(showEmployees ? ['employees'] : [])];
+    const channel = supabase.channel('aniversariantes-sync');
+    tables.forEach(table => {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData());
+    });
+    channel.subscribe();
     return () => supabase.removeChannel(channel);
-  }, [fetchData]);
+  }, [fetchData, showProfessionals, showEmployees]);
 
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
 
-  const filteredInterns = useMemo(() =>
-    interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit),
-    [interns, filterUnit]
+  const filteredPeople = useMemo(() =>
+    people.filter(p => filterUnit === 'all' || p.unitId === filterUnit),
+    [people, filterUnit]
   );
 
-  const birthdayInterns = useMemo(() =>
-    filteredInterns
-      .filter(i => {
-        if (!i.birthdate) return false;
-        const d = new Date(i.birthdate + 'T00:00:00');
+  const birthdayPeople = useMemo(() =>
+    filteredPeople
+      .filter(p => {
+        if (!p.birthdate) return false;
+        const d = new Date(p.birthdate + 'T00:00:00');
         return d.getMonth() === selectedMonth;
       })
       .sort((a, b) => {
@@ -79,36 +109,37 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
         const dB = new Date(b.birthdate + 'T00:00:00').getDate();
         return dA - dB;
       }),
-    [filteredInterns, selectedMonth]
+    [filteredPeople, selectedMonth]
   );
 
   const withoutBirthday = useMemo(() =>
-    filteredInterns.filter(i => !i.birthdate && i.active !== false),
-    [filteredInterns]
+    filteredPeople.filter(p => !p.birthdate && p.active !== false),
+    [filteredPeople]
   );
 
   const nextBirthday = useMemo(() => {
     const today = new Date();
     const todayMD = today.getMonth() * 100 + today.getDate();
-    const upcoming = filteredInterns
-      .filter(i => i.birthdate)
-      .map(i => {
-        const d = new Date(i.birthdate + 'T00:00:00');
+    const upcoming = filteredPeople
+      .filter(p => p.birthdate)
+      .map(p => {
+        const d = new Date(p.birthdate + 'T00:00:00');
         const md = d.getMonth() * 100 + d.getDate();
-        return { intern: i, md, day: d.getDate(), month: d.getMonth() };
+        return { intern: p, md, day: d.getDate(), month: d.getMonth() };
       })
       .filter(x => x.md >= todayMD)
       .sort((a, b) => a.md - b.md);
     return upcoming[0] || null;
-  }, [filteredInterns]);
+  }, [filteredPeople]);
 
-  const handleSaveBirthday = async (internId) => {
+  const handleSaveBirthday = async (person) => {
     setSaving(true);
     try {
+      const table = person.personType === 'professional' ? 'professionals' : person.personType === 'employee' ? 'employees' : 'interns';
       const { error } = await supabase
-        .from('interns')
+        .from(table)
         .update({ birthdate: editBirthday || null })
-        .eq('id', internId);
+        .eq('id', person.id);
       if (error) throw error;
       setEditingId(null);
       setEditBirthday('');
@@ -123,18 +154,18 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
 
   const handlePrint = () => {
     const monthLabel = MONTH_NAMES[selectedMonth];
-    const rows = birthdayInterns.map(i => {
-      const d = new Date(i.birthdate + 'T00:00:00');
+    const rows = birthdayPeople.map(p => {
+      const d = new Date(p.birthdate + 'T00:00:00');
       const dayStr = `${String(d.getDate()).padStart(2, '0')}/${String(selectedMonth + 1).padStart(2, '0')}`;
       const age = new Date().getFullYear() - d.getFullYear();
       return `
         <tr style="border-bottom:1px solid #e5e7eb;">
-          <td style="padding:8px 12px;font-weight:600;">${i.name}</td>
+          <td style="padding:8px 12px;font-weight:600;">${p.name}</td>
           <td style="padding:8px 12px;">${dayStr}</td>
           <td style="padding:8px 12px;">${age} anos</td>
-          <td style="padding:8px 12px;">${i.course || '—'}</td>
-          <td style="padding:8px 12px;">${unitName(i.unitId)}</td>
-          <td style="padding:8px 12px;">${i.shift || '—'}</td>
+          <td style="padding:8px 12px;">${TYPE_LABELS[p.personType]}</td>
+          <td style="padding:8px 12px;">${p.role || '—'}</td>
+          <td style="padding:8px 12px;">${unitName(p.unitId)}</td>
           <td style="padding:8px 12px;text-align:center;">☐</td>
         </tr>`;
     }).join('');
@@ -156,8 +187,8 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
         <table>
           <thead>
             <tr>
-              <th>Nome</th><th>Data</th><th>Idade</th><th>Curso</th>
-              <th>Unidade</th><th>Turno</th><th>Ação RH ✓</th>
+              <th>Nome</th><th>Data</th><th>Idade</th><th>Vínculo</th>
+              <th>Função/Curso</th><th>Unidade</th><th>Ação RH ✓</th>
             </tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="7" style="padding:12px;text-align:center;color:#9ca3af;">Nenhum aniversariante neste mês.</td></tr>'}</tbody>
@@ -194,7 +225,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
               <Cake size={22} />
               <h2 className="text-xl font-extrabold tracking-tight">Aniversariantes do Mês</h2>
             </div>
-            <p className="text-white/80 text-xs">Lista de estagiários para ações de RH e fortalecimento de vínculo</p>
+            <p className="text-white/80 text-xs">Lista de estagiários, PJ e CLT para ações de RH e fortalecimento de vínculo</p>
           </div>
 
           {/* Navegador de mês */}
@@ -204,7 +235,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
             </button>
             <div className="text-center min-w-[120px]">
               <p className="font-extrabold text-lg leading-none">{MONTH_NAMES[selectedMonth]}</p>
-              <p className="text-white/70 text-[11px] mt-0.5">{birthdayInterns.length} aniversariante(s)</p>
+              <p className="text-white/70 text-[11px] mt-0.5">{birthdayPeople.length} aniversariante(s)</p>
             </div>
             <button onClick={nextMonth} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
               <ChevronRight size={18} />
@@ -225,7 +256,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
           <div className="mt-4 bg-white/15 rounded-xl px-4 py-2.5 text-xs flex items-center gap-2">
             <span>🎯</span>
             <span>
-              Próximo aniversário: <strong>{nextBirthday.intern.name}</strong> —{' '}
+              Próximo aniversário: <strong>{nextBirthday.intern.name}</strong> ({TYPE_LABELS[nextBirthday.intern.personType]}) —{' '}
               {String(nextBirthday.day).padStart(2, '0')}/{String(nextBirthday.month + 1).padStart(2, '0')} ({MONTH_NAMES[nextBirthday.month]})
             </span>
           </div>
@@ -237,10 +268,10 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Navegação rápida por mês</p>
         <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5">
           {MONTH_NAMES.map((m, idx) => {
-            const count = interns.filter(i => {
-              if (!i.birthdate) return false;
-              if (filterUnit !== 'all' && i.unitId !== filterUnit) return false;
-              return new Date(i.birthdate + 'T00:00:00').getMonth() === idx;
+            const count = people.filter(p => {
+              if (!p.birthdate) return false;
+              if (filterUnit !== 'all' && p.unitId !== filterUnit) return false;
+              return new Date(p.birthdate + 'T00:00:00').getMonth() === idx;
             }).length;
             return (
               <button
@@ -272,27 +303,27 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
             Aniversariantes em {MONTH_NAMES[selectedMonth]}
           </h3>
           <span className="ml-auto text-[10px] bg-pink-100 text-pink-800 font-bold px-2.5 py-1 rounded-full">
-            {birthdayInterns.length} {birthdayInterns.length === 1 ? 'pessoa' : 'pessoas'}
+            {birthdayPeople.length} {birthdayPeople.length === 1 ? 'pessoa' : 'pessoas'}
           </span>
         </div>
 
-        {birthdayInterns.length === 0 ? (
+        {birthdayPeople.length === 0 ? (
           <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl py-14 text-center">
             <span className="text-4xl block mb-3">🎂</span>
             <p className="text-slate-500 font-semibold text-sm">Nenhum aniversariante em {MONTH_NAMES[selectedMonth]}</p>
-            <p className="text-slate-400 text-xs mt-1">Cadastre as datas de nascimento dos estagiários na seção abaixo.</p>
+            <p className="text-slate-400 text-xs mt-1">Cadastre as datas de nascimento na seção abaixo.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {birthdayInterns.map(intern => {
-              const d = new Date(intern.birthdate + 'T00:00:00');
+            {birthdayPeople.map(person => {
+              const d = new Date(person.birthdate + 'T00:00:00');
               const day = d.getDate();
               const age = new Date().getFullYear() - d.getFullYear();
               const isToday = new Date().getDate() === day && new Date().getMonth() === selectedMonth;
 
               return (
                 <div
-                  key={intern.id}
+                  key={`${person.personType}-${person.id}`}
                   className={`relative bg-white rounded-2xl border shadow-sm overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5 ${
                     isToday ? 'border-pink-400 shadow-pink-100 ring-2 ring-pink-300' : 'border-slate-100'
                   }`}
@@ -305,16 +336,21 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
                   <div className={`flex gap-4 p-4 ${isToday ? '' : ''}`}>
                     <div className="shrink-0">
                       <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shadow-inner">
-                        {intern.photo
-                          ? <img src={intern.photo} alt={intern.name} className="w-full h-full object-cover" />
+                        {person.photo
+                          ? <img src={person.photo} alt={person.name} className="w-full h-full object-cover" />
                           : <span className="text-3xl">👤</span>
                         }
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-bold text-gray-800 text-sm truncate leading-tight">{intern.name}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{intern.course || '—'}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{unitName(intern.unitId)}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-gray-800 text-sm truncate leading-tight">{person.name}</p>
+                        <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                          {TYPE_LABELS[person.personType]}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 truncate">{person.role || '—'}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{unitName(person.unitId)}</p>
                       <div className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-gradient-to-r ${MONTH_COLORS[selectedMonth]} text-white shadow-sm`}>
                         <Cake size={11} />
                         {String(day).padStart(2, '0')}/{String(selectedMonth + 1).padStart(2, '0')} — {age} anos
@@ -328,32 +364,32 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
         )}
       </div>
 
-      {/* Estagiários sem data cadastrada */}
+      {/* Pessoas sem data cadastrada */}
       {withoutBirthday.length > 0 && (
         <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-amber-100 bg-amber-50 flex items-center gap-2">
             <Users size={15} className="text-amber-600" />
             <h3 className="font-bold text-amber-800 text-sm">
-              Estagiários sem data de nascimento cadastrada
+              Sem data de nascimento cadastrada
             </h3>
             <span className="ml-auto text-[10px] bg-amber-200 text-amber-900 font-bold px-2.5 py-1 rounded-full">
               {withoutBirthday.length}
             </span>
           </div>
           <div className="divide-y divide-slate-50">
-            {withoutBirthday.map(intern => (
-              <div key={intern.id} className="flex items-center gap-3 px-4 py-3">
+            {withoutBirthday.map(person => (
+              <div key={`${person.personType}-${person.id}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                  {intern.photo
-                    ? <img src={intern.photo} alt={intern.name} className="w-full h-full object-cover" />
+                  {person.photo
+                    ? <img src={person.photo} alt={person.name} className="w-full h-full object-cover" />
                     : <span className="text-sm">👤</span>
                   }
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-800 text-xs truncate">{intern.name}</p>
-                  <p className="text-[10px] text-slate-400">{unitName(intern.unitId)} · {intern.shift || '—'}</p>
+                  <p className="font-semibold text-gray-800 text-xs truncate">{person.name} <span className="font-normal text-slate-400">· {TYPE_LABELS[person.personType]}</span></p>
+                  <p className="text-[10px] text-slate-400">{unitName(person.unitId)}</p>
                 </div>
-                {editingId === intern.id ? (
+                {editingId === person.id ? (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <input
                       type="date"
@@ -362,7 +398,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
                       className="text-[11px] p-1.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 bg-white"
                     />
                     <button
-                      onClick={() => handleSaveBirthday(intern.id)}
+                      onClick={() => handleSaveBirthday(person)}
                       disabled={saving || !editBirthday}
                       className="p-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 transition-colors"
                       title="Salvar"
@@ -379,7 +415,7 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
                   </div>
                 ) : (
                   <button
-                    onClick={() => { setEditingId(intern.id); setEditBirthday(''); }}
+                    onClick={() => { setEditingId(person.id); setEditBirthday(''); }}
                     className="flex items-center gap-1.5 text-[10px] text-blue-600 hover:text-blue-800 font-semibold bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors shrink-0"
                   >
                     <Edit2 size={11} /> Cadastrar Data

@@ -65,6 +65,11 @@ export const WORKSPACES = {
     // (resolveAdminKey). Qualquer outro texto digitado cai no "supervisor"
     // genérico. O e-mail de cada uma é o mesmo em auth.users nos dois sites
     // (é a mesma conta Supabase) — só a lista exibida/reconhecível muda.
+    // Tela de Usuários do Sistema (Configurações > Usuários do Sistema) —
+    // cadastro/edição/reset de senha das contas que logam no painel e nos
+    // quiosques. Desligada neste site: as contas da Porto Terapia continuam
+    // sendo as fixas de adminUsers/kioskUnits.
+    showSystemUsersModule: false,
     adminUsers: {
       supervisor: { label: 'Supervisor Geral', email: 'supervisor@portoterapia.com' },
       guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
@@ -194,6 +199,11 @@ export const WORKSPACES = {
     // sempre); Guimelly/Isabella continuam com acesso de dados ao Grupo IB
     // (workspace_scope inclui "all"), mas não aparecem como opção de login
     // aqui — só no site da Porto Terapia.
+    // Tela de Usuários do Sistema (ver seção 21 de supabase_schema.sql). Ligada
+    // no Grupo IB: o hub tem 3 módulos e várias unidades, então as contas de
+    // painel e de quiosque precisam ser geridas pela própria UI, e não por
+    // blocos SQL rodados à mão.
+    showSystemUsersModule: true,
     adminUsers: {
       bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
     },

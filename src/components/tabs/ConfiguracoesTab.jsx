@@ -19,14 +19,16 @@ import {
   Plus,
   Trash2,
   Download,
+  Users,
 } from 'lucide-react';
 import { BRANDING } from '../../config/branding';
 import { compressImage, mapHolidayFromDb, mapHolidayToDb, getFriendlyDbErrorMessage } from '../../utils/mappings';
 import { supabase } from '../../supabase';
 import { NATIONAL_FIXED_HOLIDAYS, movableHolidays } from '../../utils/cltCalculations';
 import { toast } from 'sonner';
+import UsuariosSistema from '../config/UsuariosSistema';
 
-export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSaveUnit }) {
+export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSaveUnit, currentUserId = null }) {
   const [activeSubTab, setActiveSubTab] = useState('empresa');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [expandedUnitId, setExpandedUnitId] = useState(null);
@@ -183,6 +185,9 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
   const menuItems = [
     { id: 'empresa', label: 'Empresa & Unidades', icon: Building2 },
     { id: 'geofence', label: 'Geofencing & Ponto', icon: MapPin },
+    ...(BRANDING.showSystemUsersModule
+      ? [{ id: 'usuarios', label: 'Usuários do Sistema', icon: Users }]
+      : []),
     { id: 'permissoes', label: 'Permissões & Acessos', icon: ShieldCheck },
     { id: 'notificacoes', label: 'Notificações & Alertas', icon: Bell },
     { id: 'aparencia', label: 'Aparência & Preferências', icon: Palette },
@@ -804,6 +809,11 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
           </div>
 
           {/* 3. PERMISSÕES & ACESSOS */}
+          {/* 3.a USUÁRIOS DO SISTEMA (contas reais em auth.users) */}
+          {BRANDING.showSystemUsersModule && activeSubTab === 'usuarios' && (
+            <UsuariosSistema units={availableUnits} currentUserId={currentUserId} />
+          )}
+
           <div style={{ display: activeSubTab === 'permissoes' ? 'block' : 'none' }}>
             <div className="space-y-6">
               <div>
@@ -811,8 +821,25 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                   <ShieldCheck className="w-5 h-5 text-indigo-600" />
                   Matriz de Permissões por Perfil
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">Configure o nível de acesso e visibilidade das abas do sistema.</p>
+                <p className="text-xs text-slate-500 mt-1">Padrão de acesso por perfil, aplicado a contas novas como sugestão inicial.</p>
               </div>
+
+              {BRANDING.showSystemUsersModule && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2">
+                  <Users className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-800">
+                    Esta matriz define o <strong>padrão por perfil</strong>. As permissões efetivas de cada
+                    pessoa são definidas conta a conta em{' '}
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('usuarios')}
+                      className="font-semibold underline hover:text-blue-900"
+                    >
+                      Usuários do Sistema
+                    </button>.
+                  </p>
+                </div>
+              )}
 
               <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-left text-sm">

@@ -3186,3 +3186,508 @@ GRANT EXECUTE ON FUNCTION public.register_employee_time_record(uuid, text, text,
 -- 19.7 Habilita autocadastro nas unidades do Grupo IB que já têm o módulo CLT ligado.
 UPDATE public.units SET clt_self_registration_enabled = true
  WHERE workspace_id = 'grupoib' AND clt_enabled = true AND clt_self_registration_enabled = false;
+
+-- =========================================================================
+-- 20. ANIVERSARIANTES COMPILADOS (Grupo IB) — data de nascimento do próprio
+-- profissional PJ. `professionals` já tinha rep_birthdate (nascimento do
+-- representante legal da PJ), mas não a data de nascimento do prestador em
+-- si, necessária para juntar estagiários + PJ + CLT numa única lista de
+-- aniversariantes (aba "Aniversariantes", comum aos 3 módulos).
+-- =========================================================================
+ALTER TABLE public.professionals
+  ADD COLUMN IF NOT EXISTS birthdate date;
+
+-- =========================================================================
+-- 21. USUÁRIOS DO SISTEMA (Grupo IB)
+-- Cadastro/gestão das contas que efetivamente logam no painel administrativo
+-- e nos quiosques. Até aqui essas contas só existiam em auth.users, criadas
+-- por blocos DO deste arquivo (seções 6, 15, 16.6, 17.x) — não havia nenhuma
+-- tela para listá-las, criar novas, resetar senha ou revogar acesso.
+--
+-- Decisões:
+--  * A fonte de verdade continua sendo auth.users (nada de tabela espelho de
+--    contas, que dessincronizaria). O que ganha tabela própria é só o que
+--    auth.users não guarda: permissões finas e trilha de auditoria.
+--  * Todo acesso passa por RPC SECURITY DEFINER, no mesmo padrão de
+--    create_intern_user/reset_intern_password (seção 14) — o schema auth
+--    não é exposto ao PostgREST.
+--  * Toda RPC checa papel 'supervisor' + workspace (jwt_has_workspace_access),
+--    para um supervisor restrito a um workspace não conseguir mexer nas
+--    contas do outro.
+-- =========================================================================
+
+-- 21.1 Permissões finas por conta. auth.users.raw_user_meta_data já guarda
+-- role/unit_id/workspace_scope; `permissions` é o mapa de flags por módulo
+-- (ver src/config/permissions.js, que é o catálogo canônico exibido na UI).
+CREATE TABLE IF NOT EXISTS public.system_user_permissions (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  permissions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  notes text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid
+);
+
+ALTER TABLE public.system_user_permissions ENABLE ROW LEVEL SECURITY;
+-- Sem policy permissiva: a tabela só é lida/escrita pelas RPCs SECURITY
+-- DEFINER abaixo (o dono das funções ignora RLS).
+REVOKE ALL ON TABLE public.system_user_permissions FROM PUBLIC, anon, authenticated;
+
+-- 21.2 Trilha de auditoria das ações administrativas sobre contas. Guardada
+-- separada de qualquer log de aplicação porque aqui o dado sensível é "quem
+-- deu/tirou acesso de quem, e quando" — nunca a senha em si.
+CREATE TABLE IF NOT EXISTS public.system_user_audit (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  target_user_id uuid,
+  target_email text,
+  action text NOT NULL,           -- create | update | reset_password | disable | enable | delete
+  detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+  actor_id uuid,
+  actor_email text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_user_audit_created_at
+  ON public.system_user_audit (created_at DESC);
+
+ALTER TABLE public.system_user_audit ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.system_user_audit FROM PUBLIC, anon, authenticated;
+
+-- 21.3 Helpers internos
+
+-- Papéis que esta tela gerencia. 'intern' fica de fora de propósito: conta de
+-- estagiário nominal é gerida pela aba Estagiários (create_intern_user), não
+-- aqui, para não existirem dois caminhos de escrita sobre a mesma conta.
+CREATE OR REPLACE FUNCTION public.system_user_manageable_roles() RETURNS text[]
+LANGUAGE sql IMMUTABLE SET search_path = public
+AS $function$ SELECT ARRAY['supervisor', 'intern_unit', 'professional_unit', 'employee_unit'] $function$;
+
+-- Quem pode operar esta tela: supervisor com acesso ao workspace alvo.
+CREATE OR REPLACE FUNCTION public.assert_system_user_admin(p_workspace_scope jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  ws text;
+BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  -- Quem tem escopo 'all' passa direto; caso contrário, precisa ter acesso a
+  -- TODOS os workspaces que a conta alvo terá/tem (senão daria para criar uma
+  -- conta com escopo maior que o próprio).
+  IF public.jwt_has_workspace_access('all') THEN
+    RETURN;
+  END IF;
+
+  IF p_workspace_scope IS NULL OR jsonb_array_length(COALESCE(p_workspace_scope, '[]'::jsonb)) = 0 THEN
+    RAISE EXCEPTION 'workspace scope required';
+  END IF;
+
+  FOR ws IN SELECT jsonb_array_elements_text(p_workspace_scope) LOOP
+    IF ws = 'all' OR NOT public.jwt_has_workspace_access(ws) THEN
+      RAISE EXCEPTION 'not authorized for workspace %', ws;
+    END IF;
+  END LOOP;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.assert_system_user_admin(jsonb) FROM PUBLIC, anon;
+
+-- Registra a ação na trilha de auditoria.
+CREATE OR REPLACE FUNCTION public.log_system_user_action(
+  p_target_user_id uuid, p_target_email text, p_action text, p_detail jsonb DEFAULT '{}'::jsonb
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+BEGIN
+  INSERT INTO public.system_user_audit (target_user_id, target_email, action, detail, actor_id, actor_email)
+  VALUES (
+    p_target_user_id, p_target_email, p_action, COALESCE(p_detail, '{}'::jsonb),
+    auth.uid(), (auth.jwt() ->> 'email')
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.log_system_user_action(uuid, text, text, jsonb) FROM PUBLIC, anon;
+
+-- 21.4 Listagem. Retorna as contas administrativas/quiosque visíveis para o
+-- chamador, já com permissões e status (ativo/desativado).
+CREATE OR REPLACE FUNCTION public.list_system_users()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  result jsonb;
+BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.role, t.name), '[]'::jsonb) INTO result
+  FROM (
+    SELECT
+      u.id,
+      u.email,
+      COALESCE(u.raw_user_meta_data ->> 'name', split_part(u.email, '@', 1)) AS name,
+      u.raw_user_meta_data ->> 'role' AS role,
+      u.raw_user_meta_data ->> 'unit_id' AS unit_id,
+      COALESCE(u.raw_user_meta_data -> 'workspace_scope', '[]'::jsonb) AS workspace_scope,
+      COALESCE(p.permissions, '{}'::jsonb) AS permissions,
+      p.notes,
+      u.created_at,
+      u.last_sign_in_at,
+      (u.banned_until IS NOT NULL AND u.banned_until > now()) AS disabled,
+      u.banned_until
+    FROM auth.users u
+    LEFT JOIN public.system_user_permissions p ON p.user_id = u.id
+    WHERE (u.raw_user_meta_data ->> 'role') = ANY (public.system_user_manageable_roles())
+      AND (
+        public.jwt_has_workspace_access('all')
+        -- Sem escopo 'all', o supervisor só enxerga contas cujo escopo ele
+        -- também tem (conta de quiosque é resolvida pelo workspace da unidade).
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(
+            COALESCE(u.raw_user_meta_data -> 'workspace_scope', '[]'::jsonb)
+          ) ws WHERE public.jwt_has_workspace_access(ws)
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.units un
+          WHERE un.id = (u.raw_user_meta_data ->> 'unit_id')
+            AND public.jwt_has_workspace_access(un.workspace_id)
+        )
+      )
+  ) t;
+
+  RETURN result;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.list_system_users() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_system_users() TO authenticated;
+
+-- 21.5 Criação de conta. Cria em auth.users + auth.identities no mesmo molde
+-- dos blocos seed deste arquivo (a API Admin exigiria service_role, que não
+-- existe no front — ver src/supabase.js, que só carrega a anon key).
+CREATE OR REPLACE FUNCTION public.create_system_user(
+  p_email text,
+  p_password text,
+  p_name text,
+  p_role text,
+  p_unit_id text DEFAULT NULL,
+  p_workspace_scope jsonb DEFAULT '[]'::jsonb,
+  p_permissions jsonb DEFAULT '{}'::jsonb,
+  p_notes text DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  new_id uuid;
+  v_email text := lower(trim(p_email));
+BEGIN
+  PERFORM public.assert_system_user_admin(p_workspace_scope);
+
+  IF NOT (p_role = ANY (public.system_user_manageable_roles())) THEN
+    RAISE EXCEPTION 'papel inválido: %', p_role;
+  END IF;
+
+  IF v_email IS NULL OR position('@' in v_email) < 2 OR position('.' in split_part(v_email, '@', 2)) < 2 THEN
+    RAISE EXCEPTION 'e-mail inválido';
+  END IF;
+
+  IF p_password IS NULL OR length(p_password) < 8 THEN
+    RAISE EXCEPTION 'a senha deve ter ao menos 8 caracteres';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM auth.users WHERE lower(email) = v_email) THEN
+    RAISE EXCEPTION 'já existe uma conta com este e-mail';
+  END IF;
+
+  -- Contas de quiosque são sempre atreladas a uma unidade existente.
+  IF p_role <> 'supervisor' THEN
+    IF p_unit_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id) THEN
+      RAISE EXCEPTION 'unidade obrigatória e existente para contas de quiosque';
+    END IF;
+    IF NOT public.jwt_has_workspace_access('all')
+       AND NOT EXISTS (SELECT 1 FROM public.units u WHERE u.id = p_unit_id AND public.jwt_has_workspace_access(u.workspace_id)) THEN
+      RAISE EXCEPTION 'not authorized for this unit/workspace';
+    END IF;
+  END IF;
+
+  new_id := gen_random_uuid();
+
+  INSERT INTO auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, aud, role, created_at, updated_at,
+    confirmation_token, recovery_token, email_change_token_new, email_change,
+    is_sso_user, is_anonymous
+  ) VALUES (
+    new_id, '00000000-0000-0000-0000-000000000000', v_email,
+    crypt(p_password, gen_salt('bf')), now(),
+    '{"provider": "email", "providers": ["email"]}'::jsonb,
+    jsonb_strip_nulls(jsonb_build_object(
+      'name', p_name,
+      'role', p_role,
+      'unit_id', p_unit_id,
+      'workspace_scope', COALESCE(p_workspace_scope, '[]'::jsonb)
+    )),
+    'authenticated', 'authenticated', now(), now(),
+    '', '', '', '', false, false
+  );
+
+  INSERT INTO auth.identities (
+    id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+  ) VALUES (
+    gen_random_uuid(), new_id,
+    jsonb_build_object('sub', new_id::text, 'email', v_email),
+    'email', new_id::text, now(), now(), now()
+  );
+
+  INSERT INTO public.system_user_permissions (user_id, permissions, notes, updated_by)
+  VALUES (new_id, COALESCE(p_permissions, '{}'::jsonb), p_notes, auth.uid());
+
+  PERFORM public.log_system_user_action(
+    new_id, v_email, 'create',
+    jsonb_build_object('role', p_role, 'unit_id', p_unit_id, 'workspace_scope', p_workspace_scope)
+  );
+
+  RETURN new_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.create_system_user(text, text, text, text, text, jsonb, jsonb, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_system_user(text, text, text, text, text, jsonb, jsonb, text) TO authenticated;
+
+-- 21.6 Edição (nome, papel, unidade, escopo e permissões). Não mexe em senha
+-- nem em e-mail: e-mail é a identidade do login (trocar exigiria mexer também
+-- em auth.identities e invalidaria sessões), então é imutável por aqui.
+CREATE OR REPLACE FUNCTION public.update_system_user(
+  p_user_id uuid,
+  p_name text DEFAULT NULL,
+  p_role text DEFAULT NULL,
+  p_unit_id text DEFAULT NULL,
+  p_workspace_scope jsonb DEFAULT NULL,
+  p_permissions jsonb DEFAULT NULL,
+  p_notes text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  v_email text;
+  v_meta jsonb;
+  v_new_role text;
+  v_new_scope jsonb;
+  v_new_unit text;
+BEGIN
+  SELECT u.email, COALESCE(u.raw_user_meta_data, '{}'::jsonb)
+    INTO v_email, v_meta
+    FROM auth.users u WHERE u.id = p_user_id;
+
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION 'conta não encontrada';
+  END IF;
+
+  IF NOT ((v_meta ->> 'role') = ANY (public.system_user_manageable_roles())) THEN
+    RAISE EXCEPTION 'esta conta não é gerenciada por esta tela';
+  END IF;
+
+  v_new_role  := COALESCE(p_role, v_meta ->> 'role');
+  v_new_scope := COALESCE(p_workspace_scope, v_meta -> 'workspace_scope', '[]'::jsonb);
+  v_new_unit  := COALESCE(p_unit_id, v_meta ->> 'unit_id');
+
+  -- Precisa poder administrar tanto o escopo atual quanto o escopo resultante.
+  PERFORM public.assert_system_user_admin(COALESCE(v_meta -> 'workspace_scope', '[]'::jsonb));
+  PERFORM public.assert_system_user_admin(v_new_scope);
+
+  IF NOT (v_new_role = ANY (public.system_user_manageable_roles())) THEN
+    RAISE EXCEPTION 'papel inválido: %', v_new_role;
+  END IF;
+
+  IF v_new_role <> 'supervisor' THEN
+    IF v_new_unit IS NULL OR NOT EXISTS (SELECT 1 FROM public.units WHERE id = v_new_unit) THEN
+      RAISE EXCEPTION 'unidade obrigatória e existente para contas de quiosque';
+    END IF;
+  ELSE
+    v_new_unit := NULL;
+  END IF;
+
+  UPDATE auth.users
+  SET raw_user_meta_data = jsonb_strip_nulls(
+        v_meta || jsonb_build_object(
+          'name', COALESCE(p_name, v_meta ->> 'name'),
+          'role', v_new_role,
+          'unit_id', v_new_unit,
+          'workspace_scope', v_new_scope
+        )
+      ),
+      updated_at = now()
+  WHERE id = p_user_id;
+
+  IF p_permissions IS NOT NULL OR p_notes IS NOT NULL THEN
+    INSERT INTO public.system_user_permissions (user_id, permissions, notes, updated_at, updated_by)
+    VALUES (p_user_id, COALESCE(p_permissions, '{}'::jsonb), p_notes, now(), auth.uid())
+    ON CONFLICT (user_id) DO UPDATE
+      SET permissions = COALESCE(p_permissions, public.system_user_permissions.permissions),
+          notes       = COALESCE(p_notes, public.system_user_permissions.notes),
+          updated_at  = now(),
+          updated_by  = auth.uid();
+  END IF;
+
+  PERFORM public.log_system_user_action(
+    p_user_id, v_email, 'update',
+    jsonb_build_object('role', v_new_role, 'unit_id', v_new_unit, 'workspace_scope', v_new_scope)
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.update_system_user(uuid, text, text, text, jsonb, jsonb, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_system_user(uuid, text, text, text, jsonb, jsonb, text) TO authenticated;
+
+-- 21.7 Reset de senha. Mesmo molde de reset_intern_password (seção 14).
+CREATE OR REPLACE FUNCTION public.reset_system_user_password(p_user_id uuid, p_new_password text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  v_email text;
+  v_meta jsonb;
+BEGIN
+  SELECT u.email, COALESCE(u.raw_user_meta_data, '{}'::jsonb)
+    INTO v_email, v_meta
+    FROM auth.users u WHERE u.id = p_user_id;
+
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION 'conta não encontrada';
+  END IF;
+
+  IF NOT ((v_meta ->> 'role') = ANY (public.system_user_manageable_roles())) THEN
+    RAISE EXCEPTION 'esta conta não é gerenciada por esta tela';
+  END IF;
+
+  PERFORM public.assert_system_user_admin(COALESCE(v_meta -> 'workspace_scope', '[]'::jsonb));
+
+  IF p_new_password IS NULL OR length(p_new_password) < 8 THEN
+    RAISE EXCEPTION 'a senha deve ter ao menos 8 caracteres';
+  END IF;
+
+  UPDATE auth.users
+  SET encrypted_password = crypt(p_new_password, gen_salt('bf')),
+      updated_at = now()
+  WHERE id = p_user_id;
+
+  -- Auditoria nunca guarda a senha, só o fato de ter sido trocada.
+  PERFORM public.log_system_user_action(p_user_id, v_email, 'reset_password', '{}'::jsonb);
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.reset_system_user_password(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reset_system_user_password(uuid, text) TO authenticated;
+
+-- 21.8 Desativar/reativar acesso (banned_until do GoTrue). Preferível a
+-- excluir: preserva a autoria histórica dos registros feitos pela conta.
+CREATE OR REPLACE FUNCTION public.set_system_user_active(p_user_id uuid, p_active boolean)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  v_email text;
+  v_meta jsonb;
+BEGIN
+  IF p_user_id = auth.uid() THEN
+    RAISE EXCEPTION 'você não pode desativar a própria conta';
+  END IF;
+
+  SELECT u.email, COALESCE(u.raw_user_meta_data, '{}'::jsonb)
+    INTO v_email, v_meta
+    FROM auth.users u WHERE u.id = p_user_id;
+
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION 'conta não encontrada';
+  END IF;
+
+  IF NOT ((v_meta ->> 'role') = ANY (public.system_user_manageable_roles())) THEN
+    RAISE EXCEPTION 'esta conta não é gerenciada por esta tela';
+  END IF;
+
+  PERFORM public.assert_system_user_admin(COALESCE(v_meta -> 'workspace_scope', '[]'::jsonb));
+
+  UPDATE auth.users
+  SET banned_until = CASE WHEN p_active THEN NULL ELSE 'infinity'::timestamptz END,
+      updated_at = now()
+  WHERE id = p_user_id;
+
+  -- Derruba as sessões abertas ao desativar, senão o acesso sobreviveria até
+  -- o refresh token expirar.
+  IF NOT p_active THEN
+    DELETE FROM auth.sessions WHERE user_id = p_user_id;
+    DELETE FROM auth.refresh_tokens WHERE user_id = p_user_id::text;
+  END IF;
+
+  PERFORM public.log_system_user_action(
+    p_user_id, v_email, CASE WHEN p_active THEN 'enable' ELSE 'disable' END, '{}'::jsonb
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.set_system_user_active(uuid, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_system_user_active(uuid, boolean) TO authenticated;
+
+-- 21.9 Exclusão definitiva. Só para contas criadas por engano — o caminho
+-- normal é desativar (21.8).
+CREATE OR REPLACE FUNCTION public.delete_system_user(p_user_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  v_email text;
+  v_meta jsonb;
+BEGIN
+  IF p_user_id = auth.uid() THEN
+    RAISE EXCEPTION 'você não pode excluir a própria conta';
+  END IF;
+
+  SELECT u.email, COALESCE(u.raw_user_meta_data, '{}'::jsonb)
+    INTO v_email, v_meta
+    FROM auth.users u WHERE u.id = p_user_id;
+
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION 'conta não encontrada';
+  END IF;
+
+  IF NOT ((v_meta ->> 'role') = ANY (public.system_user_manageable_roles())) THEN
+    RAISE EXCEPTION 'esta conta não é gerenciada por esta tela';
+  END IF;
+
+  PERFORM public.assert_system_user_admin(COALESCE(v_meta -> 'workspace_scope', '[]'::jsonb));
+
+  -- Auditoria registrada ANTES do DELETE: system_user_audit.target_user_id não
+  -- tem FK justamente para a linha sobreviver à exclusão da conta.
+  PERFORM public.log_system_user_action(
+    p_user_id, v_email, 'delete', jsonb_build_object('role', v_meta ->> 'role')
+  );
+
+  DELETE FROM auth.users WHERE id = p_user_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.delete_system_user(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_system_user(uuid) TO authenticated;
+
+-- 21.10 Auditoria: últimas ações administrativas sobre contas.
+CREATE OR REPLACE FUNCTION public.list_system_user_audit(p_limit integer DEFAULT 100)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $function$
+DECLARE
+  result jsonb;
+BEGIN
+  IF (auth.jwt() -> 'user_metadata' ->> 'role') IS DISTINCT FROM 'supervisor' THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO result
+  FROM (
+    SELECT a.id, a.target_user_id, a.target_email, a.action, a.detail,
+           a.actor_id, a.actor_email, a.created_at
+    FROM public.system_user_audit a
+    ORDER BY a.created_at DESC
+    LIMIT LEAST(GREATEST(COALESCE(p_limit, 100), 1), 500)
+  ) t;
+
+  RETURN result;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.list_system_user_audit(integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_system_user_audit(integer) TO authenticated;

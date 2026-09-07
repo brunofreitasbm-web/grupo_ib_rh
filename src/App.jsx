@@ -50,12 +50,14 @@ const AniversariantesTab = lazyWithRetry(() => import('./components/tabs/Anivers
 const ConfiguracoesTab = lazyWithRetry(() => import('./components/tabs/ConfiguracoesTab'));
 // Abas do módulo Profissionais PJ (prestadores de serviço) — separadas das
 // abas de estagiário de propósito (ver plano do módulo PJ, seção 3.5).
+const DashboardProfissionaisTab = lazyWithRetry(() => import('./components/tabs/DashboardProfissionaisTab'));
 const ProfissionaisTab = lazyWithRetry(() => import('./components/tabs/ProfissionaisTab'));
 const PresencaProfissionaisTab = lazyWithRetry(() => import('./components/tabs/PresencaProfissionaisTab'));
 const ProducaoProfissionaisTab = lazyWithRetry(() => import('./components/tabs/ProducaoProfissionaisTab'));
 const DocumentosProfissionaisTab = lazyWithRetry(() => import('./components/tabs/DocumentosProfissionaisTab'));
 // Abas do módulo Funcionários CLT (empregados) — terceiro tipo de vínculo do
 // hub de RH, ao lado de Estagiários e Profissionais PJ (ver plano do módulo).
+const DashboardFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DashboardFuncionariosTab'));
 const FuncionariosTab = lazyWithRetry(() => import('./components/tabs/FuncionariosTab'));
 const DossieFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DossieFuncionariosTab'));
 const DocumentosFuncionariosTab = lazyWithRetry(() => import('./components/tabs/DocumentosFuncionariosTab'));
@@ -2911,16 +2913,17 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
-                    {BRANDING.kioskUnits.filter((ku) => ku.employeeKioskEmail).map((ku) =>
-                      renderUnitButton(ku, {
+                    {BRANDING.kioskUnits.filter((ku) => ku.employeeKioskEmail).map((ku) => {
+                      const accent = KIOSK_ACCENT_CLASSES[ku.accent] || KIOSK_ACCENT_CLASSES.indigo;
+                      return renderUnitButton(ku, {
                         keyPrefix: 'clt-',
                         onSelect: handleDirectEmployeeLogin,
-                        accentClass: 'hover:border-indigo-500 hover:bg-indigo-50',
-                        iconBg: 'bg-indigo-100 text-indigo-700 group-hover:bg-indigo-200',
-                        badge: { label: 'Biometria', className: 'bg-indigo-100 text-indigo-800' },
+                        accentClass: accent.hoverBorder,
+                        iconBg: accent.icon,
+                        badge: { label: 'Biometria', className: accent.badge },
                         description: 'Registro de ponto (Biometria + GPS + NSR)',
-                      })
-                    )}
+                      });
+                    })}
                   </div>
 
                   {BRANDING.showEmployeeSelfRegistration && (
@@ -2958,16 +2961,17 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
-                    {BRANDING.kioskUnits.filter((ku) => ku.professionalKioskEmail).map((ku) =>
-                      renderUnitButton(ku, {
+                    {BRANDING.kioskUnits.filter((ku) => ku.professionalKioskEmail).map((ku) => {
+                      const accent = KIOSK_ACCENT_CLASSES[ku.accent] || KIOSK_ACCENT_CLASSES.emerald;
+                      return renderUnitButton(ku, {
                         keyPrefix: 'pj-',
                         onSelect: handleDirectProfessionalLogin,
-                        accentClass: 'hover:border-teal-500 hover:bg-teal-50',
-                        iconBg: 'bg-teal-100 text-teal-700 group-hover:bg-teal-200',
-                        badge: { label: 'PIN', className: 'bg-teal-100 text-teal-800' },
+                        accentClass: accent.hoverBorder,
+                        iconBg: accent.icon,
+                        badge: { label: 'PIN', className: accent.badge },
                         description: 'Registro de presença por PIN de 6 dígitos',
-                      })
-                    )}
+                      });
+                    })}
                   </div>
 
                   {BRANDING.showProfessionalSelfRegistration && (
@@ -7744,21 +7748,20 @@ export default function App() {
       { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: '🔒' },
       { id: 'financeiro',      label: 'Folha de Pagamento',      icon: '💰' },
       { id: 'rh',              label: 'Alertas & Pendências',    icon: '🔔' },
-      { id: 'aniversariantes', label: 'Aniversariantes',         icon: '🎂' },
-      { id: 'configuracoes',    label: 'Configurações',           icon: '⚙️' },
     ];
 
     const professionalLabels = BRANDING.professionalLabels || { plural: 'Profissionais PJ' };
     const professionalNavItems = [
+      { id: 'pj_dashboard',     label: 'Dashboard', icon: '📊' },
       { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: '👥' },
       { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: '🗓️' },
       { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: '🧾' },
       { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: '📄' },
-      { id: 'configuracoes',    label: 'Configurações',           icon: '⚙️' },
     ];
 
     const employeeLabels = BRANDING.employeeLabels || { plural: 'Funcionários CLT' };
     const employeeNavItems = [
+      { id: 'clt_dashboard',     label: 'Dashboard', icon: '📊' },
       { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: '🧑‍💼' },
       { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: '📁' },
       { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: '📄' },
@@ -7769,7 +7772,14 @@ export default function App() {
       { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: '⚠️' },
       { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: '🔒' },
       { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
-      { id: 'configuracoes',     label: 'Configurações',           icon: '⚙️' },
+    ];
+
+    // Aniversariantes e Configurações são comuns aos 3 módulos (Estagiários/PJ/
+    // CLT) — ficam fixos numa seção própria da sidebar, sempre visíveis, em vez
+    // de duplicados dentro de cada lista de módulo.
+    const commonNavItems = [
+      { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
+      { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
     ];
 
     // Módulos PJ e CLT só aparecem para quem tem BRANDING.showProfessionalsModule/
@@ -7785,6 +7795,20 @@ export default function App() {
       : adminModule === 'employees' && showEmployeesModule
         ? employeeNavItems
         : internNavItems;
+
+    // Cor predominante do módulo ativo — usada tanto no toggle quanto nas
+    // abas do submenu, para que cada módulo (Estagiários/PJ/CLT) tenha sua
+    // própria identidade visual consistente.
+    const moduleAccent = adminModule === 'professionals' && showProfessionalsModule
+      ? 'teal'
+      : adminModule === 'employees' && showEmployeesModule
+        ? 'indigo'
+        : 'blue';
+    const navActiveClass = {
+      blue: 'bg-blue-50 text-blue-700 border-blue-200/80',
+      teal: 'bg-teal-50 text-teal-700 border-teal-200/80',
+      indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200/80',
+    }[moduleAccent];
 
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
@@ -7848,7 +7872,7 @@ export default function App() {
                   {showProfessionalsModule && (
                     <button
                       type="button"
-                      onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_profissionais'); }}
+                      onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_dashboard'); }}
                       className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
                         adminModule === 'professionals'
                           ? 'bg-teal-600 text-white border-teal-600'
@@ -7861,7 +7885,7 @@ export default function App() {
                   {showEmployeesModule && (
                     <button
                       type="button"
-                      onClick={() => { setAdminModule('employees'); setActiveAdminTab('clt_funcionarios'); }}
+                      onClick={() => { setAdminModule('employees'); setActiveAdminTab('clt_dashboard'); }}
                       className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
                         adminModule === 'employees'
                           ? 'bg-indigo-600 text-white border-indigo-600'
@@ -7921,7 +7945,7 @@ export default function App() {
                   onClick={() => setActiveAdminTab(tab.id)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/80 shadow-xs'
+                      ? `${navActiveClass} font-bold border shadow-xs`
                       : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
                   }`}
                 >
@@ -7937,6 +7961,29 @@ export default function App() {
                 </button>
               );
             })}
+
+            {/* Seção comum aos 3 módulos — sempre visível, independente do módulo ativo */}
+            <div className="pt-2 mt-2 border-t border-slate-200/80 flex flex-row md:flex-col gap-1 md:gap-0 space-y-0 md:space-y-1">
+              {commonNavItems.map(tab => {
+                const isActive = activeAdminTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveAdminTab(tab.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+                      isActive
+                        ? `${navActiveClass} font-bold border shadow-xs`
+                        : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-base leading-none">{tab.icon}</span>
+                      <span>{tab.label}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </nav>
 
           {/* Rodapé da Sidebar */}
@@ -8007,7 +8054,10 @@ export default function App() {
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
-                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} />
+                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'pj_dashboard' ? 'block' : 'none' }}>
+                    <DashboardProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'pj_dashboard'} />
                   </div>
                   <div style={{ display: activeAdminTab === 'pj_profissionais' ? 'block' : 'none' }}>
                     <ProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
@@ -8020,6 +8070,9 @@ export default function App() {
                   </div>
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
                     <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={units} branding={BRANDING} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'clt_dashboard' ? 'block' : 'none' }}>
+                    <DashboardFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'clt_dashboard'} />
                   </div>
                   <div style={{ display: activeAdminTab === 'clt_funcionarios' ? 'block' : 'none' }}>
                     <FuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
