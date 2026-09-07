@@ -1863,7 +1863,7 @@ CREATE TABLE IF NOT EXISTS public.employee_time_nsr (
 );
 
 CREATE OR REPLACE FUNCTION public.forbid_time_record_mutation() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   RAISE EXCEPTION 'time_record_immutable';
 END;
@@ -2004,7 +2004,7 @@ CREATE TABLE IF NOT EXISTS public.employee_terminations (
 
 -- Espelha o status/termination_date do funcionário ao gravar o encerramento.
 CREATE OR REPLACE FUNCTION public.sync_employee_status_on_termination() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   UPDATE public.employees
      SET status = CASE
