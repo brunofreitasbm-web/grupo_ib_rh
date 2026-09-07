@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, LogOut, LogIn, LogOut as LogOutIcon, User, KeyRound, ShieldCheck, CheckCircle, Loader2, Building2, MapPin } from 'lucide-react';
+import { ArrowLeft, LogOut, LogIn, LogOut as LogOutIcon, User, KeyRound, ShieldCheck, CheckCircle, Loader2, Building2, MapPin, FileText, Upload } from 'lucide-react';
 import { supabase } from '../supabase';
 import { mapProfessionalFromDb, professionalRpcErrorMessage, isValidProfessionalPin } from '../utils/mappings';
 import { getCurrentPosition } from '../hooks/useGeolocation';
+import NfseUploadModal from './NfseUploadModal';
 
 // Quiosque compartilhado de Profissionais PJ (prestadores de serviço), por
 // unidade. Deliberadamente separado do quiosque de estagiários (App.jsx):
@@ -22,6 +23,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null); // { action, name }
   const [showChangePin, setShowChangePin] = useState(false);
+  const [showNfseModal, setShowNfseModal] = useState(false);
   const successTimerRef = useRef(null);
 
   const labels = branding.professionalLabels || {
@@ -267,13 +269,23 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
               )}
 
               {!selectedId && (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="w-full flex items-center justify-center gap-1.5 text-[10px] text-gray-400 hover:text-gray-600 font-semibold pt-1"
-                >
-                  <ArrowLeft size={11} /> Voltar
-                </button>
+                <div className="pt-2 border-t border-gray-100 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowNfseModal(true)}
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors shadow-sm"
+                  >
+                    <FileText size={16} className="text-emerald-600" />
+                    <span>Enviar NFSe (Nota Fiscal PDF)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="w-full flex items-center justify-center gap-1.5 text-[10px] text-gray-400 hover:text-gray-600 font-semibold pt-1"
+                  >
+                    <ArrowLeft size={11} /> Voltar
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -289,6 +301,13 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
           <MapPin size={9} /> {unit.address}
         </p>
       )}
+
+      <NfseUploadModal
+        isOpen={showNfseModal}
+        onClose={() => setShowNfseModal(false)}
+        branding={branding}
+        initialUnitId={unit.id}
+      />
     </div>
   );
 }

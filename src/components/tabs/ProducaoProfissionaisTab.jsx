@@ -16,6 +16,7 @@ import { BRANDING } from '../../config/branding';
 export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [] }) {
   const [professionals, setProfessionals] = useState([]);
   const [presence, setPresence] = useState([]);
+  const [nfDocs, setNfDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthKey, setMonthKey] = useState(new Date().toISOString().substring(0, 7));
 
@@ -29,9 +30,13 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
         .select(PROFESSIONAL_PRESENCE_SELECT_FIELDS)
         .gte('timestamp', `${monthKey}-01T00:00:00`)
         .order('timestamp', { ascending: true });
+      const { data: docsData } = await supabase
+        .from('professional_documents')
+        .select('professional_id, doc_key, meta, created_at');
 
       if (profData) setProfessionals(profData.map(mapProfessionalFromDb).filter((p) => !restrictedUnitIds.includes(p.unitId)));
       if (presData) setPresence(presData.map(mapProfessionalPresenceFromDb).filter((r) => !restrictedUnitIds.includes(r.unitId)));
+      if (docsData) setNfDocs(docsData || []);
     } catch (err) {
       console.error('Erro ao carregar apuração de produção PJ:', err);
     } finally {

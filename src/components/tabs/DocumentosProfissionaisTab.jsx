@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Eye, Trash, Upload, Loader2, X, Download, Plus, ScrollText, Printer } from 'lucide-react';
+import { FileText, Eye, Trash, Upload, Loader2, X, Download, Plus, ScrollText, Printer, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFriendlyDbErrorMessage } from '../../utils/mappings';
 import { getProfessionalContractHtml, getMissingContractFields } from '../../utils/professionalContract';
@@ -133,6 +133,63 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
     }
   };
 
+  const handleApproveNf = async (docKey, meta) => {
+    if (!selectedId) return;
+    const valorFormatted = meta?.valor ? Number(meta.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
+    if (!window.confirm(`Aprovar a NFSe de competência ${meta?.competencia || ''} (Valor: ${valorFormatted})? O valor será liberado para o repasse.`)) return;
+
+    try {
+      const updatedMeta = {
+        ...meta,
+        status: 'aprovado',
+        validatedAt: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from('professional_documents')
+        .update({ meta: updatedMeta })
+        .eq('professional_id', selectedId)
+        .eq('doc_key', docKey);
+
+      if (error) throw error;
+      toast.success('NFSe APROVADA com sucesso! Valor liberado para o repasse.');
+      fetchDocs(selectedId);
+    } catch (err) {
+      console.error('Erro ao aprovar NFSe:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    }
+  };
+
+  const handleRejectNf = async (docKey, meta) => {
+    if (!selectedId) return;
+    const reason = window.prompt('Informe a justificativa/motivo para a rejeição da NFSe:');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      toast.error('A justificativa de rejeição é obrigatória.');
+      return;
+    }
+
+    try {
+      const updatedMeta = {
+        ...meta,
+        status: 'rejeitado',
+        rejectionReason: reason.trim(),
+        validatedAt: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from('professional_documents')
+        .update({ meta: updatedMeta })
+        .eq('professional_id', selectedId)
+        .eq('doc_key', docKey);
+
+      if (error) throw error;
+      toast.error(`NFSe REJEITADA. Motivo: ${reason}`);
+      fetchDocs(selectedId);
+    } catch (err) {
+      console.error('Erro ao rejeitar NFSe:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    }
+  };
+
   const docLabel = (docKey, meta) => {
     const fixed = FIXED_DOC_TYPES.find((d) => d.key === docKey);
     if (fixed) return fixed.label;
@@ -205,11 +262,16 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
     );
   }
 
+  const getUnitName = (unitId) => {
+    const found = units.find((u) => u.id === unitId);
+    return found ? found.name : 'Unidade não identificada';
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <FileText size={20} className="text-teal-600" /> Contratos &amp; Notas Fiscais
+          <FileText size={20} className="text-teal-600" /> Contratos &amp; Notas Fiscais (NFSe)
         </h2>
         {selectedId && (
           <button
@@ -223,21 +285,32 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
 
       <div className="p-4 space-y-4">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Selecione o Prestador</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Selecione o Prestador PJ</label>
           <select
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
-            className="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-xs"
+            className="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-xs font-medium text-slate-800"
           >
             <option value="">Selecione um prestador...</option>
             {filteredProfessionals.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} {p.active === false ? '(Inativo)' : ''}</option>
+              <option key={p.id} value={p.id}>
+                {p.name} • [{getUnitName(p.unitId)}] {p.active === false ? '(Inativo)' : ''}
+              </option>
             ))}
           </select>
         </div>
 
         {selectedId ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div>
+            {selectedProfessional && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3 flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-800">{selectedProfessional.name}</span>
+                <span className="bg-teal-100 text-teal-800 font-semibold px-2.5 py-0.5 rounded-full text-[10px]">
+                  Unidade: {getUnitName(selectedProfessional.unitId)}
+                </span>
+              </div>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 overflow-x-auto border border-gray-100 rounded-lg">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -251,25 +324,74 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
                   {docs.length === 0 ? (
                     <tr><td colSpan={3} className="p-6 text-center text-gray-400">Nenhum documento anexado.</td></tr>
                   ) : (
-                    docs.map((d) => (
-                      <tr key={d.doc_key} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-3 font-semibold text-gray-800">
-                          {docLabel(d.doc_key, d.meta)}
-                          {d.meta?.numeroNf && <span className="block text-[9px] text-gray-400">Nº {d.meta.numeroNf} {d.meta.valor ? `• R$ ${d.meta.valor}` : ''}</span>}
-                        </td>
-                        <td className="p-3 text-gray-500">{d.meta?.name} ({d.meta?.size})</td>
-                        <td className="p-3 text-right">
-                          <div className="flex justify-end gap-1.5">
-                            <button onClick={() => handleView(d.doc_key, d.meta)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Visualizar">
-                              <Eye size={13} />
-                            </button>
-                            <button onClick={() => handleDelete(d.doc_key)} className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded" title="Remover">
-                              <Trash size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    docs.map((d) => {
+                      const isNfDoc = d.meta?.type === 'nf' || d.doc_key.startsWith('nf-');
+                      const status = d.meta?.status || (isNfDoc ? 'pendente' : null);
+
+                      return (
+                        <tr key={d.doc_key} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-3 font-semibold text-gray-800">
+                            <div className="flex items-center gap-2">
+                              <span>{docLabel(d.doc_key, d.meta)}</span>
+                              {isNfDoc && (
+                                status === 'aprovado' ? (
+                                  <span className="bg-green-100 text-green-800 text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <CheckCircle2 size={10} /> Aprovada
+                                  </span>
+                                ) : status === 'rejeitado' ? (
+                                  <span className="bg-red-100 text-red-800 text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1" title={d.meta?.rejectionReason || 'Rejeitada'}>
+                                    <XCircle size={10} /> Rejeitada
+                                  </span>
+                                ) : (
+                                  <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                                    ⏳ Pendente de Validação
+                                  </span>
+                                )
+                              )}
+                            </div>
+                            {d.meta?.numeroNf && (
+                              <span className="block text-[9px] text-gray-400 font-normal">
+                                Nº {d.meta.numeroNf} {d.meta?.valor ? `• ${Number(d.meta.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}
+                              </span>
+                            )}
+                            {status === 'rejeitado' && d.meta?.rejectionReason && (
+                              <span className="block text-[9px] text-red-600 font-normal italic mt-0.5">
+                                Motivo: {d.meta.rejectionReason}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-gray-500">{d.meta?.name} ({d.meta?.size})</td>
+                          <td className="p-3 text-right">
+                            <div className="flex justify-end items-center gap-1.5">
+                              {isNfDoc && (
+                                <>
+                                  <button
+                                    onClick={() => handleApproveNf(d.doc_key, d.meta)}
+                                    className="p-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded text-[10px] font-bold flex items-center gap-1"
+                                    title="Aprovar NFSe para repasse"
+                                  >
+                                    <CheckCircle2 size={13} /> Aprovar
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectNf(d.doc_key, d.meta)}
+                                    className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded text-[10px] font-bold flex items-center gap-1"
+                                    title="Rejeitar NFSe"
+                                  >
+                                    <XCircle size={13} /> Rejeitar
+                                  </button>
+                                </>
+                              )}
+                              <button onClick={() => handleView(d.doc_key, d.meta)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Visualizar">
+                                <Eye size={13} />
+                              </button>
+                              <button onClick={() => handleDelete(d.doc_key)} className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded" title="Remover">
+                                <Trash size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -319,6 +441,7 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
               </form>
             </div>
           </div>
+        </div>
         ) : (
           <div className="bg-slate-50 rounded-xl p-8 border border-slate-100 text-center text-slate-400 text-sm">
             <FileText size={40} className="mx-auto text-slate-300 mb-2" />
