@@ -1,5 +1,5 @@
 {
-  "name": "controle-de-estagiario",
+  "name": "gestao-de-pessoas",
   "private": true,
   "version": "1.0.0",
   "description": "Controle de frequência e ponto de estagiários da Porto Terapia (2 unidades) com validação por GPS.",

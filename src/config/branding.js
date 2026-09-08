@@ -6,7 +6,7 @@
 export const WORKSPACES = {
   'porto-terapia': {
     id: 'porto-terapia',
-    appTitle: 'Controle de Estagiário • Porto Terapia',
+    appTitle: 'Gestão de Pessoas • Porto Terapia',
     shortName: 'PontoRH',
     themeColor: '#1a1a2e',
     logoPath: '/logo.jpg',
@@ -109,7 +109,7 @@ export const WORKSPACES = {
   },
   grupoib: {
     id: 'grupoib',
-    appTitle: 'Controle de Frequência • Grupo IB',
+    appTitle: 'Gestão de Pessoas • Grupo IB',
     shortName: 'PontoIB',
     themeColor: '#0f766e',
     // Sem logo próprio ainda — telas com logo simplesmente não mostram nada

@@ -1,5 +1,5 @@
 -- =========================================================================
--- SCRIPT DE CRIAÇÃO DO BANCO DE DADOS - CONTROLE DE ESTAGIÁRIOS (SUPABASE)
+-- SCRIPT DE CRIAÇÃO DO BANCO DE DADOS - GESTÃO DE PESSOAS (SUPABASE)
 -- Cole este script diretamente no SQL Editor do Supabase e clique em "Run".
 -- =========================================================================
 
