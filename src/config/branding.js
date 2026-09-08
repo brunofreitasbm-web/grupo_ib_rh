@@ -42,7 +42,7 @@ export const WORKSPACES = {
       'Ele não constitui, e não deve ser interpretado como, controle de jornada de trabalho, ' +
       'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
       'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
-      'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+      'prestação de serviços firmado com a empresa.',
     // Autocadastro de Profissionais PJ (ver ProfessionalSelfRegistration.jsx)
     // — desligado neste site junto com o restante do módulo PJ.
     showProfessionalSelfRegistration: false,
@@ -152,7 +152,7 @@ export const WORKSPACES = {
       'Ele não constitui, e não deve ser interpretado como, controle de jornada de trabalho, ' +
       'ponto eletrônico ou qualquer forma de subordinação, sendo seu uso facultativo e ' +
       'autodeclarado pelo(a) próprio(a) prestador(a) de serviços, no âmbito do contrato de ' +
-      'prestação de serviços firmado com a empresa. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+      'prestação de serviços firmado com a empresa.',
     // Autocadastro de Profissionais PJ (ver ProfessionalSelfRegistration.jsx)
     // — o próprio prestador preenche seu cadastro completo (dados da PJ,
     // habilitação, representante legal e anexos) sem estar logado, nascendo
@@ -169,13 +169,12 @@ export const WORKSPACES = {
       'atendo a esta contratante em regime de exclusividade; e que sou responsável pelos tributos, ' +
       'encargos previdenciários e obrigações civis decorrentes da minha atividade como pessoa ' +
       'jurídica. Este cadastro e o contrato dele decorrente têm natureza exclusivamente civil, sem ' +
-      'qualquer vínculo empregatício com a contratante. [TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+      'qualquer vínculo empregatício com a contratante.',
     // Cláusulas padrão do contrato de prestação de serviços pré-preenchido
     // (ver ./utils/professionalContract.js); cada unidade pode complementar
     // com units.contrato_pj_custom_text.
     contractDefaultClauses:
-      '[MINUTA GERADA AUTOMATICAMENTE — SUJEITA A REVISÃO JURÍDICA ANTES DA ASSINATURA. ' +
-      'TEXTO PLACEHOLDER — REVISAR JURÍDICO]',
+      '[MINUTA GERADA AUTOMATICAMENTE — SUJEITA A REVISÃO JURÍDICA ANTES DA ASSINATURA.]',
     // Módulo de Funcionários CLT (empregados) — ver EmployeeKiosk.jsx. Ligado
     // no Grupo IB: terceiro tipo de vínculo do hub de RH, ao lado de
     // Estagiários e Profissionais PJ. Ao contrário do PJ, este módulo se

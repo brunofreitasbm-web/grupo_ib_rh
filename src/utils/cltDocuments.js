@@ -1,8 +1,7 @@
 // Templates HTML dos documentos do módulo Funcionários CLT — mesmo padrão
 // visual usado em App.jsx getDocumentHtml (fonte Inter, cabeçalho com
 // razão social/CNPJ/endereço da unidade), mas mantidos fora do App.jsx para
-// não inflar ainda mais aquele arquivo. Todo texto sensível a revisão
-// jurídica carrega o marcador [TEXTO PLACEHOLDER — REVISAR JURÍDICO].
+// não inflar ainda mais aquele arquivo.
 //
 // ctx = { employee, unit, branding, dependents, extra }
 //   employee: objeto mapEmployeeFromDb
@@ -74,7 +73,7 @@ function signatureBlock(employeeName, extraSignatureLabel) {
 }
 
 function placeholder(text) {
-  return `<p style="color:#b45309; font-style:italic;">[TEXTO PLACEHOLDER — REVISAR JURÍDICO] ${text || ''}</p>`;
+  return text ? `<p style="color:#4b5563; font-style:italic;">${text}</p>` : '';
 }
 
 function employeeSummary(employee) {
