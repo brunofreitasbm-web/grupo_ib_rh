@@ -111,18 +111,20 @@ export const WORKSPACES = {
   },
   grupoib: {
     id: 'grupoib',
-    appTitle: 'Gestão de Pessoas • Grupo IB',
+    appTitle: 'FaçaAmigos Gestão de Pessoas',
     shortName: 'PontoIB',
     themeColor: '#0f766e',
     // Kit de marca FaçaAmigos (vetorizado) — ver public/brand/README de origem
-    // em Projetos/Clinica/brand. Horizontal com assinatura é o padrão para
-    // cabeçalhos/telas; abaixo de 45mm de largura usar a versão sem assinatura.
-    logoPath: '/brand/facaamigos-horizontal.svg',
-    logoAlt: 'Logo Faça Amigos',
-    // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx) — mais
-    // amplo que "Registro de Frequência" pois o hub cobre Estágio + PJ + CLT.
-    loginSubtitle: 'Gestão de Pessoas',
-    displayName: 'Grupo IB',
+    // em Projetos/Clinica/brand. Usa o símbolo isolado (sem wordmark) porque
+    // as telas do app exibem o logo em caixas pequenas/quadradas (h-10 a h-16
+    // com w-auto) — a versão horizontal com texto ficava cortada nesse espaço.
+    logoPath: '/brand/facaamigos-simbolo.svg',
+    logoAlt: 'Símbolo Faça Amigos',
+    // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx). Como
+    // displayName já inclui "Gestão de Pessoas", usa a assinatura da marca
+    // para não repetir o texto.
+    loginSubtitle: 'Unidades e Serviços de Saúde',
+    displayName: 'FaçaAmigos Gestão de Pessoas',
     // Sobrescreve a paleta "blue" do Tailwind pela paleta "teal" (verde-água)
     // só neste build — todo o app usa classes bg-blue-*/text-blue-*/etc. como
     // cor de marca; isso recolore a UI inteira sem precisar tocar em cada
@@ -131,9 +133,9 @@ export const WORKSPACES = {
       50: '#f0fdfa', 100: '#ccfbf1', 200: '#99f6e4', 300: '#5eead4', 400: '#2dd4bf',
       500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 800: '#115e59', 900: '#134e4a', 950: '#042f2e',
     },
-    legalEntityName: 'Razão social do Grupo IB (pendente)',
-    legalEntityShort: 'Grupo IB',
-    documentTagline: 'Unidades e Serviços de Saúde Grupo IB',
+    legalEntityName: 'Razão social do FaçaAmigos Gestão de Pessoas (pendente)',
+    legalEntityShort: 'FaçaAmigos',
+    documentTagline: 'Unidades e Serviços de Saúde FaçaAmigos',
     documentLocation: 'Belém - PA',
     contactEmail: 'contato@grupoib.com.br',
     rhEmail: 'rh@grupoib.com.br',
