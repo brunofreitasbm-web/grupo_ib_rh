@@ -164,7 +164,7 @@ function LiveClock({ showDate = false }) {
         {now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
       </div>
       {showDate && (
-        <p className="text-blue-200 text-[10px] mt-1">
+        <p className="text-[#E6FFFA] text-[10px] mt-1 font-medium">
           {now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
       )}
@@ -225,9 +225,77 @@ export default function App() {
   const [selectedLoginOption, setSelectedLoginOption] = useState(null); // null | 'supervisor' | <id de uma unidade do quiosque>
   // Categoria escolhida no hub inicial pré-login: null (hub) | 'interns' | 'pj' | 'clt'.
   const [kioskCategory, setKioskCategory] = useState(null);
+  // Estado de bloqueio de concorrência e indicação de carregamento na seleção de perfil (P0)
+  const [isProcessingProfile, setIsProcessingProfile] = useState(null); // null | 'interns' | 'pj' | 'clt' | 'supervisor'
+  const [profileStatusMessage, setProfileStatusMessage] = useState(null);
   // Identificação do administrador é DIGITADA (nunca listada/salva), para que
   // ninguém que observe o quiosque saiba quais nomes de admin existem no sistema.
   const [loginAdminName, setLoginAdminName] = useState('');
+
+  // Rotina de prevenção de cliques múltiplos e timeout de 15s com AbortController (P0)
+  const handleSelectProfile = async (profileId) => {
+    if (isProcessingProfile) return;
+    setIsProcessingProfile(profileId);
+    setLoginError('');
+
+    if (profileId === 'supervisor') {
+      setSelectedLoginOption('supervisor');
+      setIsProcessingProfile(null);
+      return;
+    }
+
+    setProfileStatusMessage('Obtendo localização GPS...');
+    let timeoutId = null;
+
+    try {
+      if ('geolocation' in navigator) {
+        await new Promise((resolve, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error('TIMEOUT'));
+          }, 15000);
+
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              resolve(pos);
+            },
+            (err) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              reject(err);
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          );
+        });
+      }
+      setKioskCategory(profileId);
+    } catch (err) {
+      console.warn('GPS/Geolocalização aviso na seleção:', err);
+      setLoginError('Não foi possível obter sua localização. Verifique a permissão do navegador e tente novamente.');
+      setKioskCategory(profileId);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      setIsProcessingProfile(null);
+      setProfileStatusMessage(null);
+    }
+  };
+
+  // Atalhos de teclado numéricos (1-4) para rápida seleção de perfil (P1)
+  useEffect(() => {
+    if (currentView !== 'kiosk' || kioskCategory !== null || selectedLoginOption !== null || isProcessingProfile !== null) {
+      return;
+    }
+    const handleKeyDown = (e) => {
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === '1') handleSelectProfile('interns');
+        if (e.key === '2' && BRANDING.showProfessionalsModule) handleSelectProfile('pj');
+        if (e.key === '3' && BRANDING.showEmployeesModule) handleSelectProfile('clt');
+        if (e.key === '4') handleSelectProfile('supervisor');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentView, kioskCategory, selectedLoginOption, isProcessingProfile]);
 
   // Estados de Alteração de Senha Inicial
   const [newPassword, setNewPassword] = useState('');
@@ -2683,7 +2751,7 @@ export default function App() {
             <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
               {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-16 w-auto mb-2 rounded-lg shadow-sm" />}
               <h1 className="text-2xl font-bold mb-1">{BRANDING.displayName}</h1>
-              <p className="text-blue-100 text-xs">Registro de Frequência e Presença <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
+              <p className="text-blue-100 text-xs">{BRANDING.loginSubtitle} <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
               <LiveClock showDate />
             </div>
 
@@ -2760,30 +2828,54 @@ export default function App() {
                   <div className="grid grid-cols-1 gap-3">
                     <button
                       type="button"
-                      onClick={() => setKioskCategory('interns')}
-                      className="w-full p-5 border-2 border-gray-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left group"
+                      disabled={isProcessingProfile !== null}
+                      onClick={() => handleSelectProfile('interns')}
+                      aria-label="Registrar ponto para Estagiários. Requer Biometria e GPS"
+                      className={`w-full p-5 border-2 border-gray-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0D7A75] focus-visible:outline-offset-2 transition-all flex items-center gap-4 text-left group ${
+                        isProcessingProfile !== null ? 'pointer-events-none opacity-60 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg group-hover:bg-emerald-200 transition-colors">
-                        <GraduationCap size={26} />
+                      <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg group-hover:bg-emerald-200 transition-colors flex items-center justify-center">
+                        {isProcessingProfile === 'interns' ? (
+                          <Loader2 size={26} className="animate-spin text-emerald-700" />
+                        ) : (
+                          <GraduationCap size={26} />
+                        )}
                       </div>
                       <div className="flex-1">
                         <h4 className="font-bold text-gray-800 text-base">Estagiários</h4>
-                        <p className="text-xs text-gray-500">Registro de ponto (Biometria + GPS)</p>
+                        <p className="text-xs text-gray-500">
+                          {isProcessingProfile === 'interns'
+                            ? (profileStatusMessage || 'Obtendo localização GPS...')
+                            : 'Registro de ponto (Biometria + GPS)'}
+                        </p>
                       </div>
                     </button>
 
                     {BRANDING.showProfessionalsModule && (
                       <button
                         type="button"
-                        onClick={() => setKioskCategory('pj')}
-                        className="w-full p-5 border-2 border-gray-200 rounded-xl hover:border-teal-500 hover:bg-teal-50 transition-all flex items-center gap-4 text-left group"
+                        disabled={isProcessingProfile !== null}
+                        onClick={() => handleSelectProfile('pj')}
+                        aria-label="Registrar presença para Profissionais PJ. Requer PIN de 6 dígitos"
+                        className={`w-full p-5 border-2 border-gray-200 rounded-xl hover:border-teal-500 hover:bg-teal-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0D7A75] focus-visible:outline-offset-2 transition-all flex items-center gap-4 text-left group ${
+                          isProcessingProfile !== null ? 'pointer-events-none opacity-60 cursor-not-allowed' : ''
+                        }`}
                       >
-                        <div className="p-3 bg-teal-100 text-teal-700 rounded-lg group-hover:bg-teal-200 transition-colors">
-                          <Briefcase size={26} />
+                        <div className="p-3 bg-teal-100 text-teal-700 rounded-lg group-hover:bg-teal-200 transition-colors flex items-center justify-center">
+                          {isProcessingProfile === 'pj' ? (
+                            <Loader2 size={26} className="animate-spin text-teal-700" />
+                          ) : (
+                            <Briefcase size={26} />
+                          )}
                         </div>
                         <div className="flex-1">
                           <h4 className="font-bold text-gray-800 text-base">{BRANDING.professionalLabels?.plural || 'Profissionais PJ'}</h4>
-                          <p className="text-xs text-gray-500">Registro de presença por PIN de 6 dígitos</p>
+                          <p className="text-xs text-gray-500">
+                            {isProcessingProfile === 'pj'
+                              ? (profileStatusMessage || 'Carregando...')
+                              : 'Registro de presença por PIN de 6 dígitos'}
+                          </p>
                         </div>
                       </button>
                     )}
@@ -2791,30 +2883,50 @@ export default function App() {
                     {BRANDING.showEmployeesModule && (
                       <button
                         type="button"
-                        onClick={() => setKioskCategory('clt')}
-                        className="w-full p-5 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all flex items-center gap-4 text-left group"
+                        disabled={isProcessingProfile !== null}
+                        onClick={() => handleSelectProfile('clt')}
+                        aria-label="Registrar ponto para Funcionários CLT. Requer Biometria, GPS e NSR"
+                        className={`w-full p-5 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0D7A75] focus-visible:outline-offset-2 transition-all flex items-center gap-4 text-left group ${
+                          isProcessingProfile !== null ? 'pointer-events-none opacity-60 cursor-not-allowed' : ''
+                        }`}
                       >
-                        <div className="p-3 bg-indigo-100 text-indigo-700 rounded-lg group-hover:bg-indigo-200 transition-colors">
-                          <ScanFace size={26} />
+                        <div className="p-3 bg-indigo-100 text-indigo-700 rounded-lg group-hover:bg-indigo-200 transition-colors flex items-center justify-center">
+                          {isProcessingProfile === 'clt' ? (
+                            <Loader2 size={26} className="animate-spin text-indigo-700" />
+                          ) : (
+                            <ScanFace size={26} />
+                          )}
                         </div>
                         <div className="flex-1">
                           <h4 className="font-bold text-gray-800 text-base">{BRANDING.employeeLabels?.plural || 'Funcionários CLT'}</h4>
-                          <p className="text-xs text-gray-500">Registro de ponto (Biometria + GPS + NSR)</p>
+                          <p className="text-xs text-gray-500">
+                            {isProcessingProfile === 'clt'
+                              ? (profileStatusMessage || 'Obtendo localização GPS...')
+                              : 'Registro de ponto (Biometria + GPS + NSR)'}
+                          </p>
                         </div>
                       </button>
                     )}
                   </div>
 
-                  <div className="border-t border-gray-100 pt-4 mt-2">
+                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300">
                     <button
                       type="button"
-                      onClick={() => { setSelectedLoginOption('supervisor'); setLoginError(''); }}
-                      className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center gap-4 text-left group"
+                      disabled={isProcessingProfile !== null}
+                      onClick={() => handleSelectProfile('supervisor')}
+                      aria-label="Acesso Administrativo ao Painel, Cadastros e Relatórios. Requer Senha"
+                      className={`w-full p-4 border-2 border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 hover:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0D7A75] focus-visible:outline-offset-2 transition-all flex items-center gap-4 text-left group ${
+                        isProcessingProfile !== null ? 'pointer-events-none opacity-60 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <div className="p-2.5 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200 transition-colors">
-                        <Lock size={20} />
+                      <div className="p-2.5 bg-slate-200 text-slate-700 rounded-lg group-hover:bg-slate-300 transition-colors flex items-center justify-center">
+                        {isProcessingProfile === 'supervisor' ? (
+                          <Loader2 size={20} className="animate-spin text-slate-700" />
+                        ) : (
+                          <Lock size={20} />
+                        )}
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h4 className="font-bold text-gray-800 text-sm">Acesso Administrativo</h4>
                         <p className="text-[10px] text-gray-500">Painel administrativo, cadastros e relatórios (Exige Senha)</p>
                       </div>
@@ -3030,7 +3142,7 @@ export default function App() {
           ) : (
             <p className="mt-8 text-xs text-gray-500">{BRANDING.displayName} • Controle de Frequência</p>
           )}
-          <p className="mt-3 text-[10px] text-gray-400 text-center max-w-xs leading-relaxed select-none">
+          <p className="mt-3 text-[13px] text-[#475569] font-normal text-center max-w-xs leading-relaxed select-none">
             Como alternativa para sua conveniência, é opcional e autorizado o uso de seu aparelho celular pessoal, sem qualquer obrigatoriedade
           </p>
         </div>

@@ -11,6 +11,8 @@ export const WORKSPACES = {
     themeColor: '#1a1a2e',
     logoPath: '/logo.jpg',
     logoAlt: 'Logo Porto Terapia',
+    // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx).
+    loginSubtitle: 'Registro de Frequência e Presença',
     displayName: 'Porto Terapia',
     legalEntityName: 'Porto Terapia Clínica de Psicologia LTDA',
     legalEntityShort: 'Porto Terapia Clínica de Psicologia',
@@ -112,10 +114,14 @@ export const WORKSPACES = {
     appTitle: 'Gestão de Pessoas • Grupo IB',
     shortName: 'PontoIB',
     themeColor: '#0f766e',
-    // Sem logo próprio ainda — telas com logo simplesmente não mostram nada
-    // (ver checagens `BRANDING.logoPath &&` em App.jsx/FinanceiroTab.jsx).
-    logoPath: null,
-    logoAlt: 'Logo Grupo IB',
+    // Kit de marca FaçaAmigos (vetorizado) — ver public/brand/README de origem
+    // em Projetos/Clinica/brand. Horizontal com assinatura é o padrão para
+    // cabeçalhos/telas; abaixo de 45mm de largura usar a versão sem assinatura.
+    logoPath: '/brand/facaamigos-horizontal.svg',
+    logoAlt: 'Logo Faça Amigos',
+    // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx) — mais
+    // amplo que "Registro de Frequência" pois o hub cobre Estágio + PJ + CLT.
+    loginSubtitle: 'Gestão de Pessoas',
     displayName: 'Grupo IB',
     // Sobrescreve a paleta "blue" do Tailwind pela paleta "teal" (verde-água)
     // só neste build — todo o app usa classes bg-blue-*/text-blue-*/etc. como
