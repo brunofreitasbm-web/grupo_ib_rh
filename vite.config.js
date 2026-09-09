@@ -60,7 +60,10 @@ export default defineConfig(({ mode }) => {
       port: 8080,
     },
     build: {
-      sourcemap: true,
+      // Source maps completos só em build de desenvolvimento/preview. Em
+      // produção eles expunham o código-fonte inteiro (com comentários sobre
+      // RLS, nomes de tabelas e lógica de negócio) em /assets/*.map.
+      sourcemap: mode === 'production' ? false : true,
       rollupOptions: {
         output: {
           manualChunks: {

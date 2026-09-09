@@ -3,6 +3,7 @@ import { Printer } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
+import { escapeHtmlForDocument } from '../../utils/helpers';
 
 export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -133,23 +134,35 @@ export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedU
                     const isPdf = doc.content.startsWith('data:application/pdf');
                     printWindow.document.write(`
                       <html>
-                        <head><title>Imprimir Contrato - ${selectedInternData.name}</title></head>
-                        <body style="margin:0;padding:0;">
-                          ${isPdf ? 
-                            `<iframe src="${doc.content}" width="100%" height="100%" style="border:none;"></iframe>` : 
-                            `<img src="${doc.content}" style="max-width:100%;height:auto;display:block;margin:0 auto;" />`
-                          }
-                          <script>
-                            window.onload = function() {
-                              setTimeout(() => {
-                                window.print();
-                              }, 1000);
-                            };
-                          </script>
-                        </body>
+                        <head><title>${escapeHtmlForDocument(`Imprimir Contrato - ${selectedInternData.name}`)}</title></head>
+                        <body style="margin:0;padding:0;"></body>
                       </html>
                     `);
                     printWindow.document.close();
+                    // Elemento criado via DOM (não interpolado na string acima) e
+                    // src atribuído como propriedade, não como atributo em texto —
+                    // doc.content nunca pode "escapar" para injetar markup.
+                    const media = printWindow.document.createElement(isPdf ? 'iframe' : 'img');
+                    media.src = doc.content;
+                    if (isPdf) {
+                      media.width = '100%';
+                      media.height = '100%';
+                      media.style.border = 'none';
+                    } else {
+                      media.style.maxWidth = '100%';
+                      media.style.height = 'auto';
+                      media.style.display = 'block';
+                      media.style.margin = '0 auto';
+                    }
+                    printWindow.document.body.appendChild(media);
+                    // Disparado pela janela que abriu, não por <script> inline no
+                    // documento gerado (compatível com CSP sem 'unsafe-inline' em
+                    // script-src). Mesmo comportamento de antes.
+                    printWindow.onload = () => {
+                      setTimeout(() => {
+                        printWindow.print();
+                      }, 1000);
+                    };
                   }}
                   className="flex-1 py-2 px-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-[10px] flex items-center justify-center gap-1 shadow transition-colors"
                 >
@@ -160,18 +173,29 @@ export default function DocumentosTab({ filterUnit, onPrintDocument, restrictedU
                   onClick={() => {
                     const doc = selectedInternData.documents.tce;
                     const viewWindow = window.open('', '_blank');
+                    const isPdf = doc.content.startsWith('data:application/pdf');
                     viewWindow.document.write(`
                       <html>
-                        <head><title>Contrato - ${selectedInternData.name}</title></head>
-                        <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;background:#1e293b;">
-                          ${doc.content.startsWith('data:application/pdf') ? 
-                            `<iframe src="${doc.content}" width="100%" height="100%" style="border:none;"></iframe>` : 
-                            `<img src="${doc.content}" style="max-width:100%;max-height:100%;object-fit:contain;" />`
-                          }
-                        </body>
+                        <head><title>${escapeHtmlForDocument(`Contrato - ${selectedInternData.name}`)}</title></head>
+                        <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;background:#1e293b;"></body>
                       </html>
                     `);
                     viewWindow.document.close();
+                    // Elemento criado via DOM e src atribuído como propriedade
+                    // (não interpolado em texto) — mesmo motivo do botão Imprimir
+                    // acima: doc.content nunca "escapa" para injetar markup.
+                    const media = viewWindow.document.createElement(isPdf ? 'iframe' : 'img');
+                    media.src = doc.content;
+                    if (isPdf) {
+                      media.width = '100%';
+                      media.height = '100%';
+                      media.style.border = 'none';
+                    } else {
+                      media.style.maxWidth = '100%';
+                      media.style.maxHeight = '100%';
+                      media.style.objectFit = 'contain';
+                    }
+                    viewWindow.document.body.appendChild(media);
                   }}
                   className="py-2 px-2.5 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-[10px] transition-colors"
                 >

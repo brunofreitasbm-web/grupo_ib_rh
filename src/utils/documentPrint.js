@@ -4,6 +4,9 @@
 // estagiários — mesmo layout (fonte Inter via Google Fonts) e mesmo CDN
 // carregado sob demanda para geração de PDF (html2pdf.js).
 
+import { sanitizeHtml } from './sanitizeHtml';
+import { escapeHtmlForDocument } from './helpers';
+
 export function openPrintWindow(html, title) {
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
@@ -11,7 +14,7 @@ export function openPrintWindow(html, title) {
     <html>
       <head>
         <base href="${window.location.origin}/" />
-        <title>${title}</title>
+        <title>${escapeHtmlForDocument(title)}</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
           body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; }
@@ -19,22 +22,23 @@ export function openPrintWindow(html, title) {
         </style>
       </head>
       <body>
-        ${html}
-        <script>
-          window.onload = function () {
-            window.print();
-            setTimeout(() => { window.close(); }, 500);
-          };
-        </script>
+        ${sanitizeHtml(html)}
       </body>
     </html>
   `);
   printWindow.document.close();
+  // Disparado pela janela que abriu (não mais um <script> inline dentro do
+  // documento gerado) para funcionar com uma CSP sem 'unsafe-inline' em
+  // script-src. Mesmo comportamento de antes.
+  printWindow.onload = () => {
+    printWindow.print();
+    setTimeout(() => { printWindow.close(); }, 500);
+  };
 }
 
 export function downloadPdf(html, filename) {
   const element = document.createElement('div');
-  element.innerHTML = html;
+  element.innerHTML = sanitizeHtml(html);
 
   const opt = {
     margin: 15,

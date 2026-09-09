@@ -22,6 +22,7 @@ import {
   mapUnitToDb,
 } from './utils/mappings';
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
+import { sanitizeHtml } from './utils/sanitizeHtml';
 import { BRANDING, WORKSPACES } from './config/branding';
 import { calculateHoursSummary, calculateHoursAlerts } from './utils/hoursCalculations';
 import useGeolocation from './hooks/useGeolocation';
@@ -5704,22 +5705,24 @@ export default function App() {
           </style>
         </head>
         <body>
-          ${getDocumentHtml(type, intern)}
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(() => { window.close(); }, 500);
-            };
-          </script>
+          ${sanitizeHtml(getDocumentHtml(type, intern))}
         </body>
       </html>
     `);
     printWindow.document.close();
+    // Antes era um <script> inline dentro do documento gerado (janela criada via
+    // window.open + document.write herda a CSP da página principal); disparar o
+    // print a partir da janela que abriu evita precisar de 'unsafe-inline' em
+    // script-src, sem mudar o comportamento (mesmo onload, mesmo timeout).
+    printWindow.onload = () => {
+      printWindow.print();
+      setTimeout(() => { printWindow.close(); }, 500);
+    };
   };
 
   const handleDownloadPDF = (type, intern = null) => {
     const element = document.createElement('div');
-    element.innerHTML = getDocumentHtml(type, intern);
+    element.innerHTML = sanitizeHtml(getDocumentHtml(type, intern));
     
     const opt = {
       margin:       15,
@@ -5861,7 +5864,7 @@ export default function App() {
 
           <div className="flex-1 w-full bg-slate-100 rounded-xl overflow-y-auto border border-slate-200 p-4 mb-4">
             <div className="bg-white shadow-md p-8 min-h-[297mm] max-w-[210mm] mx-auto rounded-sm overflow-hidden text-left border border-gray-200">
-              <div dangerouslySetInnerHTML={{ __html: getDocumentHtml(type, intern) }} />
+              <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(getDocumentHtml(type, intern)) }} />
             </div>
           </div>
 

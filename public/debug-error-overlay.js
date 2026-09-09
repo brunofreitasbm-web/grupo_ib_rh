@@ -1,0 +1,26 @@
+// Auxiliar de depuração para erros em produção (tela branca).
+// Extraído do <script> inline do index.html para permitir uma Content-Security-Policy
+// sem 'unsafe-inline' em script-src (ver netlify.toml / vercel.json). Comportamento
+// idêntico ao anterior, sem nenhuma mudança funcional.
+window.addEventListener('error', function (event) {
+  const errorContainer = document.getElementById('debug-error-container') || document.createElement('div');
+  errorContainer.id = 'debug-error-container';
+  errorContainer.style.position = 'fixed';
+  errorContainer.style.top = '10px';
+  errorContainer.style.left = '10px';
+  errorContainer.style.right = '10px';
+  errorContainer.style.background = '#fef2f2';
+  errorContainer.style.border = '2px solid #ef4444';
+  errorContainer.style.color = '#b91c1c';
+  errorContainer.style.padding = '15px';
+  errorContainer.style.borderRadius = '8px';
+  errorContainer.style.zIndex = '999999';
+  errorContainer.style.fontFamily = 'monospace';
+  errorContainer.style.fontSize = '12px';
+  errorContainer.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.1)';
+  errorContainer.style.whiteSpace = 'pre-wrap';
+
+  errorContainer.innerHTML = '<strong>Erro de Execução (Tela Branca):</strong><br>' +
+    event.message + '<br><br><em>Arquivo: ' + event.filename + ':' + event.lineno + '</em>';
+  document.body.appendChild(errorContainer);
+});

@@ -3,6 +3,7 @@ import { Timer, Printer, Download, FileText } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -267,12 +268,18 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
             }
           </style>
         </head>
-        <body onload="window.print()">
-          ${documentHtml}
+        <body>
+          ${sanitizeHtml(documentHtml)}
         </body>
       </html>
     `);
     printWindow.document.close();
+    // Disparado pela janela que abriu, não por atributo onload inline no HTML
+    // gerado (compatível com CSP sem 'unsafe-inline' em script-src). Mesmo
+    // comportamento de antes.
+    printWindow.onload = () => {
+      printWindow.print();
+    };
   };
 
   if (loading) {
