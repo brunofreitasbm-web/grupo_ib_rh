@@ -6,14 +6,15 @@
 export const WORKSPACES = {
   'porto-terapia': {
     id: 'porto-terapia',
-    appTitle: 'Gestão de Pessoas • Porto Terapia',
-    shortName: 'PontoRH',
+    appTitle: 'FaçaAmigos • Gestão de Pessoas',
+    shortName: 'FaçaAmigos',
     themeColor: '#1a1a2e',
     logoPath: '/logo.jpg',
-    logoAlt: 'Logo Porto Terapia',
+    logoAlt: 'Logo FaçaAmigos',
     // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx).
-    loginSubtitle: 'Registro de Frequência e Presença',
-    displayName: 'Porto Terapia',
+    subtitle: 'Gestão de Pessoas',
+    loginSubtitle: 'Gestão de Pessoas',
+    displayName: 'FaçaAmigos',
     legalEntityName: 'Porto Terapia Clínica de Psicologia LTDA',
     legalEntityShort: 'Porto Terapia Clínica de Psicologia',
     documentTagline: 'Clínica de Psicologia e Desenvolvimento Humano',
@@ -111,8 +112,8 @@ export const WORKSPACES = {
   },
   grupoib: {
     id: 'grupoib',
-    appTitle: 'FaçaAmigos Gestão de Pessoas',
-    shortName: 'PontoIB',
+    appTitle: 'FaçaAmigos • Gestão de Pessoas',
+    shortName: 'FaçaAmigos',
     themeColor: '#0f766e',
     // Kit de marca FaçaAmigos (vetorizado) — ver public/brand/README de origem
     // em Projetos/Clinica/brand. Usa o símbolo isolado (sem wordmark) porque
@@ -120,11 +121,10 @@ export const WORKSPACES = {
     // com w-auto) — a versão horizontal com texto ficava cortada nesse espaço.
     logoPath: '/brand/facaamigos-simbolo.svg',
     logoAlt: 'Símbolo Faça Amigos',
-    // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx). Como
-    // displayName já inclui "Gestão de Pessoas", usa a assinatura da marca
-    // para não repetir o texto.
-    loginSubtitle: 'Unidades e Serviços de Saúde',
-    displayName: 'FaçaAmigos Gestão de Pessoas',
+    // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx).
+    subtitle: 'Gestão de Pessoas',
+    loginSubtitle: 'Gestão de Pessoas',
+    displayName: 'FaçaAmigos',
     // Sobrescreve a paleta "blue" do Tailwind pela paleta "teal" (verde-água)
     // só neste build — todo o app usa classes bg-blue-*/text-blue-*/etc. como
     // cor de marca; isso recolore a UI inteira sem precisar tocar em cada

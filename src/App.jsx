@@ -2750,8 +2750,8 @@ export default function App() {
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
             <div className="bg-blue-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
               {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-16 w-auto mb-2 rounded-lg shadow-sm" />}
-              <h1 className="text-2xl font-bold mb-1">{BRANDING.displayName}</h1>
-              <p className="text-blue-100 text-xs">{BRANDING.loginSubtitle} <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
+              <h1 className="text-2xl font-bold mb-0.5 tracking-tight">{BRANDING.displayName}</h1>
+              <p className="text-blue-100 text-xs font-medium tracking-wide">{BRANDING.subtitle || BRANDING.loginSubtitle || 'Gestão de Pessoas'} <span className="text-blue-200 text-[10px] ml-1">v1.1.0</span></p>
               <LiveClock showDate />
             </div>
 
@@ -7957,8 +7957,8 @@ export default function App() {
               {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />}
               <div>
                 <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">{BRANDING.displayName}</h1>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  Painel da Supervisão
+                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">
+                  {BRANDING.subtitle || 'Gestão de Pessoas'}
                 </p>
               </div>
             </div>
