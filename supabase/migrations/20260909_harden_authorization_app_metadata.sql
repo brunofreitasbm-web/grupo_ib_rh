@@ -603,7 +603,7 @@ $function$;
 CREATE OR REPLACE FUNCTION public.create_employee_self_registration(p_unit_id text, p_name text, p_cpf text, p_rg text, p_rg_issuer text, p_birthdate date, p_sex text, p_marital_status text, p_education text, p_nationality text, p_birthplace text, p_mother_name text, p_father_name text, p_phone text, p_email text, p_address jsonb, p_ctps_number text, p_ctps_series text, p_ctps_uf text, p_pis text, p_voter_title text, p_reservist_cert text, p_cnh text, p_cnh_category text, p_bank_name text, p_bank_agency text, p_bank_account text, p_bank_account_type text, p_pix_key text, p_dependents jsonb, p_face_descriptor text, p_biometric_consent_accepted boolean, p_biometric_consent_version text, p_lgpd_consent_accepted boolean)
  RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   caller_role text := auth.jwt() -> 'app_metadata' ->> 'role';
@@ -697,7 +697,7 @@ $function$;
 CREATE OR REPLACE FUNCTION public.create_professional_self_registration(p_unit_id text, p_name text, p_cnpj text, p_razao_social text, p_nome_fantasia text, p_natureza_juridica text, p_cnae_principal text, p_inscricao_municipal text, p_endereco_cep text, p_endereco_logradouro text, p_endereco_numero text, p_endereco_complemento text, p_endereco_bairro text, p_endereco_cidade text, p_endereco_uf text, p_profession text, p_council_type text, p_council_number text, p_council_uf text, p_council_validity date, p_specialties text, p_rep_name text, p_rep_cpf text, p_rep_rg text, p_rep_birthdate date, p_rep_email text, p_rep_phone text, p_rep_role text, p_email text, p_phone text, p_bank_name text, p_bank_agency text, p_bank_account text, p_bank_account_type text, p_pix_key text, p_service_description text, p_remuneration_model text, p_remuneration_value numeric, p_payment_day integer, p_notice_days integer, p_contract_start date, p_autonomy_declaration_accepted boolean, p_autonomy_declaration_version text, p_lgpd_consent_accepted boolean)
  RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   caller_role text := auth.jwt() -> 'app_metadata' ->> 'role';

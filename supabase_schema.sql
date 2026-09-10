@@ -2242,7 +2242,7 @@ CREATE OR REPLACE FUNCTION public.register_employee_time_record(
   p_geo jsonb DEFAULT '{}'::jsonb,
   p_biometric jsonb DEFAULT '{}'::jsonb
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, pg_catalog AS $$
 DECLARE
   v_emp public.employees%ROWTYPE;
   v_clt_enabled boolean;
@@ -2544,7 +2544,7 @@ CREATE OR REPLACE FUNCTION public.create_professional_self_registration(
   p_autonomy_declaration_version text,
   p_lgpd_consent_accepted boolean
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, pg_catalog AS $$
 DECLARE
   caller_role text := auth.jwt() -> 'user_metadata' ->> 'role';
   caller_unit text := auth.jwt() -> 'user_metadata' ->> 'unit_id';
@@ -2669,7 +2669,7 @@ CREATE OR REPLACE FUNCTION public.attach_professional_self_registration_document
   p_content text,
   p_meta jsonb DEFAULT '{}'::jsonb
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, pg_catalog AS $$
 DECLARE
   v_row public.professional_self_registration_tokens%ROWTYPE;
 BEGIN
@@ -2892,7 +2892,7 @@ CREATE OR REPLACE FUNCTION public.create_employee_self_registration(
   p_biometric_consent_version text,
   p_lgpd_consent_accepted boolean
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, pg_catalog AS $$
 DECLARE
   caller_role text := auth.jwt() -> 'user_metadata' ->> 'role';
   v_unit public.units%ROWTYPE;
@@ -3006,7 +3006,7 @@ CREATE OR REPLACE FUNCTION public.attach_employee_self_registration_document(
   p_content text,
   p_meta jsonb DEFAULT '{}'::jsonb
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, pg_catalog AS $$
 DECLARE
   v_row public.employee_self_registration_tokens%ROWTYPE;
 BEGIN
@@ -3098,7 +3098,7 @@ CREATE OR REPLACE FUNCTION public.register_employee_time_record(
   p_geo jsonb DEFAULT '{}'::jsonb,
   p_biometric jsonb DEFAULT '{}'::jsonb
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, pg_catalog AS $$
 DECLARE
   v_emp public.employees%ROWTYPE;
   v_clt_enabled boolean;
