@@ -51,6 +51,7 @@ const DossieTab = lazyWithRetry(() => import('./components/tabs/DossieTab'));
 const AlertasRhTab = lazyWithRetry(() => import('./components/tabs/AlertasRhTab'));
 const AniversariantesTab = lazyWithRetry(() => import('./components/tabs/AniversariantesTab'));
 const ConfiguracoesTab = lazyWithRetry(() => import('./components/tabs/ConfiguracoesTab'));
+const BancoTalentosTab = lazyWithRetry(() => import('./components/tabs/BancoTalentosTab'));
 // Abas do módulo Profissionais PJ (prestadores de serviço) — separadas das
 // abas de estagiário de propósito (ver plano do módulo PJ, seção 3.5).
 const DashboardProfissionaisTab = lazyWithRetry(() => import('./components/tabs/DashboardProfissionaisTab'));
@@ -7973,6 +7974,7 @@ export default function App() {
     // de duplicados dentro de cada lista de módulo.
     const commonNavItems = [
       { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
+      ...(BRANDING.showTalentBankModule ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: '🧑‍💼' }] : []),
       { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
     ];
 
@@ -8247,6 +8249,11 @@ export default function App() {
                   <div style={{ display: activeAdminTab === 'aniversariantes' ? 'block' : 'none' }}>
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  {BRANDING.showTalentBankModule && (
+                    <div style={{ display: activeAdminTab === 'banco_talentos' ? 'block' : 'none' }}>
+                      <BancoTalentosTab />
+                    </div>
+                  )}
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
                     <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
                   </div>

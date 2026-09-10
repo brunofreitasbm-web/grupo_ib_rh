@@ -1094,6 +1094,14 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
           )}
         </div>
       </div>
+
+      {/* MODAL DE UPLOAD DE FOLHA EM PDF POR UNIDADE (SEM LOGIN) */}
+      <PublicPayrollUploadModal
+        isOpen={isPayrollModalOpen}
+        onClose={() => setIsPayrollModalOpen(false)}
+        units={rawAvailableUnits}
+        initialUnitId={targetPayrollUnit}
+      />
     </div>
   );
 }
@@ -1259,13 +1267,6 @@ function FeriadosPanel() {
         </div>
       )}
 
-      {/* MODAL DE UPLOAD DE FOLHA EM PDF POR UNIDADE (SEM LOGIN) */}
-      <PublicPayrollUploadModal
-        isOpen={isPayrollModalOpen}
-        onClose={() => setIsPayrollModalOpen(false)}
-        units={rawAvailableUnits}
-        initialUnitId={targetPayrollUnit}
-      />
     </div>
   );
 }

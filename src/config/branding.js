@@ -73,6 +73,9 @@ export const WORKSPACES = {
     // quiosques. Desligada neste site: as contas da Porto Terapia continuam
     // sendo as fixas de adminUsers/kioskUnits.
     showSystemUsersModule: false,
+    // Banco de Talentos (candidatos do módulo gerencial do app Faça Amigos)
+    // — desligado neste site, que não tem esse convênio.
+    showTalentBankModule: false,
     adminUsers: {
       supervisor: { label: 'Supervisor Geral', email: 'supervisor@portoterapia.com' },
       guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
@@ -211,6 +214,9 @@ export const WORKSPACES = {
     // painel e de quiosque precisam ser geridas pela própria UI, e não por
     // blocos SQL rodados à mão.
     showSystemUsersModule: true,
+    // Candidatos captados pelo Banco de Talentos do app Faça Amigos (módulo
+    // gerencial, projeto Supabase separado) — ver supabase/functions/fetch-talent-bank.
+    showTalentBankModule: true,
     adminUsers: {
       bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
     },
