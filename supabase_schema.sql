@@ -2681,7 +2681,7 @@ BEGIN
   END IF;
 
   SELECT * INTO v_row FROM public.professional_self_registration_tokens WHERE professional_id = p_professional_id FOR UPDATE;
-  IF NOT FOUND OR v_row.token_hash <> digest(COALESCE(p_token, ''), 'sha256') THEN
+  IF NOT FOUND OR v_row.token_hash::bytea <> digest(COALESCE(p_token, ''), 'sha256') THEN
     RAISE EXCEPTION 'invalid_token';
   END IF;
   IF v_row.expires_at < now() THEN
@@ -3022,7 +3022,7 @@ BEGIN
   END IF;
 
   SELECT * INTO v_row FROM public.employee_self_registration_tokens WHERE employee_id = p_employee_id FOR UPDATE;
-  IF NOT FOUND OR v_row.token_hash <> digest(COALESCE(p_token, ''), 'sha256') THEN
+  IF NOT FOUND OR v_row.token_hash::bytea <> digest(COALESCE(p_token, ''), 'sha256') THEN
     RAISE EXCEPTION 'invalid_token';
   END IF;
   IF v_row.expires_at < now() THEN
