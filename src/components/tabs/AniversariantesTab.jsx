@@ -3,6 +3,7 @@ import { Cake, Users, Printer, Calendar, Edit2, Save, X, ChevronLeft, ChevronRig
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
+import { escapeHtmlForDocument } from '../../utils/helpers';
 
 // Campos enxutos por vínculo (só o necessário para a lista de aniversariantes,
 // evitando puxar colunas pesadas como face_descriptor/endereco/schedule).
@@ -160,12 +161,12 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
       const age = new Date().getFullYear() - d.getFullYear();
       return `
         <tr style="border-bottom:1px solid #e5e7eb;">
-          <td style="padding:8px 12px;font-weight:600;">${p.name}</td>
+          <td style="padding:8px 12px;font-weight:600;">${escapeHtmlForDocument(p.name)}</td>
           <td style="padding:8px 12px;">${dayStr}</td>
           <td style="padding:8px 12px;">${age} anos</td>
           <td style="padding:8px 12px;">${TYPE_LABELS[p.personType]}</td>
-          <td style="padding:8px 12px;">${p.role || '—'}</td>
-          <td style="padding:8px 12px;">${unitName(p.unitId)}</td>
+          <td style="padding:8px 12px;">${escapeHtmlForDocument(p.role) || '—'}</td>
+          <td style="padding:8px 12px;">${escapeHtmlForDocument(unitName(p.unitId))}</td>
           <td style="padding:8px 12px;text-align:center;">☐</td>
         </tr>`;
     }).join('');

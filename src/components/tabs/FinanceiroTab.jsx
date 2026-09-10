@@ -7,6 +7,7 @@ import { dailyPayRate, absenceDeduction, payAfterAbsences } from '../../utils/cl
 import PublicPayrollUploadModal from '../PublicPayrollUploadModal';
 import PayrollPdfViewerModal from '../PayrollPdfViewerModal';
 import { toast } from 'sonner';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -391,12 +392,18 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
             }
           </style>
         </head>
-        <body onload="window.print()">
-          ${documentHtml}
+        <body>
+          ${sanitizeHtml(documentHtml)}
         </body>
       </html>
     `);
     printWindow.document.close();
+    // Disparado pela janela que abriu, não por atributo onload inline no HTML
+    // gerado (compatível com CSP sem 'unsafe-inline' em script-src). Mesmo
+    // comportamento de antes.
+    printWindow.onload = () => {
+      printWindow.print();
+    };
   };
 
   if (loading) {

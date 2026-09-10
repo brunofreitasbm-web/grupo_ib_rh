@@ -45,4 +45,19 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Cabeçalhos de segurança HTTP (aplicados a toda rota). CSP calibrada para o
+# que o app realmente usa: Supabase (REST + Realtime), fonte Inter via Google
+# Fonts (usada inclusive dentro das janelas de impressão, que herdam esta
+# política), WebAssembly do face-api.js/tfjs, câmera/GPS para ponto e
+# biometria, e o html2pdf.js carregado sob demanda do cdnjs para exportar PDF.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; frame-src 'self' data: blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), geolocation=(self), microphone=()"
+
 

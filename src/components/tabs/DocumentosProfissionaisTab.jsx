@@ -3,6 +3,7 @@ import { FileText, Eye, Trash, Upload, Loader2, X, Download, Plus, ScrollText, P
 import { supabase } from '../../supabase';
 import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFriendlyDbErrorMessage } from '../../utils/mappings';
 import { getProfessionalContractHtml, getMissingContractFields } from '../../utils/professionalContract';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 import { toast } from 'sonner';
 
 import NfseUploadModal from '../NfseUploadModal';
@@ -217,7 +218,7 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
       return;
     }
     const unit = units.find((u) => u.id === selectedProfessional.unitId) || null;
-    const html = getProfessionalContractHtml(selectedProfessional, unit, branding);
+    const html = sanitizeHtml(getProfessionalContractHtml(selectedProfessional, unit, branding));
     setContractPreview({ html });
   };
 
