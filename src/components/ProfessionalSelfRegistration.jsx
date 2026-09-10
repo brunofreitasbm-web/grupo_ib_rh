@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { supabase } from '../supabase';
 import { validateCPF, validateCNPJ } from '../utils/helpers';
 import { fileToBase64, professionalRpcErrorMessage } from '../utils/mappings';
+import { ProfessionSelect } from './CourseFields';
+import { getProfessionCouncil, normalizeProfessionValue } from '../config/professions';
 
 // Autocadastro de Profissionais PJ (prestadores de serviço) — tela pública,
 // SEM sessão, espelhando o "Cadastro Obrigatório" dos estagiários
@@ -55,6 +57,11 @@ export default function ProfessionalSelfRegistration({ units = [], branding, onC
     const value = e?.target ? e.target.value : e;
     setForm((f) => ({ ...f, [field]: value }));
   };
+
+  // O conselho de classe segue a profissão escolhida no catálogo, sem
+  // sobrescrever um registro que a pessoa já tenha digitado.
+  const setProfession = (value) =>
+    setForm((f) => ({ ...f, profession: value, councilType: f.councilType || getProfessionCouncil(value) }));
 
   const setFile = (docKey) => (e) => {
     const file = e.target.files?.[0];
@@ -115,7 +122,7 @@ export default function ProfessionalSelfRegistration({ units = [], branding, onC
         p_endereco_bairro: form.enderecoBairro.trim() || null,
         p_endereco_cidade: form.enderecoCidade.trim() || null,
         p_endereco_uf: form.enderecoUf.trim() || null,
-        p_profession: form.profession.trim(),
+        p_profession: normalizeProfessionValue(form.profession) || form.profession.trim(),
         p_council_type: form.councilType.trim(),
         p_council_number: form.councilNumber.trim(),
         p_council_uf: form.councilUf.trim() || null,
@@ -293,7 +300,7 @@ export default function ProfessionalSelfRegistration({ units = [], branding, onC
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Profissão *</label>
-                <input value={form.profession} onChange={set('profession')} className={inputClass(errors.profession)} placeholder="Ex.: Psicólogo(a), Fisioterapeuta..." />
+                <ProfessionSelect value={form.profession} onChange={setProfession} className={inputClass(errors.profession)} />
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-1">

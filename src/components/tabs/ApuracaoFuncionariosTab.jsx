@@ -6,7 +6,7 @@ import {
   mapTimeRecordFromDb, EMPLOYEE_TIME_RECORD_SELECT_FIELDS,
   mapTimeAdjustmentFromDb, mapHolidayFromDb,
 } from '../../utils/mappings';
-import { computeMonth, minutesToHHMM } from '../../utils/cltCalculations';
+import { computeMonth, minutesToHHMM, dailyPayRate, absenceDeduction } from '../../utils/cltCalculations';
 import { getEmployeeDocumentHtml, buildApuracaoCsv } from '../../utils/cltDocuments';
 import { openPrintWindow } from '../../utils/documentPrint';
 import { BRANDING } from '../../config/branding';
@@ -52,8 +52,14 @@ export default function ApuracaoFuncionariosTab({ filterUnit, restrictedUnitIds 
 
   const rows = useMemo(() => filteredEmployees.map((emp) => {
     const { totals } = computeMonth({ employee: emp, records, adjustments, occurrences: [], holidays, monthKey, toleranceMinutes: 5 });
+    // Desconto de faltas: 1/30 do salário-base declarado por dia de falta
+    // injustificada (mesma base usada na folha de estagiários).
+    const baseSalary = Number(emp.baseSalary) || 0;
     return {
       id: emp.id, name: emp.name, unitId: emp.unitId,
+      baseSalary,
+      dailyValue: dailyPayRate(baseSalary),
+      absenceDeductionValue: absenceDeduction(baseSalary, totals.absencesUnjustified),
       absencesUnjustified: totals.absencesUnjustified, absencesJustified: totals.absencesJustified,
       extra50: minutesToHHMM(totals.extra50), extra100: minutesToHHMM(totals.extra100),
       extra50Minutes: totals.extra50, extra100Minutes: totals.extra100,
@@ -111,8 +117,9 @@ export default function ApuracaoFuncionariosTab({ filterUnit, restrictedUnitIds 
       <div className="p-3 bg-amber-50 border-b border-amber-100 flex items-start gap-2">
         <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-900">
-          Documento de apoio à contabilidade: conta faltas, horas extras, adicional noturno e DSR perdidos.
-          <strong> Não calcula INSS, IRRF, FGTS ou valores de rescisão.</strong>
+          Documento de apoio à contabilidade: conta faltas, horas extras, adicional noturno e DSR perdidos, e desconta
+          1/30 do salário-base declarado por dia de falta injustificada.
+          <strong> Não calcula INSS, IRRF, FGTS, DSR em valor ou verbas de rescisão.</strong>
         </p>
       </div>
 
@@ -122,28 +129,43 @@ export default function ApuracaoFuncionariosTab({ filterUnit, restrictedUnitIds 
             <tr className="bg-gray-50 text-gray-600 border-b border-gray-100">
               <th className="p-3 font-semibold">Funcionário</th>
               <th className="p-3 font-semibold">Unidade</th>
+              <th className="p-3 font-semibold">Salário / Dia (1/30)</th>
               <th className="p-3 font-semibold">Faltas Inj.</th>
               <th className="p-3 font-semibold">Faltas Just.</th>
               <th className="p-3 font-semibold">HE 50%</th>
               <th className="p-3 font-semibold">HE 100%</th>
               <th className="p-3 font-semibold">Noturno</th>
               <th className="p-3 font-semibold">DSR Perdidos</th>
+              <th className="p-3 font-semibold text-right">Desconto Faltas</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 ? (
-              <tr><td colSpan={8} className="p-8 text-center text-gray-400">Nenhum funcionário ativo para apurar.</td></tr>
+              <tr><td colSpan={10} className="p-8 text-center text-gray-400">Nenhum funcionário ativo para apurar.</td></tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-3 font-semibold text-gray-800">{r.name}</td>
                   <td className="p-3 text-gray-600">{unitName(r.unitId)}</td>
+                  <td className="p-3 text-gray-600">
+                    {r.baseSalary > 0 ? (
+                      <>
+                        {r.baseSalary.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        <div className="text-[9px] text-gray-400">Dia: {r.dailyValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                      </>
+                    ) : <span className="text-gray-400 italic">Sem salário cadastrado</span>}
+                  </td>
                   <td className="p-3 text-gray-600">{r.absencesUnjustified}</td>
                   <td className="p-3 text-gray-600">{r.absencesJustified}</td>
                   <td className="p-3 text-gray-600">{r.extra50}</td>
                   <td className="p-3 text-gray-600">{r.extra100}</td>
                   <td className="p-3 text-gray-600">{r.nightReduced}</td>
                   <td className="p-3 text-gray-600">{r.dsrLostDays}</td>
+                  <td className="p-3 text-right font-semibold text-red-700">
+                    {r.absenceDeductionValue > 0
+                      ? `- ${r.absenceDeductionValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                      : <span className="text-gray-400 italic font-normal">—</span>}
+                  </td>
                 </tr>
               ))
             )}

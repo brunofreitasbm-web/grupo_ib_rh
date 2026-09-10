@@ -287,6 +287,31 @@ export function computeMonth({ employee, records = [], adjustments = [], occurre
 }
 
 // ---------------------------------------------------------------------------
+// Descontos em folha
+// ---------------------------------------------------------------------------
+
+// Valor de um dia de remuneração: o salário/bolsa mensal declarado dividido
+// por 30, sempre — independentemente dos dias úteis ou do tamanho do mês.
+// Mesma base para CLT (salário-base) e estágio (bolsa-auxílio).
+export function dailyPayRate(monthlyPay) {
+  const v = Number(monthlyPay) || 0;
+  return v > 0 ? v / 30 : 0;
+}
+
+// Desconto por ausências/faltas não justificadas: 1/30 por dia descontado.
+// Faltas abonadas (atestado médico com comprovante) não entram em `days`.
+export function absenceDeduction(monthlyPay, unjustifiedDays) {
+  const d = Math.max(0, Number(unjustifiedDays) || 0);
+  return dailyPayRate(monthlyPay) * d;
+}
+
+// Remuneração devida no mês após os descontos por falta (nunca negativa).
+export function payAfterAbsences(monthlyPay, unjustifiedDays) {
+  const v = Number(monthlyPay) || 0;
+  return Math.max(0, v - absenceDeduction(v, unjustifiedDays));
+}
+
+// ---------------------------------------------------------------------------
 // Férias
 // ---------------------------------------------------------------------------
 

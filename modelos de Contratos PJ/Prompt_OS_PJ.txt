@@ -17,10 +17,14 @@ REGRAS OBRIGATÓRIAS
 4. Ao referenciar "Paciente / código interno", use o código interno do paciente sempre que
    disponível, evitando expor dado sensível (nome completo) fora do prontuário, salvo se o sistema já
    trabalhar com nomes completos internamente.
-5. Se {{VALOR_SESSAO}} ou {{VALOR_DOCUMENTO}} não forem informados nesta OS, assuma que se aplicam os
-   valores já definidos no contrato-quadro e escreva "conforme Cláusula 6ª do contrato-quadro" no
-   lugar do valor.
-6. Saída: devolva o documento completo pronto para assinatura (campos preenchidos + termo de aceite +
+5. Se {{VALOR_MODULO}} não for informado nesta OS, assuma que se aplica o preço unitário já definido
+   no contrato-quadro e escreva "conforme Cláusula 6ª do contrato-quadro" no lugar do valor.
+6. O preço é sempre por MÓDULO ASSISTENCIAL EFETIVAMENTE ENTREGUE (atendimentos realizados +
+   registro em prontuário + documentação técnica protocolada), nunca por tempo de permanência. Nunca
+   escreva "turno", "jornada", "escala", "plantão" ou "carga horária" nesta OS; se os dados de
+   entrada usarem esses termos, converta para "Módulo Assistencial" e registre o ajuste em
+   "⚠ CAMPOS PENDENTES".
+7. Saída: devolva o documento completo pronto para assinatura (campos preenchidos + termo de aceite +
    linhas de assinatura).
 
 DADOS DE ENTRADA (variáveis esperadas)
@@ -36,8 +40,10 @@ DADOS DE ENTRADA (variáveis esperadas)
 - {{DATA_INICIO_PREVISTA}}
 - {{DURACAO_ESTIMADA}} — ex.: "12 sessões" ou "3 meses"
 - {{FREQUENCIA_ESTIMADA}} — ex.: "2 sessões por semana"
-- {{VALOR_SESSAO}} — opcional; se ausente, usar "conforme Cláusula 6ª do contrato-quadro"
-- {{VALOR_DOCUMENTO}} — opcional; se ausente, usar "conforme Cláusula 6ª do contrato-quadro"
+- {{MODULOS_VINCULADOS}} — módulos assistenciais a que o atendimento se vincula, ex.: "módulo
+  matutino de terças e quintas"
+- {{VALOR_MODULO}} — opcional; se ausente, usar "conforme Cláusula 6ª do contrato-quadro"
+- {{ATENDIMENTOS_POR_MODULO}} — opcional; composição do módulo, se diferente do contrato-quadro
 - {{LOCAL_EXECUCAO}} — unidade/endereço do atendimento
 
 ================================================================================================
@@ -64,13 +70,19 @@ Serviço / especialidade | {{ESPECIALIDADE_SERVICO}}
 Data de início prevista | {{DATA_INICIO_PREVISTA}}
 Duração estimada | {{DURACAO_ESTIMADA}} (estimativa clínica, não obrigação de prazo)
 Frequência estimada | {{FREQUENCIA_ESTIMADA}}
-Valor por sessão / por documento entregue | {{VALOR_SESSAO}} / {{VALOR_DOCUMENTO}}
+Módulo(s) Assistencial(is) vinculado(s) | {{MODULOS_VINCULADOS}}
+Composição do Módulo Assistencial | até {{ATENDIMENTOS_POR_MODULO}} atendimentos + registro em
+prontuário + documentação técnica protocolada (Cláusula 6ª, item 6.1, do contrato-quadro)
+Preço por Módulo Assistencial entregue | {{VALOR_MODULO}}
 Local de execução | {{LOCAL_EXECUCAO}}
 
 Termo de aceite: "Declaro ter recebido e aceitado voluntariamente esta Ordem de Serviço, ciente de
 que posso recusá-la, no todo ou em parte, ou solicitar seu encerramento antecipado a qualquer tempo,
 nos termos da Cláusula 5ª-A do contrato-quadro, sem necessidade de justificativa e sem qualquer
-penalidade."
+penalidade. Declaro, ainda, estar ciente de que o preço acima remunera a entrega do Módulo
+Assistencial — atendimentos realizados, registrados em prontuário e documentados tecnicamente — e
+não tempo de permanência ou disponibilidade, não havendo valor mínimo mensal garantido nem
+obrigação de aceitar qualquer quantidade de módulos."
 
 Data: ____/____/______        Assinatura da CONTRATADA: ___________________________________
 Data: ____/____/______        Assinatura da CONTRATANTE: __________________________________

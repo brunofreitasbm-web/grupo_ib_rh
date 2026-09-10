@@ -10,6 +10,8 @@ import {
 } from '../../utils/mappings';
 import { getFriendlyDbErrorMessage } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
+import { ProfessionSelect } from '../CourseFields';
+import { getProfessionCouncil, normalizeProfessionValue } from '../../config/professions';
 import { toast } from 'sonner';
 
 // Cadastro de Profissionais PJ (prestadores de serviço). Deliberadamente sem
@@ -23,7 +25,7 @@ const emptyForm = {
   email: '', phone: '',
   bankName: '', bankAgency: '', bankAccount: '', bankAccountType: 'Conta Corrente', pixKey: '',
   repName: '', repCpf: '', repRg: '', repBirthdate: '', repEmail: '', repPhone: '', repRole: '',
-  serviceDescription: '', remunerationModel: '', remunerationValue: '', paymentDay: '', noticeDays: 30,
+  serviceDescription: '', remunerationModel: '', remunerationValue: '', shiftValue: '', paymentDay: '', noticeDays: 30,
   contractStart: '', contractEnd: '', contractNotes: '', active: true,
 };
 
@@ -103,7 +105,12 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
 
     setSaving(true);
     try {
-      const dbData = mapProfessionalToDb(form);
+      // Grava sempre o texto canônico do catálogo; cadastros legados fora dele
+      // são preservados como estão.
+      const dbData = mapProfessionalToDb({
+        ...form,
+        profession: normalizeProfessionValue(form.profession) || form.profession.trim(),
+      });
       if (editingId) {
         const { error } = await supabase.from('professionals').update(dbData).eq('id', editingId);
         if (error) throw error;
@@ -282,7 +289,20 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
               <div className="md:col-span-2 border-t border-gray-100 pt-3 mt-1">
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Habilitação Profissional</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <Field label="Profissão" value={form.profession} onChange={(v) => setForm({ ...form, profession: v })} placeholder="Ex.: Psicólogo(a)" />
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-500 mb-1">Profissão</label>
+                    <ProfessionSelect
+                      value={form.profession}
+                      onChange={(v) => setForm((f) => ({
+                        ...f,
+                        profession: v,
+                        // O conselho de classe segue a profissão, mas sem sobrescrever
+                        // um registro já preenchido à mão.
+                        councilType: f.councilType || getProfessionCouncil(v),
+                      }))}
+                      className="w-full p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-xs"
+                    />
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     <Field label="Conselho" value={form.councilType} onChange={(v) => setForm({ ...form, councilType: v })} placeholder="CRP, CRM..." />
                     <Field label="Nº Registro" value={form.councilNumber} onChange={(v) => setForm({ ...form, councilNumber: v })} />
@@ -328,6 +348,7 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Field label="Modelo de remuneração" value={form.remunerationModel} onChange={(v) => setForm({ ...form, remunerationModel: v })} />
                   <Field label="Valor de referência (R$)" type="number" value={form.remunerationValue} onChange={(v) => setForm({ ...form, remunerationValue: v })} />
+                  <Field label="Preço do Módulo Assistencial (R$)" type="number" value={form.shiftValue} onChange={(v) => setForm({ ...form, shiftValue: v })} />
                   <Field label="Dia de pagamento" type="number" value={form.paymentDay} onChange={(v) => setForm({ ...form, paymentDay: v })} />
                   <Field label="Aviso prévio (dias)" type="number" value={form.noticeDays} onChange={(v) => setForm({ ...form, noticeDays: v })} />
                   <Field label="Vigência início" type="date" value={form.contractStart} onChange={(v) => setForm({ ...form, contractStart: v })} />

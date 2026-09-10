@@ -183,4 +183,78 @@ describe('calculateProfessionalProduction', () => {
     expect(carla.totalHours).toBe(0);
     expect(carla.daysPresent).toBe(1);
   });
+
+  // Gratificação PJ: valor do turno x turnos com presença na competência.
+  describe('turnos e gratificação', () => {
+    const comValor = [
+      { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a', shiftValue: 1000 },
+      { id: 'p2', name: 'Marcos Lima', unitId: 'clinica-b', shiftValue: 500 },
+    ];
+
+    it('conta manhã e tarde separadamente e multiplica pelo valor do turno', () => {
+      const presence = [
+        // Dia 10: só manhã.
+        presenceRecord('p1', 'entrada', 2024, 5, 10, 8, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 10, 11, 30, 'clinica-a'),
+        // Dia 11: só tarde.
+        presenceRecord('p1', 'entrada', 2024, 5, 11, 13, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 11, 18, 0, 'clinica-a'),
+        // Dia 12: manhã e tarde (dois turnos no mesmo dia).
+        presenceRecord('p1', 'entrada', 2024, 5, 12, 8, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 12, 17, 0, 'clinica-a'),
+      ];
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.morningShifts).toBe(2);
+      expect(carla.afternoonShifts).toBe(2);
+      expect(carla.shiftsPresent).toBe(4);
+      expect(carla.shiftValue).toBe(1000);
+      expect(carla.shiftTotal).toBe(4000);
+    });
+
+    it('15 turnos a R$ 1.000,00 resultam em R$ 15.000,00 na competência', () => {
+      const presence = [];
+      for (let dia = 3; dia < 18; dia += 1) {
+        presence.push(presenceRecord('p1', 'entrada', 2024, 5, dia, 8, 0, 'clinica-a'));
+        presence.push(presenceRecord('p1', 'saida', 2024, 5, dia, 11, 0, 'clinica-a'));
+      }
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.shiftsPresent).toBe(15);
+      expect(carla.shiftTotal).toBe(15000);
+    });
+
+    it('saída às 12h em ponto encerra a manhã sem abrir o turno da tarde', () => {
+      const presence = [
+        presenceRecord('p1', 'entrada', 2024, 5, 10, 9, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 10, 12, 0, 'clinica-a'),
+      ];
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.morningShifts).toBe(1);
+      expect(carla.afternoonShifts).toBe(0);
+      expect(carla.shiftTotal).toBe(1000);
+    });
+
+    it('período em aberto conta apenas o turno da entrada', () => {
+      const presence = [presenceRecord('p1', 'entrada', 2024, 5, 10, 14, 0, 'clinica-a')];
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.morningShifts).toBe(0);
+      expect(carla.afternoonShifts).toBe(1);
+      expect(carla.shiftTotal).toBe(1000);
+    });
+
+    it('prestador sem valor do turno cadastrado apura turnos com gratificação zero', () => {
+      const presence = [
+        presenceRecord('p1', 'entrada', 2024, 5, 10, 8, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 10, 11, 0, 'clinica-a'),
+      ];
+      const carla = calculateProfessionalProduction(presence, professionals, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.shiftsPresent).toBe(1);
+      expect(carla.shiftValue).toBe(0);
+      expect(carla.shiftTotal).toBe(0);
+    });
+  });
 });

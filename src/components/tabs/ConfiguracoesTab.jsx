@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { BRANDING } from '../../config/branding';
 import { compressImage, mapHolidayFromDb, mapHolidayToDb, getFriendlyDbErrorMessage } from '../../utils/mappings';
+import PublicPayrollUploadModal from '../PublicPayrollUploadModal';
 import { supabase } from '../../supabase';
 import { NATIONAL_FIXED_HOLIDAYS, movableHolidays } from '../../utils/cltCalculations';
 import { toast } from 'sonner';
@@ -33,9 +34,11 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [expandedUnitId, setExpandedUnitId] = useState(null);
   const [editingUnits, setEditingUnits] = useState({});
+  const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
+  const [targetPayrollUnit, setTargetPayrollUnit] = useState('');
 
   // Lista consolidada de unidades (branding + banco de dados)
-  const availableUnits = units.length > 0 ? units : BRANDING.kioskUnits.map((ku) => ({
+  const rawAvailableUnits = units.length > 0 ? units : BRANDING.kioskUnits.map((ku) => ({
     id: ku.id,
     name: ku.buttonLabel || ku.name,
     razaoSocial: ku.razaoSocial || BRANDING.legalEntityName,
@@ -50,6 +53,16 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     radiusM: 5000
   }));
 
+  const availableUnits = rawAvailableUnits.filter((u) => {
+    const uId = (u.id || '').toLowerCase();
+    const uName = (u.name || u.nome || '').toLowerCase();
+    const isTargetHidden = uId.includes('antonio-barreto') || uId.includes('generalissimo') || uName.includes('antônio barreto') || uName.includes('generalíssimo');
+    if (isTargetHidden && (BRANDING.id === 'grupoib' || u.workspaceId === 'porto-terapia')) {
+      return false;
+    }
+    return true;
+  });
+
   useEffect(() => {
     const unitMap = {};
     availableUnits.forEach(u => {
@@ -61,7 +74,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         cnpj: u.cnpj || BRANDING.cnpj,
         address: u.address || u.endereco || '',
         phone: u.phone || BRANDING.phone,
-        logoUrl: u.logoUrl || u.logo_url || BRANDING.logoPath || '',
+        logoUrl: u.logoUrl || u.logo_url || '',
         tceCustomText: u.tceCustomText || u.tce_custom_text || '',
         paeCustomText: u.paeCustomText || u.pae_custom_text || '',
         declaracaoCustomText: u.declaracaoCustomText || u.declaracao_custom_text || '',
@@ -335,7 +348,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                         {/* Header do Card da Unidade */}
                         <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border-b border-slate-100">
                           <div className="flex items-center gap-3">
-                            {uData.logoUrl ? (
+                            {uData.logoUrl && uData.logoUrl !== BRANDING.logoPath ? (
                               <img src={uData.logoUrl} alt={uData.name} className="w-10 h-10 object-contain rounded border border-slate-200 p-0.5 bg-white" />
                             ) : (
                               <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm border border-indigo-100">
@@ -351,6 +364,17 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                           </div>
 
                           <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetPayrollUnit(uData.id);
+                                setIsPayrollModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
+                              title="Upload de Folha de Pagamento em PDF (Contador Senoguin)"
+                            >
+                              <Upload className="w-3.5 h-3.5 text-emerald-600" /> Upload Folha (PDF)
+                            </button>
                             <button
                               type="button"
                               onClick={() => setExpandedUnitId(isExpanded ? null : uData.id)}
@@ -1234,6 +1258,14 @@ function FeriadosPanel() {
           </table>
         </div>
       )}
+
+      {/* MODAL DE UPLOAD DE FOLHA EM PDF POR UNIDADE (SEM LOGIN) */}
+      <PublicPayrollUploadModal
+        isOpen={isPayrollModalOpen}
+        onClose={() => setIsPayrollModalOpen(false)}
+        units={rawAvailableUnits}
+        initialUnitId={targetPayrollUnit}
+      />
     </div>
   );
 }

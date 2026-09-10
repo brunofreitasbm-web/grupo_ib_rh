@@ -313,27 +313,32 @@ const TEMPLATES = {
 
   apuracao_mensal: (ctx) => wrap(`Apuração Mensal de Eventos — Competência ${blank(ctx.extra?.competencia)}`, `
     <p style="background:#fef3c7; border:1px solid #fde68a; border-radius:6px; padding:10px; font-size:10px; color:#92400e;">
-      Documento de apoio à contabilidade. Contém apenas a contagem de eventos (faltas, horas extras, adicional noturno,
-      DSR, férias) — <strong>não calcula INSS, IRRF, FGTS ou valores de rescisão</strong>.
+      Documento de apoio à contabilidade. Contém a contagem de eventos (faltas, horas extras, adicional noturno,
+      DSR, férias) e o desconto de faltas injustificadas a 1/30 do salário-base declarado por dia —
+      <strong>não calcula INSS, IRRF, FGTS ou valores de rescisão</strong>.
     </p>
     <table style="width:100%; border-collapse:collapse; font-size:9px; margin-top:10px;">
       <tr>
         <th style="padding:4px; border:1px solid #e5e7eb;">Funcionário</th>
+        <th style="padding:4px; border:1px solid #e5e7eb;">Salário / Dia (1/30)</th>
         <th style="padding:4px; border:1px solid #e5e7eb;">Faltas Inj.</th>
         <th style="padding:4px; border:1px solid #e5e7eb;">Faltas Just.</th>
         <th style="padding:4px; border:1px solid #e5e7eb;">HE 50%</th>
         <th style="padding:4px; border:1px solid #e5e7eb;">HE 100%</th>
         <th style="padding:4px; border:1px solid #e5e7eb;">Noturno</th>
         <th style="padding:4px; border:1px solid #e5e7eb;">DSR Perdidos</th>
+        <th style="padding:4px; border:1px solid #e5e7eb;">Desconto Faltas</th>
       </tr>
       ${(ctx.extra?.rows || []).map((r) => `<tr>
         <td style="padding:4px; border:1px solid #e5e7eb;">${r.name}</td>
+        <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.baseSalary ? `${fmtMoney(r.baseSalary)} / ${fmtMoney(r.dailyValue)}` : '—'}</td>
         <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.absencesUnjustified ?? 0}</td>
         <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.absencesJustified ?? 0}</td>
         <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.extra50 || '00:00'}</td>
         <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.extra100 || '00:00'}</td>
         <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.nightReduced || '00:00'}</td>
         <td style="padding:4px; border:1px solid #e5e7eb; text-align:center;">${r.dsrLostDays ?? 0}</td>
+        <td style="padding:4px; border:1px solid #e5e7eb; text-align:right;">${r.absenceDeductionValue ? `- ${fmtMoney(r.absenceDeductionValue)}` : '—'}</td>
       </tr>`).join('')}
     </table>
   `, ctx),
@@ -348,10 +353,11 @@ export function getEmployeeDocumentHtml(type, ctx) {
 }
 
 export function buildApuracaoCsv(rows, competencia) {
-  const header = ['Funcionario', 'FaltasInjustificadas', 'FaltasJustificadas', 'HE50(min)', 'HE100(min)', 'AdicionalNoturno(min)', 'DSRPerdidos'];
+  const header = ['Funcionario', 'SalarioBase', 'ValorDia(1/30)', 'FaltasInjustificadas', 'FaltasJustificadas', 'HE50(min)', 'HE100(min)', 'AdicionalNoturno(min)', 'DSRPerdidos', 'DescontoFaltas'];
   const lines = [header.join(';')];
   for (const r of rows) {
-    lines.push([r.name, r.absencesUnjustified ?? 0, r.absencesJustified ?? 0, r.extra50Minutes ?? 0, r.extra100Minutes ?? 0, r.nightReducedMinutes ?? 0, r.dsrLostDays ?? 0].join(';'));
+    const money = (v) => (Number(v) || 0).toFixed(2).replace('.', ',');
+    lines.push([r.name, money(r.baseSalary), money(r.dailyValue), r.absencesUnjustified ?? 0, r.absencesJustified ?? 0, r.extra50Minutes ?? 0, r.extra100Minutes ?? 0, r.nightReducedMinutes ?? 0, r.dsrLostDays ?? 0, money(r.absenceDeductionValue)].join(';'));
   }
   return `Competencia;${competencia}\n${lines.join('\n')}`;
 }

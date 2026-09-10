@@ -23,6 +23,8 @@ import {
 } from './utils/mappings';
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { BRANDING, WORKSPACES } from './config/branding';
+import { CourseSelect, InternshipTypeField } from './components/CourseFields';
+import { normalizeCourseValue, getInternshipTypeLabel } from './config/academicCourses';
 import { calculateHoursSummary, calculateHoursAlerts } from './utils/hoursCalculations';
 import useGeolocation from './hooks/useGeolocation';
 import * as faceapi from 'face-api.js';
@@ -73,6 +75,7 @@ import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
 import EmployeeKiosk from './components/EmployeeKiosk';
 import NfseUploadModal from './components/NfseUploadModal';
+import PublicPayrollUploadModal from './components/PublicPayrollUploadModal';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
@@ -331,6 +334,7 @@ export default function App() {
 
   // Filtro por unidade (histórico + exportação)
   const [filterUnit, setFilterUnit] = useState('all');
+  const [showPublicPayrollModal, setShowPublicPayrollModal] = useState(false);
 
   // Workspace administrativo: qual grupo de unidades está sendo exibido.
   // Começa no workspace deste próprio site (BRANDING.id) — só quem tem
@@ -362,7 +366,16 @@ export default function App() {
   }, [canSwitchWorkspace, units, adminWorkspace]);
 
   const visibleUnits = useMemo(
-    () => units.filter((u) => !restrictedUnitIds.includes(u.id)),
+    () => units.filter((u) => {
+      if (restrictedUnitIds.includes(u.id)) return false;
+      const uId = (u.id || '').toLowerCase();
+      const uName = (u.name || '').toLowerCase();
+      const isTargetHidden = uId.includes('antonio-barreto') || uId.includes('generalissimo') || uName.includes('antônio barreto') || uName.includes('generalíssimo');
+      if (isTargetHidden && (BRANDING.id === 'grupoib' || u.workspaceId === 'porto-terapia')) {
+        return false;
+      }
+      return true;
+    }),
     [units, restrictedUnitIds]
   );
 
@@ -472,7 +485,7 @@ export default function App() {
 
   // Cadastro obrigatório (do zero)
   const [cadastroForm, setCadastroForm] = useState({
-    name: '', course: '', institution: '', shift: 'Manhã',
+    name: '', course: '', institution: '', internshipType: '', shift: 'Manhã',
     dailyHours: 6, unitId: UNITS_DEFAULT[0].id, active: true,
     startDate: '', endDate: '', photo: '', cpf: '', email: '',
     rg: '', phone: '', address: '', bankName: '', bankAgency: '',
@@ -520,7 +533,7 @@ export default function App() {
   const [showManage, setShowManage] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
-    name: '', course: '', institution: '', shift: 'Manhã',
+    name: '', course: '', institution: '', internshipType: '', shift: 'Manhã',
     dailyHours: 6, unitId: UNITS_DEFAULT[0].id, active: true,
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 2 anos por padrão
@@ -846,7 +859,7 @@ export default function App() {
           p_email: `teste.estagio@${BRANDING.fallbackInternEmailDomain}`,
           p_password: '0000',
           p_name: 'TEste',
-          p_course: 'Psicologia Clínica',
+          p_course: 'Psicologia',
           p_institution: 'UFPA',
           p_shift: 'Tarde',
           p_daily_hours: 6,
@@ -1973,7 +1986,7 @@ export default function App() {
   const resetForm = () => {
     setEditingId(null);
     setForm({
-      name: '', course: '', institution: '', shift: 'Manhã', dailyHours: 6,
+      name: '', course: '', institution: '', internshipType: '', shift: 'Manhã', dailyHours: 6,
       unitId: (filterUnit !== 'all' ? filterUnit : (units[0]?.id || '')), active: true,
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 2 anos
@@ -2002,6 +2015,7 @@ export default function App() {
       name: intern.name || '',
       course: intern.course || '',
       institution: intern.institution || '',
+      internshipType: intern.internshipType || '',
       shift: intern.shift || 'Manhã',
       dailyHours: intern.dailyHours || 6,
       unitId: intern.unitId || units[0]?.id || '',
@@ -2040,6 +2054,11 @@ export default function App() {
       return;
     }
 
+    if (!form.internshipType) {
+      toast.error("Informe se o estágio é obrigatório ou não obrigatório.");
+      return;
+    }
+
     // Foto obrigatória
     if (!form.photo) {
       toast.error("Por favor, adicione uma foto de cadastro (3x4).");
@@ -2054,8 +2073,9 @@ export default function App() {
 
     const payload = {
       name: form.name.trim(),
-      course: form.course.trim(),
+      course: normalizeCourseValue(form.course) || form.course.trim(),
       institution: form.institution.trim(),
+      internshipType: form.internshipType,
       shift: form.shift,
       dailyHours: Math.min(Math.max(Number(form.dailyHours) || 6, 1), 8),
       unitId: form.unitId || units[0]?.id || '',
@@ -2175,7 +2195,7 @@ export default function App() {
           if (fallbackResult.error) throw fallbackResult.error;
           const newId = fallbackResult.data;
           if (newId) {
-            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null, internship_type: payload.internshipType || null }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
               toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
@@ -2183,8 +2203,8 @@ export default function App() {
           }
         } else {
           const newId = createResult.data;
-          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor)) {
-            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null }).eq('id', newId);
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor || payload.internshipType)) {
+            const { error: updateError } = await supabase.from('interns').update({ supervisor_name: payload.supervisorName, birthdate: payload.birthdate || null, face_descriptor: payload.faceDescriptor || null, internship_type: payload.internshipType || null }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
               toast.error('Estagiário criado, mas não foi possível salvar a data de nascimento: ' + getFriendlyDbErrorMessage(updateError));
@@ -2968,7 +2988,7 @@ export default function App() {
                         setCadastroMatriculaFile(null);
                         setCadastroSuccess(false);
                         setCadastroForm({
-                          name: '', course: '', institution: '', shift: 'Manhã',
+                          name: '', course: '', institution: '', internshipType: '', shift: 'Manhã',
                           dailyHours: 6, unitId: units[0]?.id || '', active: true,
                           startDate: '', endDate: '', photo: '', cpf: '', email: '',
                           rg: '', phone: '', address: '', bankName: '', bankAgency: '',
@@ -3391,7 +3411,17 @@ export default function App() {
             )}
           </div>
         </div>
-        <p className="mt-8 text-sm text-gray-500">Módulo de Estágio • Lei nº 11.788/2008</p>
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPublicPayrollModal(true)}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <FileText size={16} />
+            Portal do Contador - Enviar Folha PDF (Sem Login)
+          </button>
+          <p className="text-sm text-gray-500 mt-2">Módulo de Estágio • Lei nº 11.788/2008</p>
+        </div>
       </div>
     );
   };
@@ -3623,6 +3653,11 @@ export default function App() {
         return;
       }
 
+      if (!cadastroForm.internshipType) {
+        toast.error("Informe se o estágio é obrigatório ou não obrigatório.");
+        return;
+      }
+
       // Foto obrigatória
       if (!cadastroForm.photo) {
         toast.error("Por favor, adicione uma foto de cadastro (3x4).");
@@ -3701,7 +3736,7 @@ export default function App() {
           p_email: finalEmail,
           p_password: '0000',
           p_name: cadastroForm.name.trim(),
-          p_course: cadastroForm.course.trim(),
+          p_course: normalizeCourseValue(cadastroForm.course) || cadastroForm.course.trim(),
           p_institution: cadastroForm.institution.trim(),
           p_shift: cadastroForm.shift,
           p_daily_hours: Math.min(Math.max(Number(cadastroForm.dailyHours) || 6, 1), 8),
@@ -3734,7 +3769,7 @@ export default function App() {
             p_email: finalEmail,
             p_password: '0000',
             p_name: cadastroForm.name.trim(),
-            p_course: cadastroForm.course.trim(),
+            p_course: normalizeCourseValue(cadastroForm.course) || cadastroForm.course.trim(),
             p_institution: cadastroForm.institution.trim(),
             p_shift: cadastroForm.shift,
             p_daily_hours: Math.min(Math.max(Number(cadastroForm.dailyHours) || 6, 1), 8),
@@ -3765,7 +3800,8 @@ export default function App() {
               registration_status: cadastroForm.registrationStatus || 'pending_validation',
               documents: updatedDocs,
               supervisor_name: cadastroForm.supervisorName.trim(),
-              birthdate: cadastroForm.birthdate || null
+              birthdate: cadastroForm.birthdate || null,
+              internship_type: cadastroForm.internshipType || null
             })
             .eq('id', newId);
           if (fallbackUpdateError) {
@@ -3794,6 +3830,7 @@ export default function App() {
           .update({
             birthdate: cadastroForm.birthdate || null,
             face_descriptor: descriptorStr || null,
+            internship_type: cadastroForm.internshipType || null,
             registration_status: cadastroForm.registrationStatus || 'pending_validation'
           })
           .eq('id', newId);
@@ -4026,11 +4063,19 @@ export default function App() {
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 font-semibold mb-1 block">Curso *</label>
-                  <input
-                    required placeholder="Curso *"
+                  <CourseSelect
+                    required
                     value={cadastroForm.course}
-                    onChange={(e) => setCadastroForm({ ...cadastroForm, course: e.target.value })}
+                    onChange={(value) => setCadastroForm({ ...cadastroForm, course: value })}
                     className="w-full p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Tipo de Estágio *</label>
+                  <InternshipTypeField
+                    value={cadastroForm.internshipType}
+                    onChange={(value) => setCadastroForm({ ...cadastroForm, internshipType: value })}
+                    name="cadastroInternshipType"
                   />
                 </div>
                 <div>
@@ -4533,10 +4578,11 @@ export default function App() {
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
             />
-            <input
-              required placeholder="Curso *"
+            <CourseSelect
+              required
+              placeholder="Curso *"
               value={form.course}
-              onChange={(e) => setForm({ ...form, course: e.target.value })}
+              onChange={(value) => setForm({ ...form, course: value })}
               className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
             />
             <input
@@ -4551,6 +4597,13 @@ export default function App() {
               onChange={(e) => setForm({ ...form, supervisorName: e.target.value })}
               className="p-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-xs"
             />
+            <div className="md:col-span-2">
+              <label className="text-xs text-gray-500 font-semibold mb-1 block">Tipo de Estágio *</label>
+              <InternshipTypeField
+                value={form.internshipType}
+                onChange={(value) => setForm({ ...form, internshipType: value })}
+              />
+            </div>
             <input
               required placeholder="Endereço completo *"
               value={form.address}
@@ -4751,7 +4804,8 @@ export default function App() {
                       )}
                     </p>
                     <p className="text-xs text-gray-500 truncate">
-                      {[intern.course, intern.institution, unitName(intern.unitId), intern.shift, `${intern.dailyHours || 6}h/dia`]
+                      {[intern.course, intern.institution, unitName(intern.unitId), intern.shift, `${intern.dailyHours || 6}h/dia`,
+                        getInternshipTypeLabel(intern.internshipType) && `Estágio ${getInternshipTypeLabel(intern.internshipType).toLowerCase()}`]
                         .filter(Boolean).join(' • ')}
                     </p>
                     <p className="text-[10px] text-gray-400">
@@ -8191,7 +8245,7 @@ export default function App() {
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
-                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={units} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
+                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
                   </div>
                   <div style={{ display: activeAdminTab === 'pj_dashboard' ? 'block' : 'none' }}>
                     <DashboardProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'pj_dashboard'} />
@@ -8382,6 +8436,13 @@ export default function App() {
         isOpen={showGlobalNfseModal}
         onClose={() => setShowGlobalNfseModal(false)}
         branding={BRANDING}
+      />
+
+      <PublicPayrollUploadModal
+        isOpen={showPublicPayrollModal}
+        onClose={() => setShowPublicPayrollModal(false)}
+        branding={BRANDING}
+        units={visibleUnits.length > 0 ? visibleUnits : units}
       />
     </>
   );

@@ -10,6 +10,13 @@ import { escapeHtmlForDocument } from './helpers';
 // de vínculo). Este texto é uma MINUTA — precisa de revisão jurídica antes
 // do uso em produção, o que fica explícito tanto no aviso do modal quanto no
 // próprio rodapé do documento.
+//
+// A remuneração é por MÓDULO ASSISTENCIAL entregue (Cláusula 4ª), espelhando
+// a apuração de `shiftValue` × turnos com presença. A palavra "turno" é
+// deliberadamente evitada no corpo do contrato: o módulo é unidade de serviço
+// entregue, não unidade de tempo à disposição — é essa qualificação que
+// sustenta o preço por período sem abrir flanco de jornada/subordinação.
+// Ver `modelos de Contratos PJ/Prompt_Contrato_PJ.txt`, Cláusula 6ª.
 
 const fmtDate = (value) => {
   if (!value) return '____/____/______';
@@ -42,6 +49,7 @@ export const getMissingContractFields = (professional) => {
     ['councilNumber', 'Número do conselho'],
     ['repName', 'Nome do representante legal'],
     ['repCpf', 'CPF do representante legal'],
+    ['shiftValue', 'Preço do Módulo Assistencial'],
   ];
   return required.filter(([field]) => !String(p[field] || '').trim()).map(([, label]) => label);
 };
@@ -97,11 +105,36 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
     <p style="margin: 10px 0;"><strong>CLÁUSULA 3ª — DA NÃO EXCLUSIVIDADE.</strong> A CONTRATADA poderá prestar serviços a
     terceiros, inclusive a concorrentes da CONTRATANTE, não havendo qualquer relação de exclusividade entre as partes.</p>
 
-    <p style="margin: 10px 0;"><strong>CLÁUSULA 4ª — DA REMUNERAÇÃO.</strong> Pela prestação dos serviços, a CONTRATADA fará
-    jus à remuneração de ${fmtMoney(p.remunerationValue)} (${esc(p.remunerationModel) || 'conforme volume de atendimentos'}),
-    mediante emissão de Nota Fiscal, com pagamento previsto para o dia ${p.paymentDay || '__'} do mês subsequente à
-    prestação dos serviços, em conta de titularidade da CONTRATADA (Banco ${esc(p.bankName) || '_____'}, agência
-    ${esc(p.bankAgency) || '____'}, conta ${esc(p.bankAccount) || '_____'}${p.pixKey ? `, chave PIX ${esc(p.pixKey)}` : ''}).</p>
+    <p style="margin: 10px 0;"><strong>CLÁUSULA 4ª — DOS HONORÁRIOS (PREÇO POR MÓDULO ASSISTENCIAL ENTREGUE).</strong>
+    4.1. Denomina-se <strong>Módulo Assistencial</strong> a unidade de serviço composta, cumulativa e
+    indissociavelmente, pelos atendimentos realizados pela CONTRATADA no período matutino ou no período vespertino
+    de um mesmo dia, pelo respectivo registro em prontuário e pela entrega e protocolo da documentação técnica
+    correspondente. O Módulo Assistencial é unidade de <em>medição do serviço entregue</em>, e não unidade de tempo
+    colocado à disposição, não se confundindo, para nenhum efeito, com turno, jornada, escala, plantão ou
+    sobreaviso, na forma dos arts. 594 e 614 do Código Civil.
+    4.2. Pela prestação dos serviços, a CONTRATADA fará jus ao preço unitário, certo e fechado de
+    ${fmtMoney(p.shiftValue)} por Módulo Assistencial efetivamente entregue, apurando-se ao final de cada
+    competência mensal o valor devido pela simples multiplicação do preço unitário pelo número de módulos
+    entregues no período.
+    4.3. O preço é invariável em função do tempo de permanência da CONTRATADA nas dependências da CONTRATANTE, não
+    havendo acréscimo por permanência excedente nem desconto por permanência inferior, atraso ou saída antecipada,
+    desde que entregue a unidade de serviço descrita no item 4.1. Não há remuneração fixa, mensal ou mínima
+    garantida, nem qualquer verba devida por mera disponibilidade, comparecimento, deslocamento ou tempo de espera,
+    e a CONTRATANTE não se obriga a ofertar, nem a CONTRATADA a aceitar, qualquer quantidade mínima de módulos.
+    4.4. O pagamento se dará mediante emissão de Nota Fiscal, previsto para o dia ${p.paymentDay || '__'} do mês
+    subsequente à prestação dos serviços, exclusivamente em conta de titularidade da pessoa jurídica CONTRATADA
+    (Banco ${esc(p.bankName) || '_____'}, agência ${esc(p.bankAgency) || '____'}, conta
+    ${esc(p.bankAccount) || '_____'}${p.pixKey ? `, chave PIX ${esc(p.pixKey)}` : ''}), vedado o pagamento em conta
+    de pessoa física.${p.remunerationModel ? ` Modelo de remuneração de referência: ${esc(p.remunerationModel)}.` : ''}</p>
+
+    <p style="margin: 10px 0;"><strong>CLÁUSULA 4ª-A — DA VEDAÇÃO DE LEITURA TRABALHISTA DA MÉTRICA E DO REGISTRO
+    DE EXECUÇÃO.</strong> A adoção do Módulo Assistencial como unidade de preço não institui nem autoriza, entre as
+    partes, jornada de trabalho, controle de horário, escala, banco de horas, hora extra, adicional noturno,
+    intervalo remunerado ou qualquer outra figura da legislação trabalhista. Os registros eletrônicos de início e
+    término de execução dos módulos — inclusive por quiosque, PIN ou aplicativo da CONTRATANTE — têm finalidade
+    exclusivamente fiscal e de conferência das entregas para emissão da Nota Fiscal, são de preenchimento
+    voluntário e <strong>não constituem controle de ponto ou de jornada</strong> nos termos do art. 74 da CLT, não
+    gerando consequência disciplinar nem servindo para apurar atrasos, faltas, compensações ou descontos.</p>
 
     <p style="margin: 10px 0;"><strong>CLÁUSULA 5ª — DAS OBRIGAÇÕES TRIBUTÁRIAS E PREVIDENCIÁRIAS.</strong> A CONTRATADA é
     responsável, com exclusividade, pelo recolhimento de todos os tributos incidentes sobre sua atividade, bem como

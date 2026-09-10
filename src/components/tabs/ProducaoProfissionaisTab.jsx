@@ -11,9 +11,17 @@ import { calculateProfessionalProduction } from '../../utils/hoursCalculations';
 import { BRANDING } from '../../config/branding';
 import NfseUploadModal from '../NfseUploadModal';
 
-// Apuração mensal de produção de Profissionais PJ: dias com presença e total
-// de horas na competência, apresentado como base de conferência para a Nota
-// Fiscal — nunca como "folha de pagamento" (ver plano do módulo PJ, seção 1).
+const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// Apuração mensal de produção de Profissionais PJ: dias com presença, total de
+// horas e Módulos Assistenciais (matutino/vespertino) entregues na competência,
+// apresentado como base de conferência para a Nota Fiscal — nunca como "folha
+// de pagamento" (ver plano do módulo PJ, seção 1). Os honorários são o preço do
+// módulo multiplicado pelos módulos entregues (Cláusula 6ª do contrato-quadro).
+//
+// Vocabulário é blindagem: esta tela é impressa e exportada, então evita
+// "gratificação" (verba celetista, art. 457 §1º da CLT) e "turno" (unidade de
+// jornada). No código os campos seguem chamando shift* por compatibilidade.
 export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [], branding }) {
   const [professionals, setProfessionals] = useState([]);
   const [presence, setPresence] = useState([]);
@@ -58,9 +66,18 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   };
 
   const handleExportCSV = () => {
-    const headers = 'Prestador,Dias com Presença,Total de Horas\n';
+    const headers = 'Prestador,Dias com Presença,Total de Horas,Módulos Matutinos,Módulos Vespertinos,Módulos Entregues,Preço do Módulo,Honorários\n';
     const rows = production
-      .map((row) => `"${row.professional.name}",${row.daysPresent},${row.totalHours.toFixed(2)}`)
+      .map((row) => [
+        `"${row.professional.name}"`,
+        row.daysPresent,
+        row.totalHours.toFixed(2),
+        row.morningShifts,
+        row.afternoonShifts,
+        row.shiftsPresent,
+        row.shiftValue.toFixed(2),
+        row.shiftTotal.toFixed(2),
+      ].join(','))
       .join('\n');
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -108,6 +125,10 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
 
       <p className="px-4 pt-3 text-[11px] text-gray-500">
         Base de conferência para as Notas Fiscais da competência. Não representa folha de pagamento nem controle de jornada.
+        Os honorários são o preço do Módulo Assistencial multiplicado pelos módulos entregues na competência
+        (corte matutino/vespertino às 12h); um mesmo dia rende dois módulos quando há execução antes e depois do corte.
+        Os registros de execução têm finalidade fiscal e não constituem controle de ponto ou de jornada
+        (art. 74 da CLT) — ver Cláusula 6ª do contrato-quadro PJ.
       </p>
 
       <div className="overflow-x-auto p-4">
@@ -117,21 +138,41 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
               <th className="p-3 font-semibold">Prestador</th>
               <th className="p-3 font-semibold">Dias com Presença</th>
               <th className="p-3 font-semibold">Total de Horas</th>
+              <th className="p-3 font-semibold">Módulos (Mat. / Vesp.)</th>
+              <th className="p-3 font-semibold">Módulos Entregues</th>
+              <th className="p-3 font-semibold">Preço do Módulo</th>
+              <th className="p-3 font-semibold text-right">Honorários</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {production.length === 0 ? (
-              <tr><td colSpan={3} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
+              <tr><td colSpan={7} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
             ) : (
               production.map((row) => (
                 <tr key={row.professional.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-3 font-semibold text-gray-800">{row.professional.name}</td>
                   <td className="p-3 text-gray-600">{row.daysPresent}</td>
                   <td className="p-3 text-gray-600">{row.totalHours.toFixed(1)}h</td>
+                  <td className="p-3 text-gray-600">{row.morningShifts} / {row.afternoonShifts}</td>
+                  <td className="p-3 font-semibold text-gray-700">{row.shiftsPresent}</td>
+                  <td className="p-3 text-gray-600">
+                    {row.shiftValue > 0 ? fmtBRL(row.shiftValue) : <span className="text-amber-600">não informado</span>}
+                  </td>
+                  <td className="p-3 text-right font-bold text-gray-800">{fmtBRL(row.shiftTotal)}</td>
                 </tr>
               ))
             )}
           </tbody>
+          {production.length > 0 && (
+            <tfoot>
+              <tr className="bg-gray-50 border-t border-gray-200 font-semibold text-gray-700">
+                <td className="p-3" colSpan={4}>Total da competência</td>
+                <td className="p-3">{production.reduce((acc, r) => acc + r.shiftsPresent, 0)}</td>
+                <td className="p-3"></td>
+                <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.shiftTotal, 0))}</td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 

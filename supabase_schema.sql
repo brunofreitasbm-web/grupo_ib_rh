@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.interns (
     name text NOT NULL,
     course text,
     institution text,
+    internship_type text CHECK (internship_type IS NULL OR internship_type IN ('obrigatorio', 'nao_obrigatorio')),
     shift text,
     daily_hours integer DEFAULT 6,
     unit_id text REFERENCES public.units(id) ON DELETE SET NULL,
@@ -808,6 +809,7 @@ BEGIN
     NEW.name := OLD.name;
     NEW.course := OLD.course;
     NEW.institution := OLD.institution;
+    NEW.internship_type := OLD.internship_type;
     NEW.shift := OLD.shift;
     NEW.daily_hours := OLD.daily_hours;
     NEW.unit_id := OLD.unit_id;
@@ -951,7 +953,7 @@ CREATE INDEX IF NOT EXISTS idx_document_contents_intern ON public.document_conte
 
 -- =========================================================================
 -- MULTI-WORKSPACE: GRUPO IB (Faça Amigos Parque Shopping, Faça Amigos Grão
--- Pará, Clínica A, Clínica B) atendido por um segundo deploy (Vercel) que
+-- Pará, Faça Amigos, Centro de Terapia Comportamental, Clínica B) atendido por um segundo deploy (Vercel) que
 -- compartilha este mesmo banco com a Porto Terapia, sem misturar dados.
 -- Idempotente: pode ser rodado de novo sem duplicar/quebrar nada.
 -- =========================================================================
@@ -982,9 +984,17 @@ UPDATE public.units SET kiosk_email = 'generalissimo@portoterapia.com' WHERE id 
 INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m, workspace_id, kiosk_email, biometric_required) VALUES
   ('faca-amigos-parque-shopping', 'Faça Amigos Parque Shopping', 'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'parqueshopping@grupoib.internal', true),
   ('faca-amigos-grao-para',       'Faça Amigos Grão Pará',       'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'graopara@grupoib.internal',       true),
-  ('clinica-a',                   'Clínica A',                    'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true),
+  ('clinica-a',                   'Faça Amigos, Centro de Terapia Comportamental', 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true),
   ('clinica-b',                   'Clínica B',                    'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'clinicab@grupoib.internal',       true)
 ON CONFLICT (id) DO NOTHING;
+
+-- Renomeacao/dados cadastrais da unidade 'clinica-a' (antiga "Clínica A") a partir
+-- do CNPJ 22.161.197/0001-83 - INSTITUTO FACA AMIGOS LTDA. O INSERT acima e
+-- ON CONFLICT DO NOTHING, entao a linha ja existente em producao so muda aqui.
+UPDATE public.units
+SET name = 'Faça Amigos, Centro de Terapia Comportamental',
+    address = 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147'
+WHERE id = 'clinica-a';
 
 -- 10. records.unit_id — coluna durável (interns.unit_id e records.intern_id são
 -- ON DELETE SET NULL, então um join ao vivo via intern não é confiável para
@@ -1304,7 +1314,7 @@ DECLARE
   units_data jsonb := '[
     {"email": "parqueshopping@grupoib.internal", "name": "Estagiário Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
     {"email": "graopara@grupoib.internal", "name": "Estagiário Faça Amigos Grão Pará", "unit_id": "faca-amigos-grao-para"},
-    {"email": "clinicaa@grupoib.internal", "name": "Estagiário Clínica A", "unit_id": "clinica-a"},
+    {"email": "clinicaa@grupoib.internal", "name": "Estagiário Faça Amigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
     {"email": "clinicab@grupoib.internal", "name": "Estagiário Clínica B", "unit_id": "clinica-b"}
   ]'::jsonb;
   u jsonb;
@@ -1676,7 +1686,7 @@ DECLARE
   units_data jsonb := '[
     {"email": "pj-parqueshopping@grupoib.internal", "name": "Prestadores Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
     {"email": "pj-graopara@grupoib.internal",       "name": "Prestadores Faça Amigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
-    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores Clínica A",                   "unit_id": "clinica-a"},
+    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores Faça Amigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
     {"email": "pj-clinicab@grupoib.internal",       "name": "Prestadores Clínica B",                   "unit_id": "clinica-b"}
   ]'::jsonb;
   u jsonb;
@@ -2356,7 +2366,7 @@ DECLARE
   units_data jsonb := '[
     {"email": "clt-parqueshopping@grupoib.internal", "name": "Funcionários Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
     {"email": "clt-graopara@grupoib.internal",       "name": "Funcionários Faça Amigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
-    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários Clínica A",                   "unit_id": "clinica-a"},
+    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários Faça Amigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
     {"email": "clt-clinicab@grupoib.internal",       "name": "Funcionários Clínica B",                   "unit_id": "clinica-b"}
   ]'::jsonb;
   u jsonb;
@@ -2457,6 +2467,10 @@ ALTER TABLE public.professionals
   ADD COLUMN IF NOT EXISTS service_description text,
   ADD COLUMN IF NOT EXISTS remuneration_model text,
   ADD COLUMN IF NOT EXISTS remuneration_value numeric,
+  -- Valor da gratificacao por turno (manha/tarde). A apuracao mensal do modulo
+  -- PJ multiplica este valor pela quantidade de turnos em que houve presenca
+  -- registrada na competencia (ver calculateProfessionalProduction).
+  ADD COLUMN IF NOT EXISTS shift_value numeric,
   ADD COLUMN IF NOT EXISTS payment_day integer,
   ADD COLUMN IF NOT EXISTS notice_days integer;
 
@@ -3691,3 +3705,200 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.list_system_user_audit(integer) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.list_system_user_audit(integer) TO authenticated;
+
+-- =============================================================================
+-- 19. TIPO DE ESTÁGIO (OBRIGATÓRIO x NÃO OBRIGATÓRIO)
+-- Idempotente: seguro para rodar em bases já existentes.
+-- =============================================================================
+ALTER TABLE public.interns
+  ADD COLUMN IF NOT EXISTS internship_type text;
+
+ALTER TABLE public.interns
+  DROP CONSTRAINT IF EXISTS interns_internship_type_check;
+
+ALTER TABLE public.interns
+  ADD CONSTRAINT interns_internship_type_check
+  CHECK (internship_type IS NULL OR internship_type IN ('obrigatorio', 'nao_obrigatorio'));
+
+COMMENT ON COLUMN public.interns.internship_type IS
+  'Tipo de estagio: obrigatorio (exigido pela grade curricular) ou nao_obrigatorio (opcional).';
+
+-- Normalização dos cursos legados para o catálogo fechado (src/config/academicCourses.js)
+UPDATE public.interns SET course = 'Psicologia'
+  WHERE course IN ('psicologia', 'Psicologia Bacharelado', 'Psicologia Clínica');
+UPDATE public.interns SET course = 'Fonoaudiologia'
+  WHERE course IN ('Bacharel em fonoaudiologia');
+UPDATE public.interns SET course = 'Terapia Ocupacional'
+  WHERE course IN ('Terapia ocupacional', 'terapia ocupacional');
+UPDATE public.interns SET course = 'Educação Física'
+  WHERE course IN ('Educação física', 'Educação física bacharelado');
+UPDATE public.interns SET course = 'Fisioterapia'
+  WHERE course IN ('fisioterapia', 'FISIOTERAPIA');
+UPDATE public.interns SET course = 'Música'
+  WHERE course IN ('Licenciatura Plena em Música', 'Licenciatura plena em Música');
+
+-- =============================================================================
+-- 20. ESTATÍSTICAS AGREGADAS DE ESTAGIÁRIOS (INTEGRAÇÃO COM SISTEMAS EXTERNOS)
+--
+-- Publica APENAS contagens por curso — nenhum dado pessoal sai daqui.
+-- O sistema externo consome de três formas (escolha uma ou combine):
+--   (a) snapshot sob demanda ....... rpc('get_intern_course_counts')
+--   (b) tempo real (mesma base) .... realtime em public.intern_course_stats
+--   (c) push (outra base/servidor) . Database Webhook -> edge function
+--
+-- Idempotente: seguro para rodar em bases já existentes.
+-- =============================================================================
+
+-- 20.1 Slug estável do curso (espelha getCourseSlug de src/config/academicCourses.js).
+-- Sem depender da extensão unaccent: translate() cobre o português.
+CREATE OR REPLACE FUNCTION public.slugify_pt(p_text text) RETURNS text
+  LANGUAGE sql IMMUTABLE
+  AS $fn$
+    SELECT nullif(
+      regexp_replace(
+        regexp_replace(
+          lower(translate(coalesce(p_text, ''),
+            'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑáàâãäéèêëíìîïóòôõöúùûüçñ',
+            'AAAAAEEEEIIIIOOOOOUUUUCNaaaaaeeeeiiiiooooouuuucn')),
+          '[^a-z0-9]+', '-', 'g'),
+        '(^-+|-+$)', '', 'g'),
+    '');
+  $fn$;
+
+-- Apelidos de cadastros antigos em texto livre -> slug do catálogo.
+CREATE OR REPLACE FUNCTION public.intern_course_slug(p_course text) RETURNS text
+  LANGUAGE sql IMMUTABLE
+  AS $fn$
+    SELECT coalesce(
+      CASE public.slugify_pt(p_course)
+        WHEN 'fono'                          THEN 'fonoaudiologia'
+        WHEN 'bacharel-em-fonoaudiologia'    THEN 'fonoaudiologia'
+        WHEN 'bacharelado-em-fonoaudiologia' THEN 'fonoaudiologia'
+        WHEN 'psico'                         THEN 'psicologia'
+        WHEN 'psicologia-bacharelado'        THEN 'psicologia'
+        WHEN 'psicologia-clinica'            THEN 'psicologia'
+        WHEN 'bacharel-em-psicologia'        THEN 'psicologia'
+        WHEN 'to'                            THEN 'terapia-ocupacional'
+        WHEN 'terapeuta-ocupacional'         THEN 'terapia-ocupacional'
+        WHEN 'ed-fisica'                     THEN 'educacao-fisica'
+        WHEN 'educacao-fisica-bacharelado'   THEN 'educacao-fisica'
+        WHEN 'educacao-fisica-licenciatura'  THEN 'educacao-fisica'
+        WHEN 'bacharel-em-fisioterapia'      THEN 'fisioterapia'
+        WHEN 'licenciatura-em-musica'        THEN 'musica'
+        WHEN 'licenciatura-plena-em-musica'  THEN 'musica'
+        WHEN 'nutricao-e-dietetica'          THEN 'nutricao'
+      END,
+      public.slugify_pt(p_course),
+      'nao-informado');
+  $fn$;
+
+-- 20.2 Tabela de contagens. `kind` já prevê 'profissional' sem mudar o schema.
+-- unit_id = '__all__' guarda o total consolidado de todas as unidades.
+CREATE TABLE IF NOT EXISTS public.intern_course_stats (
+  kind         text NOT NULL DEFAULT 'estagiario',
+  unit_id      text NOT NULL DEFAULT '__all__',
+  course_slug  text NOT NULL,
+  course_label text,
+  total        integer NOT NULL DEFAULT 0,
+  updated_at   timestamp with time zone NOT NULL DEFAULT now(),
+  PRIMARY KEY (kind, unit_id, course_slug)
+);
+
+COMMENT ON TABLE public.intern_course_stats IS
+  'Contagem de estagiarios validados por curso. Somente agregados - nenhum dado pessoal.';
+
+-- 20.3 Recalcula tudo (tabela pequena: dezenas de linhas) e avisa quem escuta.
+CREATE OR REPLACE FUNCTION public.refresh_intern_course_stats() RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+  AS $fn$
+  BEGIN
+    WITH base AS (
+      SELECT public.intern_course_slug(i.course) AS course_slug,
+             coalesce(nullif(trim(i.course), ''), 'Não informado') AS course_label,
+             coalesce(i.unit_id, 'sem-unidade') AS unit_id
+        FROM public.interns i
+       WHERE coalesce(i.active, true)
+         AND coalesce(i.registration_status, 'validated') = 'validated'
+    ),
+    agg AS (
+      SELECT course_slug, min(course_label) AS course_label, unit_id, count(*)::int AS total
+        FROM base GROUP BY course_slug, unit_id
+      UNION ALL
+      SELECT course_slug, min(course_label), '__all__', count(*)::int
+        FROM base GROUP BY course_slug
+    ),
+    upserted AS (
+      INSERT INTO public.intern_course_stats (kind, unit_id, course_slug, course_label, total, updated_at)
+      SELECT 'estagiario', unit_id, course_slug, course_label, total, now() FROM agg
+      ON CONFLICT (kind, unit_id, course_slug) DO UPDATE
+        SET total = excluded.total,
+            course_label = excluded.course_label,
+            updated_at = now()
+        WHERE public.intern_course_stats.total IS DISTINCT FROM excluded.total
+      RETURNING 1
+    )
+    DELETE FROM public.intern_course_stats s
+     WHERE s.kind = 'estagiario'
+       AND NOT EXISTS (SELECT 1 FROM agg a
+                        WHERE a.unit_id = s.unit_id AND a.course_slug = s.course_slug);
+
+    -- Canal LISTEN/NOTIFY para consumidores que não usam Realtime.
+    PERFORM pg_notify('intern_course_stats', json_build_object(
+      'kind', 'estagiario',
+      'updated_at', now(),
+      'counts', coalesce((SELECT json_object_agg(course_slug, total)
+                            FROM public.intern_course_stats
+                           WHERE kind = 'estagiario' AND unit_id = '__all__'), '{}'::json)
+    )::text);
+  END;
+  $fn$;
+
+-- 20.4 Gatilho: qualquer cadastro/validação/desligamento recalcula o agregado.
+CREATE OR REPLACE FUNCTION public.trg_refresh_intern_course_stats() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+  AS $fn$
+  BEGIN
+    PERFORM public.refresh_intern_course_stats();
+    RETURN NULL;
+  END;
+  $fn$;
+
+DROP TRIGGER IF EXISTS trg_interns_course_stats ON public.interns;
+CREATE TRIGGER trg_interns_course_stats
+  AFTER INSERT OR DELETE OR UPDATE OF course, unit_id, active, registration_status
+  ON public.interns
+  FOR EACH STATEMENT EXECUTE FUNCTION public.trg_refresh_intern_course_stats();
+
+-- 20.5 Leitura: RLS liberada só para leitura autenticada (são apenas números).
+ALTER TABLE public.intern_course_stats ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "stats: leitura autenticada" ON public.intern_course_stats;
+CREATE POLICY "stats: leitura autenticada" ON public.intern_course_stats
+  FOR SELECT TO authenticated USING (true);
+
+-- Realtime: o sistema externo (mesma base) assina as mudanças desta tabela.
+DO $do$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables
+                  WHERE pubname = 'supabase_realtime' AND tablename = 'intern_course_stats') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.intern_course_stats;
+  END IF;
+END $do$;
+
+-- 20.6 Snapshot sob demanda. p_unit_id NULL = total consolidado.
+CREATE OR REPLACE FUNCTION public.get_intern_course_counts(p_unit_id text DEFAULT NULL)
+  RETURNS TABLE (course_slug text, course_label text, total integer, updated_at timestamp with time zone)
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+  AS $fn$
+    SELECT s.course_slug, s.course_label, s.total, s.updated_at
+      FROM public.intern_course_stats s
+     WHERE s.kind = 'estagiario'
+       AND s.unit_id = coalesce(p_unit_id, '__all__')
+     ORDER BY s.total DESC, s.course_slug;
+  $fn$;
+
+REVOKE ALL ON FUNCTION public.get_intern_course_counts(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_intern_course_counts(text) TO authenticated, service_role;
+
+-- Popula a tabela na primeira execução.
+SELECT public.refresh_intern_course_stats();

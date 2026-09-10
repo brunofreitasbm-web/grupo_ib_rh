@@ -4,6 +4,8 @@ import { supabase } from '../../supabase';
 import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { BRANDING } from '../../config/branding';
+import { CourseSelect, InternshipTypeField } from '../CourseFields';
+import { normalizeCourseValue, getInternshipTypeLabel } from '../../config/academicCourses';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
 import { toast } from 'sonner';
@@ -204,7 +206,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   };
   
   const [form, setForm] = useState({
-    name: '', course: '', institution: '', shift: 'Manhã',
+    name: '', course: '', institution: '', internshipType: '', shift: 'Manhã',
     dailyHours: 6, unitId: '', active: true,
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -266,7 +268,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const resetForm = () => {
     setEditingId(null);
     setForm({
-      name: '', course: '', institution: '', shift: 'Manhã',
+      name: '', course: '', institution: '', internshipType: '', shift: 'Manhã',
       dailyHours: 6, unitId: defaultUnitId(units), active: true,
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -284,6 +286,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       name: intern.name || '',
       course: intern.course || '',
       institution: intern.institution || '',
+      internshipType: intern.internshipType || '',
       shift: intern.shift || 'Manhã',
       dailyHours: intern.dailyHours || 6,
       unitId: filterUnit !== 'all' ? filterUnit : (intern.unitId || units[0]?.id || ''),
@@ -395,12 +398,15 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
     if (!form.name.trim()) return toast.error('Nome completo é obrigatório.');
     if (!form.birthdate) return toast.error('Data de Nascimento é obrigatória.');
     if (form.cpf && !validateCPF(form.cpf)) return toast.error('CPF informado é inválido.');
+    if (!form.course) return toast.error('Selecione o curso acadêmico na lista.');
+    if (!form.internshipType) return toast.error('Informe se o estágio é obrigatório ou não obrigatório.');
 
     const payload = {
       ...form,
       name: form.name.trim(),
-      course: form.course.trim(),
+      course: normalizeCourseValue(form.course) || form.course.trim(),
       institution: form.institution.trim(),
+      internshipType: form.internshipType,
       photo: form.photo,
       cpf: form.cpf.trim(),
       email: form.email.trim(),
@@ -519,7 +525,8 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
             const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
-              face_descriptor: payload.faceDescriptor || null
+              face_descriptor: payload.faceDescriptor || null,
+              internship_type: payload.internshipType || null
             }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
@@ -528,11 +535,12 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
           }
         } else {
           const newId = createResult.data;
-          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor)) {
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor || payload.internshipType)) {
             const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
-              face_descriptor: payload.faceDescriptor || null
+              face_descriptor: payload.faceDescriptor || null,
+              internship_type: payload.internshipType || null
             }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
@@ -735,13 +743,12 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-gray-700">Curso Acadêmico</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Psicologia"
-                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                <label className="font-semibold text-gray-700">Curso Acadêmico *</label>
+                <CourseSelect
+                  required
                   value={form.course}
-                  onChange={e => setForm(f => ({ ...f, course: e.target.value }))}
+                  onChange={value => setForm(f => ({ ...f, course: value }))}
+                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
                 />
               </div>
 
@@ -753,6 +760,14 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                   className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   value={form.institution}
                   onChange={e => setForm(f => ({ ...f, institution: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1 md:col-span-3">
+                <label className="font-semibold text-gray-700">Tipo de Estágio *</label>
+                <InternshipTypeField
+                  value={form.internshipType}
+                  onChange={value => setForm(f => ({ ...f, internshipType: value }))}
                 />
               </div>
 
@@ -997,6 +1012,11 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                   <div className="space-y-1 pr-14">
                     <h3 className="text-xs font-bold text-gray-800 line-clamp-1">{intern.name}</h3>
                     <p className="text-[10px] text-gray-500 leading-none">{intern.course || 'Sem curso'} • {intern.institution || 'Sem IES'}</p>
+                    {intern.internshipType && (
+                      <p className="text-[10px] text-slate-400 leading-none mt-0.5">
+                        Estágio {getInternshipTypeLabel(intern.internshipType).toLowerCase()}
+                      </p>
+                    )}
                     <p className="text-[9px] text-indigo-600 font-semibold">{unitName(intern.unitId)}</p>
                     <p className="text-[9px] text-slate-500 font-medium">Turno: {intern.shift} ({intern.dailyHours}h/dia)</p>
                   </div>

@@ -126,10 +126,55 @@ export function calculateHoursAlerts(records, interns, filterUnit, maxDailyHours
     }));
 }
 
+// Hora de corte entre os turnos de manhã e de tarde: registros com horário
+// anterior a 12h contam turno de manhã; de 12h em diante, turno de tarde.
+export const SHIFT_CUTOFF_HOUR = 12;
+
+/**
+ * Turnos (manhã/tarde) tocados por um dia de presença. Cada período
+ * entrada→saída é comparado com o corte das 12h: o intervalo é tratado como
+ * semiaberto, de modo que uma saída às 12h em ponto encerra o turno da manhã
+ * sem abrir o da tarde. Um mesmo dia rende dois turnos quando a presença
+ * cobre os dois lados do corte. Período em aberto (entrada sem saída) conta
+ * apenas o turno em que a entrada ocorreu.
+ * @param {Array<{action: string, time: number}>} events - eventos já ordenados do dia
+ * @returns {{morning: boolean, afternoon: boolean}}
+ */
+function shiftsOfDay(events) {
+  let morning = false;
+  let afternoon = false;
+
+  const cutoffOf = (time) => {
+    const d = new Date(time);
+    d.setHours(SHIFT_CUTOFF_HOUR, 0, 0, 0);
+    return d.getTime();
+  };
+  let openEntrada = null;
+  events.forEach((e) => {
+    if (e.action === 'entrada') {
+      if (openEntrada === null) openEntrada = e.time;
+    } else if (e.action === 'saida' && openEntrada !== null) {
+      const start = openEntrada;
+      const cutoff = cutoffOf(start);
+      if (start < cutoff) morning = true;
+      if (e.time > cutoff) afternoon = true;
+      openEntrada = null;
+    }
+  });
+
+  if (openEntrada !== null) {
+    if (new Date(openEntrada).getHours() < SHIFT_CUTOFF_HOUR) morning = true;
+    else afternoon = true;
+  }
+
+  return { morning, afternoon };
+}
+
 /**
  * Apuração mensal de produção de prestadores PJ: por profissional, dias com
- * presença e total de horas na competência (AAAA-MM). Sem limites legais,
- * sem alertas — é só a base de conferência da Nota Fiscal.
+ * presença, total de horas e turnos (manhã/tarde) com presença na competência
+ * (AAAA-MM). Sem limites legais, sem alertas — é só a base de conferência da
+ * Nota Fiscal e da gratificação por turno (valor do turno × turnos presentes).
  * @param {Array} presence - registros (mapProfessionalPresenceFromDb)
  * @param {Array} professionals - prestadores (mapProfessionalFromDb)
  * @param {string} monthKey - 'AAAA-MM'
@@ -151,9 +196,12 @@ export function calculateProfessionalProduction(presence, professionals, monthKe
   days.forEach(({ key, day, hours, events }) => {
     if (!per[key]) per[key] = { hours: 0, days: [] };
     per[key].hours += hours;
+    const { morning, afternoon } = shiftsOfDay(events);
     per[key].days.push({
       date: day,
       hours,
+      morning,
+      afternoon,
       firstIn: events.find((e) => e.action === 'entrada')?.time || null,
       lastOut: [...events].reverse().find((e) => e.action === 'saida')?.time || null,
       open: events.length > 0 && events[events.length - 1].action === 'entrada',
@@ -165,10 +213,20 @@ export function calculateProfessionalProduction(presence, professionals, monthKe
     .map((p) => {
       const agg = per[p.id] || { hours: 0, days: [] };
       agg.days.sort((a, b) => a.date - b.date);
+      const morningShifts = agg.days.filter((d) => d.morning).length;
+      const afternoonShifts = agg.days.filter((d) => d.afternoon).length;
+      const shiftsPresent = morningShifts + afternoonShifts;
+      const shiftValue = Number(p.shiftValue) || 0;
       return {
         professional: p,
         totalHours: agg.hours,
         daysPresent: agg.days.filter((d) => d.hours > 0 || d.open).length,
+        morningShifts,
+        afternoonShifts,
+        shiftsPresent,
+        shiftValue,
+        // Gratificação PJ = valor do turno × turnos com presença na competência.
+        shiftTotal: shiftValue * shiftsPresent,
         days: agg.days,
       };
     })

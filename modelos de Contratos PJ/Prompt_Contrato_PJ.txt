@@ -14,17 +14,23 @@ REGRAS OBRIGATÓRIAS
    deixe escrito "[PENDENTE: <nome da variável>]" no lugar, e liste todos os pendentes em uma seção
    "⚠ CAMPOS PENDENTES" ao final do documento gerado.
 3. Nunca remova, enfraqueça ou reformule as cláusulas de autonomia, não exclusividade, ausência de
-   subordinação, remuneração por produção ou vedação de vínculo empregatício (Cláusulas 2ª, 3ª, 5ª,
-   5ª-A, 6ª e 12ª) — elas existem para reduzir risco de reconhecimento de vínculo trabalhista (CLT)
-   e não podem ser alteradas por este processo automatizado.
-4. Se os dados de entrada pedirem algo que contradiga essas cláusulas de proteção (ex.: "pagar por
-   hora trabalhada", "exigir exclusividade", "impor horário fixo"), NÃO aplique — gere o documento
-   normalmente e adicione um aviso em "⚠ CAMPOS PENDENTES" explicando o conflito, para revisão humana.
+   subordinação, preço por Módulo Assistencial entregue ou vedação de vínculo empregatício (Cláusulas
+   2ª, 3ª, 5ª, 5ª-A, 6ª e 12ª) — elas existem para reduzir risco de reconhecimento de vínculo
+   trabalhista (CLT) e não podem ser alteradas por este processo automatizado.
+4. O modelo remunera por MÓDULO ASSISTENCIAL EFETIVAMENTE ENTREGUE (unidade de serviço), nunca por
+   tempo à disposição. Se os dados de entrada pedirem algo que contradiga as cláusulas de proteção
+   — por exemplo "pagar por hora trabalhada", "pagar por turno de presença", "pagar mesmo sem
+   atendimento realizado", "garantir valor mensal mínimo", "exigir exclusividade", "impor horário
+   fixo", "descontar atrasos" ou "controlar ponto" —, NÃO aplique: gere o documento normalmente e
+   adicione um aviso em "⚠ CAMPOS PENDENTES" explicando o conflito, para revisão humana.
 5. Saída: devolva o documento completo e pronto, em texto corrido, mantendo a formatação de
    cláusulas e itens numerados como no modelo.
 6. Este é um documento jurídico. Lembre sempre, ao final da saída, que a minuta gerada deve ser
    revisada por advogado(a) trabalhista antes de qualquer assinatura, especialmente enquanto o
    Tema 1389 do STF (pejotização) seguir pendente de decisão final.
+7. Lembre também, ao final da saída, que a eficácia da blindagem depende da execução real do
+   contrato: reproduza o "PROTOCOLO OPERACIONAL" da Cláusula 12ª como checklist de conduta para a
+   CONTRATANTE.
 
 DADOS DE ENTRADA (variáveis esperadas)
 - {{CONTRATANTE_RAZAO_SOCIAL}} — razão social da clínica contratante
@@ -37,9 +43,11 @@ DADOS DE ENTRADA (variáveis esperadas)
 - {{PROFISSIONAL_NOME}} — nome do(a) sócio(a)/titular executor(a) do serviço
 - {{PROFISSIONAL_REGISTRO_CONSELHO}} — ex.: "CRP 09/12345", "CREFONO 4-98765"
 - {{ESPECIALIDADE_SERVICO}} — ex.: "Psicologia — Análise do Comportamento Aplicada (ABA)"
-- {{VALOR_SESSAO}} — valor em R$ por sessão realizada
-- {{VALOR_DOCUMENTO}} — valor em R$ por documento técnico entregue (evolução/relatório/laudo)
-- {{PERCENTUAL_NOSHOW}} — % de compensação por falta do paciente com aviso < 24h (ou "não aplicável")
+- {{VALOR_MODULO}} — valor em R$ por Módulo Assistencial efetivamente entregue
+- {{ATENDIMENTOS_POR_MODULO}} — número de atendimentos que compõem um Módulo Assistencial
+- {{PRAZO_DOC_DIAS}} — prazo, em dias, para entrega da documentação técnica do módulo
+- {{PERCENTUAL_NOSHOW}} — % de compensação por esvaziamento do módulo por falta de paciente com
+  aviso < 24h (ou "não aplicável")
 - {{PRAZO_PAGAMENTO_DIAS}} — prazo em dias para pagamento após emissão da NFS-e
 - {{REGIME_TRIBUTARIO_CONTRATADA}} — ex.: "Simples Nacional"
 - {{DATA_INICIO_VIGENCIA}} — data de início do contrato
@@ -53,7 +61,7 @@ INSTITUTO COMPORTAMENTAL FAÇA AMIGOS
 Núcleo de Desenvolvimento Humano
 
 CONTRATO DE PRESTAÇÃO DE SERVIÇOS PROFISSIONAIS ENTRE PESSOAS JURÍDICAS
-(Contrato-quadro PJ–PJ)
+(Contrato-quadro PJ–PJ — preço por Módulo Assistencial)
 
 CONTRATANTE: {{CONTRATANTE_RAZAO_SOCIAL}}, pessoa jurídica de direito privado, inscrita no CNPJ sob
 o nº {{CONTRATANTE_CNPJ}}, com sede em {{CONTRATANTE_ENDERECO}}, neste ato representada na forma de
@@ -78,6 +86,9 @@ CONTRATANTE.
 1.2. A prestação de serviços ora contratada não envolve, em nenhuma hipótese, relação de emprego,
 cargo, função, jornada de trabalho ou subordinação hierárquica, aplicando-se a este contrato o
 regime jurídico previsto nos artigos 593 e seguintes do Código Civil e no artigo 442-B da CLT.
+1.3. Os serviços são contratados e remunerados por unidade de serviço concluída — o "Módulo
+Assistencial" definido na Cláusula 6ª —, na forma dos artigos 593, 594 e 614 do Código Civil, que
+admitem expressamente a fixação de preço por partes ou medições da obra ou do serviço prestado.
 
 CLÁUSULA 2ª — DA NATUREZA AUTÔNOMA DA RELAÇÃO E AUSÊNCIA DE SUBORDINAÇÃO
 2.1. A CONTRATADA presta os serviços por meio de profissional legalmente habilitado, com plena
@@ -109,6 +120,9 @@ tecnicamente apto para executar, total ou parcialmente, os serviços objeto dest
 o substituto atenda aos requisitos mínimos do Anexo II, comunicando a CONTRATANTE previamente apenas
 para fins de continuidade do cuidado ao paciente e de conformidade regulatória, o que não caracteriza
 autorização prévia de natureza hierárquica.
+4.2. O Módulo Assistencial executado por profissional substituto indicado pela CONTRATADA é devido à
+CONTRATADA nos mesmos termos da Cláusula 6ª, cabendo exclusivamente a ela a remuneração do
+substituto, o que evidencia a ausência de pessoalidade na execução deste contrato.
 
 CLÁUSULA 5ª — DA AGENDA E DISPONIBILIDADE
 5.1. A CONTRATADA informará à CONTRATANTE, por meio do Termo de Disponibilidade Voluntária (Anexo
@@ -116,18 +130,21 @@ I), os dias e intervalos de horário em que voluntariamente aceita receber agend
 revisável a qualquer tempo por iniciativa da CONTRATADA.
 5.2. A CONTRATANTE poderá oferecer agendamentos dentro da disponibilidade informada, sendo
 assegurado à CONTRATADA o direito de recusar, sem necessidade de justificativa e sem qualquer
-penalidade, qualquer agendamento específico.
-5.3. Não há, para nenhum efeito deste contrato, jornada de trabalho, turno, carga horária mínima ou
-obrigação de permanência física nas dependências da CONTRATANTE fora dos horários efetivamente
-agendados para sessões ou para entrega presencial de documentação, quando aplicável.
+penalidade, qualquer agendamento específico ou Módulo Assistencial específico.
+5.3. Não há, para nenhum efeito deste contrato, jornada de trabalho, escala, carga horária mínima,
+banco de horas, regime de sobreaviso ou obrigação de permanência física nas dependências da
+CONTRATANTE fora dos Módulos Assistenciais voluntariamente aceitos pela CONTRATADA.
+5.4. A não aceitação de Módulos Assistenciais oferecidos, em qualquer quantidade e por qualquer
+período, não gera para a CONTRATADA penalidade, desconto, advertência, redução de preço unitário,
+perda de prioridade na oferta futura ou qualquer outra consequência desfavorável.
 
 CLÁUSULA 5ª-A — DAS ORDENS DE SERVIÇO
 5-A.1. Cada atendimento a paciente específico, pelo prazo estimado necessário ao respectivo plano
 terapêutico, será formalizado por meio de "Ordem de Serviço" (OS) ou "Termo de Atendimento"
 (documento próprio, acessório a este contrato-quadro), que especificará: identificação do paciente,
-especialidade/serviço, data de início prevista, duração estimada e frequência estimada de
-atendimentos — sem prejuízo do disposto nos itens 5.1 a 5.3 quanto à ausência de jornada e à
-faculdade de recusa.
+especialidade/serviço, data de início prevista, duração estimada, frequência estimada de
+atendimentos e o Módulo Assistencial ao qual se vincula — sem prejuízo do disposto nos itens 5.1 a
+5.4 quanto à ausência de jornada e à faculdade de recusa.
 5-A.2. A emissão de cada Ordem de Serviço depende de aceitação expressa da CONTRATADA, que poderá
 recusar, sem necessidade de justificativa, o atendimento a determinado paciente, ou solicitar o
 encerramento antecipado de uma Ordem de Serviço já aceita mediante aviso com antecedência mínima de
@@ -142,32 +159,64 @@ profissional, não descaracteriza a natureza autônoma da prestação de serviç
 442-B da CLT, desde que mantidas as condições de não exclusividade, ausência de subordinação e
 possibilidade de recusa previstas neste contrato.
 
-CLÁUSULA 6ª — DOS HONORÁRIOS (REMUNERAÇÃO 100% POR PRODUÇÃO)
-6.1. A título de honorários, a CONTRATANTE pagará à CONTRATADA valores calculados exclusivamente com
-base na produção efetivamente entregue, sem qualquer componente fixo, mensal, por turno ou vinculado
-a tempo de permanência, na seguinte composição:
-   a) 80% (oitenta por cento) referente ao valor de cada sessão, calculado sobre o valor unitário de
-   R$ {{VALOR_SESSAO}} por sessão, devido somente quando a sessão for efetivamente realizada e
-   registrada em prontuário;
-   b) 20% (vinte por cento) referente à documentação técnica do período, calculado sobre o valor
-   unitário de R$ {{VALOR_DOCUMENTO}} por documento, devido somente mediante a efetiva entrega e
-   protocolo, dentro do prazo técnico aplicável, da evolução terapêutica, relatório de evolução,
-   laudo ou documento equivalente exigido pelo plano terapêutico do paciente ou pela operadora de
-   saúde.
-6.2. Não há, em nenhuma hipótese, pagamento por hora trabalhada, por turno, por jornada ou por mera
-disponibilidade/permanência: o pagamento pressupõe sempre a entrega de uma unidade de serviço
-concluída. O risco pela não realização de sessões não agendadas ou canceladas por causa não
-imputável à CONTRATANTE é da CONTRATADA, ressalvado o item 6.3.
-6.3. Em caso de falta do paciente (no-show) com aviso inferior a 24 (vinte e quatro) horas, poderá
-ser devida à CONTRATADA compensação de {{PERCENTUAL_NOSHOW}} do valor da sessão agendada, a título de
-indenização por perda de oportunidade de agenda — e não como remuneração por disponibilidade.
-6.4. O pagamento será efetuado em até {{PRAZO_PAGAMENTO_DIAS}} dias contados da apresentação, pela
-CONTRATADA, de Nota Fiscal de Serviços Eletrônica (NFS-e) correspondente à produção do período,
-mediante depósito ou transferência bancária exclusivamente em conta de titularidade da pessoa
-jurídica CONTRATADA, sendo vedado o pagamento em conta de pessoa física.
-6.5. Os valores unitários do item 6.1 poderão ser revistos por acordo entre as Partes mediante termo
-aditivo, não se aplicando reajuste automático por data-base, dissídio coletivo ou qualquer índice de
-natureza trabalhista.
+CLÁUSULA 6ª — DOS HONORÁRIOS (PREÇO UNITÁRIO POR MÓDULO ASSISTENCIAL EFETIVAMENTE ENTREGUE)
+6.1. Definição da unidade de serviço. Para os fins exclusivos deste contrato, denomina-se "Módulo
+Assistencial" a UNIDADE DE SERVIÇO composta, cumulativa e indissociavelmente, por: (i) a realização
+dos atendimentos alocados à CONTRATADA no período matutino ou no período vespertino de um mesmo dia,
+até o limite de {{ATENDIMENTOS_POR_MODULO}} atendimentos por módulo; (ii) o registro em prontuário
+de cada atendimento efetivamente realizado; e (iii) a entrega e o protocolo da documentação técnica
+correspondente ao módulo — evolução terapêutica e demais documentos exigidos pelo plano terapêutico
+do paciente ou pela operadora de saúde —, no prazo de {{PRAZO_DOC_DIAS}} dias.
+6.2. Natureza da unidade. O Módulo Assistencial é unidade de MEDIÇÃO DO SERVIÇO ENTREGUE, e não
+unidade de tempo colocado à disposição da CONTRATANTE. Não se confunde, para nenhum efeito, com
+turno, jornada, escala, plantão de disponibilidade ou período de sobreaviso, e sua adoção como
+critério de preço decorre exclusivamente da conveniência de medição do serviço, na forma dos arts.
+594 e 614 do Código Civil.
+6.3. Preço. A CONTRATANTE pagará à CONTRATADA o preço unitário, certo e fechado de
+R$ {{VALOR_MODULO}} por Módulo Assistencial efetivamente entregue, apurando-se ao final de cada
+competência mensal o valor devido pela simples multiplicação do preço unitário pelo número de
+Módulos Assistenciais entregues no período.
+6.4. Invariabilidade em relação ao tempo. O preço unitário é invariável em função do tempo de
+permanência da CONTRATADA ou de seu preposto nas dependências da CONTRATANTE: não há acréscimo por
+permanência excedente, hora adicional, adicional noturno ou intervalo remunerado, nem desconto por
+permanência inferior, atraso ou saída antecipada, desde que entregue a unidade de serviço definida
+no item 6.1.
+6.5. Ausência de componente fixo e de garantia de volume. Não há remuneração fixa, mensal, mínima
+garantida, piso, nem qualquer verba devida por mera disponibilidade, permanência, comparecimento,
+deslocamento ou tempo de espera. A CONTRATANTE não se obriga a ofertar qualquer número mínimo de
+Módulos Assistenciais, e a CONTRATADA não se obriga a aceitá-los, inexistindo expectativa legítima
+de volume, de continuidade ou de renda mensal, o que evidencia a assunção do risco da atividade
+pela CONTRATADA e a ausência de alteridade.
+6.6. Não entrega e entrega parcial. Nada é devido pelo Módulo Assistencial não entregue. Entregues
+os atendimentos sem a documentação técnica do item 6.1 (iii), o preço do módulo torna-se exigível
+apenas após o protocolo da documentação, ficando suspenso o respectivo pagamento. O risco pela não
+realização de atendimentos não agendados ou cancelados por causa não imputável à CONTRATANTE é da
+CONTRATADA, ressalvado o item 6.7.
+6.7. Esvaziamento do módulo por falta de paciente. Caso a falta de paciente (no-show) com aviso
+inferior a 24 (vinte e quatro) horas esvazie integralmente um Módulo Assistencial já aceito, poderá
+ser devida à CONTRATADA compensação de {{PERCENTUAL_NOSHOW}} do preço unitário do módulo, a título
+de indenização civil por perda de oportunidade de agenda — e não como remuneração por
+disponibilidade, presença ou tempo à disposição.
+6.8. Vedação de leitura trabalhista da métrica. A adoção do Módulo Assistencial como unidade de
+preço não institui, não presume e não autoriza a aplicação, entre as Partes, de jornada de trabalho,
+controle de horário, regime de escala, banco de horas, hora extra, adicional noturno, intervalo
+intrajornada remunerado, descanso semanal remunerado ou qualquer outra figura da legislação
+trabalhista, obrigando-se as Partes a não utilizar tais conceitos, nomenclaturas ou rotinas na
+execução deste contrato.
+6.9. Registro de execução para fins fiscais. Os registros eletrônicos de início e término de
+execução dos Módulos Assistenciais, inclusive os efetuados por quiosque, PIN, aplicativo ou sistema
+da CONTRATANTE, têm finalidade exclusivamente fiscal e de conferência das entregas para emissão da
+NFS-e, são de preenchimento voluntário pela CONTRATADA e NÃO constituem controle de ponto ou de
+jornada nos termos do art. 74 da CLT. Tais registros não geram consequência disciplinar de qualquer
+natureza e não são utilizados para apurar atrasos, faltas, compensações, descontos ou horas extras.
+6.10. Pagamento. O pagamento será efetuado em até {{PRAZO_PAGAMENTO_DIAS}} dias contados da
+apresentação, pela CONTRATADA, de Nota Fiscal de Serviços Eletrônica (NFS-e) correspondente aos
+Módulos Assistenciais entregues no período, mediante depósito ou transferência bancária
+exclusivamente em conta de titularidade da pessoa jurídica CONTRATADA, sendo vedado o pagamento em
+conta de pessoa física.
+6.11. Revisão de preço. O preço unitário do item 6.3 poderá ser revisto por acordo entre as Partes
+mediante termo aditivo, não se aplicando reajuste automático por data-base, dissídio coletivo,
+convenção coletiva ou qualquer índice de natureza trabalhista.
 
 CLÁUSULA 7ª — DOS TRIBUTOS, ENCARGOS E OBRIGAÇÕES ACESSÓRIAS
 7.1. A CONTRATADA é integral e exclusivamente responsável pelo recolhimento de todos os tributos,
@@ -206,8 +255,12 @@ CLÁUSULA 11ª — DO USO DE INSTALAÇÕES E EQUIPAMENTOS
 a título de cessão de uso vinculada à execução do serviço contratado, não gerando presunção de
 subordinação, cabendo à CONTRATADA, sempre que possível e compatível com a atividade, utilizar seus
 próprios materiais e instrumentos de trabalho.
+11.2. A utilização das dependências da CONTRATANTE limita-se ao necessário à execução dos Módulos
+Assistenciais aceitos, não sendo exigida da CONTRATADA presença, permanência ou disponibilidade fora
+desses módulos, tampouco justificativa por sua ausência das dependências em qualquer outro momento.
 
-CLÁUSULA 12ª — DA NATUREZA JURÍDICA E DA VEDAÇÃO EXPRESSA AO RECONHECIMENTO DE VÍNCULO
+CLÁUSULA 12ª — DA NATUREZA JURÍDICA, DA VEDAÇÃO EXPRESSA AO RECONHECIMENTO DE VÍNCULO E DO
+PROTOCOLO OPERACIONAL
 12.1. As Partes declaram, para todos os fins de direito, que a relação jurídica estabelecida por
 este instrumento é de natureza exclusivamente civil-empresarial — prestação de serviços entre
 pessoas jurídicas —, nos termos do art. 442-B da CLT e dos arts. 593 e seguintes do Código Civil,
@@ -216,6 +269,28 @@ não se caracterizando relação de emprego por ausência dos requisitos do art.
 vínculo empregatício caso a execução real do contrato, no dia a dia, contrarie o quanto aqui
 pactuado — cabendo às Partes, e sobretudo à CONTRATANTE, adotar práticas operacionais consistentes
 com a autonomia aqui descrita como condição de eficácia desta cláusula.
+12.3. PROTOCOLO OPERACIONAL. Como condição de eficácia da autonomia pactuada, e considerando que o
+preço é medido por Módulo Assistencial, a CONTRATANTE obriga-se, na execução cotidiana, a NÃO:
+   a) tratar o Módulo Assistencial como turno, escala ou jornada, nem exigir "cumprimento de
+   horário", permanência mínima ou justificativa de saída;
+   b) aplicar advertência, suspensão, desconto, multa ou qualquer sanção pela não aceitação, pela
+   ausência ou pelo atraso da CONTRATADA em módulo não iniciado;
+   c) utilizar os registros do item 6.9 como espelho de ponto, folha de frequência, base de
+   desconto, banco de horas ou instrumento de avaliação disciplinar;
+   d) incluir a CONTRATADA em organograma, hierarquia funcional, cargo, "equipe fixa", programa de
+   metas individuais de natureza trabalhista, avaliação de desempenho celetista ou plano de carreira;
+   e) subordinar a CONTRATADA a chefia imediata, exigir pedido de "folga", "férias", "atestado" ou
+   autorização prévia para ausência, ou fornecer benefícios típicos de emprego (vale-transporte,
+   vale-refeição, plano de saúde como contraprestação, 13º, adicional, participação em lucros);
+   f) impedir ou desestimular a prestação de serviços a outros tomadores, nem exigir dedicação
+   exclusiva de fato;
+   g) recusar, sem justificativa técnica ou regulatória, a substituição por preposto habilitado
+   indicado pela CONTRATADA na forma da Cláusula 4ª;
+   h) emitir comunicações internas, mensagens ou documentos que tratem a CONTRATADA como
+   empregado(a), colaborador(a) subordinado(a) ou integrante de quadro funcional.
+12.4. O descumprimento reiterado do Protocolo Operacional pela CONTRATANTE, além de comprometer a
+eficácia deste contrato, autoriza a CONTRATADA a exigir sua imediata correção, sem prejuízo da
+denúncia do contrato na forma da Cláusula 13ª.
 
 CLÁUSULA 13ª — DO PRAZO E DA RESCISÃO
 13.1. Este contrato vigora pelo prazo de 12 (doze) meses, contados de {{DATA_INICIO_VIGENCIA}},
@@ -237,6 +312,10 @@ regularmente constituída como pessoa jurídica, com CNPJ ativo; (ii) o profissi
 registro profissional regular; (iii) pode prestar serviços a outros tomadores, não dependendo
 economicamente de forma exclusiva da CONTRATANTE; (iv) tem plena ciência da natureza autônoma desta
 contratação.
+14.2. A CONTRATADA declara, ainda, que compreende e aceita o critério de preço por Módulo
+Assistencial da Cláusula 6ª, ciente de que: (i) o preço remunera a entrega da unidade de serviço, e
+não o tempo à disposição; (ii) não há valor mensal mínimo garantido; e (iii) a quantidade de módulos
+varia conforme a demanda e conforme a própria disponibilidade que ela, voluntariamente, informar.
 
 CLÁUSULA 15ª — DO FORO
 15.1. As Partes elegem o foro central da comarca de Belém, Estado do Pará, com renúncia a qualquer

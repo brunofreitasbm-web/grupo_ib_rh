@@ -4,6 +4,7 @@ import {
   computeWorkedIntervals, nightMinutes, computeDay, computeMonth,
   vacationEntitlementDays, validateVacationFractions, noticeDays,
   experienceDates, interjornadaViolations, movableHolidays, easterDate,
+  dailyPayRate, absenceDeduction, payAfterAbsences,
 } from '../cltCalculations';
 
 describe('toMinutes / addDays / diffDays', () => {
@@ -220,5 +221,37 @@ describe('computeMonth — DSR perdido e 12x36', () => {
     // integralmente como trabalhadas (o intervalo só é descontado se registrado).
     expect(day1.worked).toBe(12 * 60);
     expect(day1.expected.expectedMinutes).toBe(11 * 60); // esperado já desconta 1h de intervalo da escala
+  });
+});
+
+describe('descontos em folha — 1/30 do salário/bolsa declarado por dia', () => {
+  it('valor do dia é a remuneração mensal dividida por 30, não por dias úteis', () => {
+    expect(dailyPayRate(3000)).toBe(100);
+    expect(dailyPayRate(1500)).toBe(50);
+  });
+
+  it('trata remuneração ausente ou inválida como zero', () => {
+    expect(dailyPayRate(null)).toBe(0);
+    expect(dailyPayRate('')).toBe(0);
+    expect(dailyPayRate(-500)).toBe(0);
+  });
+
+  it('desconta um trigésimo por dia de falta injustificada', () => {
+    expect(absenceDeduction(3000, 3)).toBe(300);
+    expect(absenceDeduction(3000, 0)).toBe(0);
+    expect(absenceDeduction(3000, -2)).toBe(0);
+  });
+
+  it('paga o mês cheio quando não há falta e nunca devolve valor negativo', () => {
+    expect(payAfterAbsences(3000, 0)).toBe(3000);
+    expect(payAfterAbsences(3000, 5)).toBe(2500);
+    expect(payAfterAbsences(3000, 40)).toBe(0);
+  });
+
+  it('usa a mesma base para estágio (bolsa) e CLT (salário-base)', () => {
+    const bolsa = 1200;
+    const salario = 1200;
+    expect(absenceDeduction(bolsa, 2)).toBe(absenceDeduction(salario, 2));
+    expect(absenceDeduction(bolsa, 2)).toBe(80);
   });
 });
