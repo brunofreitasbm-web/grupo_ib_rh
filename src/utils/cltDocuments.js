@@ -72,10 +72,6 @@ function signatureBlock(employeeName, extraSignatureLabel) {
   `;
 }
 
-function placeholder(text) {
-  return text ? `<p style="color:#4b5563; font-style:italic;">${text}</p>` : '';
-}
-
 function employeeSummary(employee) {
   return `
     <p><strong>Empregado(a):</strong> ${blank(employee?.name)} — CPF ${blank(employee?.cpf)}${employee?.ctpsNumber ? `, CTPS ${employee.ctpsNumber}/${employee.ctpsSeries || '—'}/${employee.ctpsUf || '—'}` : ''}</p>
@@ -90,7 +86,14 @@ const TEMPLATES = {
     com vigência de ${fmtDate(ctx.employee?.admissionDate)} a ${fmtDate(ctx.employee?.experienceFirstEnd)}${ctx.employee?.experienceSecondEnd ? `, prorrogável até ${fmtDate(ctx.employee?.experienceSecondEnd)}` : ', sem prorrogação'},
     respeitado o limite máximo de 90 (noventa) dias corridos somados os dois períodos.</p>
     <p><strong>Jornada:</strong> ${blank(ctx.employee?.weeklyHours)}h semanais. <strong>Salário base:</strong> ${fmtMoney(ctx.employee?.baseSalary)}.</p>
-    ${placeholder('Incluir cláusulas específicas de confidencialidade, jornada detalhada e demais condições contratuais.')}
+    <p><strong>Jornada e intervalos:</strong> a jornada será cumprida conforme escala definida pelo empregador, respeitados o
+    limite de 8 (oito) horas diárias e 44 (quarenta e quatro) horas semanais, o intervalo intrajornada de no mínimo 1 (uma)
+    hora para jornadas superiores a 6 (seis) horas e o intervalo interjornadas de 11 (onze) horas consecutivas.</p>
+    <p><strong>Confidencialidade:</strong> o(a) empregado(a) obriga-se a manter sigilo sobre dados de pacientes/clientes e
+    sobre informações comerciais, técnicas e estratégicas a que tiver acesso, durante a vigência do contrato e após o seu
+    término, observada a Lei nº 13.709/2018 (LGPD).</p>
+    <p><strong>Demais condições:</strong> aplicam-se a este contrato as normas da CLT, o regulamento interno e as políticas
+    da empresa e a convenção ou acordo coletivo da categoria, que o(a) empregado(a) declara conhecer.</p>
     ${signatureBlock(ctx.employee?.name)}
   `, ctx),
 
@@ -107,7 +110,15 @@ const TEMPLATES = {
     <p>As partes firmam contrato individual de trabalho por prazo indeterminado, com início em ${fmtDate(ctx.employee?.admissionDate)},
     jornada de ${blank(ctx.employee?.weeklyHours)}h semanais e salário base de ${fmtMoney(ctx.employee?.baseSalary)}, observadas as
     normas da CLT e da convenção/acordo coletivo aplicável${ctx.employee?.unionName ? ` (${ctx.employee.unionName})` : ''}.</p>
-    ${placeholder('Incluir cláusulas de confidencialidade, propriedade intelectual, código de conduta e política interna aplicável.')}
+    <p><strong>Confidencialidade e proteção de dados:</strong> o(a) empregado(a) obriga-se a manter sigilo sobre dados de
+    pacientes/clientes e sobre informações comerciais, técnicas e estratégicas a que tiver acesso, durante a vigência do
+    contrato e após o seu término, observada a Lei nº 13.709/2018 (LGPD).</p>
+    <p><strong>Propriedade intelectual:</strong> pertencem exclusivamente ao empregador os direitos sobre materiais,
+    protocolos, métodos, textos e demais criações desenvolvidas pelo(a) empregado(a) no exercício das funções contratadas,
+    nos termos da Lei nº 9.610/1998 e da Lei nº 9.279/1996.</p>
+    <p><strong>Código de conduta e políticas internas:</strong> o(a) empregado(a) declara conhecer e obriga-se a observar o
+    regulamento interno, o código de conduta e as demais políticas da empresa, cujo descumprimento o(a) sujeita às
+    penalidades previstas no art. 482 da CLT.</p>
     ${signatureBlock(ctx.employee?.name)}
   `, ctx),
 
@@ -172,9 +183,10 @@ const TEMPLATES = {
     <ul>
       <li>o dado biométrico é utilizado apenas para comparação no momento da marcação, sem outra finalidade;</li>
       <li>posso solicitar, a qualquer momento, informações sobre o tratamento, correção ou eliminação do meu dado, observados os prazos de guarda legal dos registros trabalhistas;</li>
-      <li>a recusa em fornecer o dado biométrico impede o uso do quiosque eletrônico, sendo necessário procurar o RH para alternativa de registro.</li>
+      <li>a recusa em fornecer o dado biométrico impede o uso do quiosque eletrônico, sendo necessário procurar o RH para alternativa de registro;</li>
+      <li>as imagens capturadas no momento da marcação são guardadas pelo mesmo prazo dos registros de ponto a que se referem — 5 (cinco) anos — e eliminadas ao final desse período;</li>
+      <li>os direitos previstos no art. 18 da LGPD (confirmação, acesso, correção, anonimização, portabilidade, eliminação e revogação do consentimento) podem ser exercidos junto ao setor de Recursos Humanos desta unidade, que responderá nos prazos legais.</li>
     </ul>
-    ${placeholder('Confirmar prazo de retenção das fotos de marcação e o canal formal de exercício de direitos do titular.')}
     ${signatureBlock(ctx.employee?.name)}
   `, ctx),
 
@@ -183,7 +195,7 @@ const TEMPLATES = {
     <p>Declaro ter recebido os equipamentos/materiais/uniformes/EPIs relacionados a seguir, comprometendo-me a zelar por
     sua conservação e devolvê-los em caso de desligamento, sob pena de desconto no valor correspondente, mediante prévia
     autorização, conforme legislação aplicável.</p>
-    <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px; min-height:60px; margin-top:10px;">${blank(ctx.extra?.itemsText, '(descrever itens entregues)')}</div>
+    <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px; min-height:60px; margin-top:10px;">${ctx.extra?.itemsText || ''}</div>
     ${signatureBlock(ctx.employee?.name)}
   `, ctx),
 
@@ -192,7 +204,10 @@ const TEMPLATES = {
     <p>Comprometo-me a manter sigilo sobre todas as informações confidenciais a que tiver acesso em razão do meu vínculo
     empregatício, incluindo dados de pacientes/clientes, informações comerciais e estratégicas, mesmo após o término do
     contrato de trabalho.</p>
-    ${placeholder('Detalhar prazo de vigência do sigilo pós-contratual e eventuais penalidades.')}
+    <p>A obrigação de sigilo vigora durante toda a vigência do contrato de trabalho e pelo prazo de 5 (cinco) anos após o seu
+    término, ou enquanto a informação mantiver caráter confidencial. O descumprimento sujeita o(a) empregado(a) à
+    responsabilização civil pelas perdas e danos apurados, sem prejuízo das medidas disciplinares cabíveis — inclusive
+    dispensa por justa causa (art. 482, "g", da CLT) — e das sanções penais aplicáveis.</p>
     ${signatureBlock(ctx.employee?.name)}
   `, ctx),
 
@@ -210,7 +225,6 @@ const TEMPLATES = {
     <p>Declaro ter recebido, nesta data, o pagamento referente às férias do período de ${fmtDate(ctx.extra?.startDate)}
     a ${fmtDate(ctx.extra?.endDate)}${ctx.extra?.abonoDays ? `, incluindo o abono pecuniário de ${ctx.extra.abonoDays} dias (art. 143 CLT)` : ''},
     acrescido do terço constitucional, nada mais tendo a reclamar a este título.</p>
-    ${placeholder('O cálculo do valor pago (férias + 1/3 + abono) não é realizado por este sistema — apurar com o contador.')}
     ${signatureBlock(ctx.employee?.name)}
   `, ctx),
 
@@ -226,7 +240,7 @@ const TEMPLATES = {
     ${employeeSummary(ctx.employee)}
     <p><strong>Data do fato:</strong> ${fmtDate(ctx.extra?.startDate)}</p>
     <p><strong>Descrição da conduta:</strong></p>
-    <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px; min-height:60px;">${blank(ctx.extra?.description, '(descrever a conduta e o dispositivo do regulamento interno/CLT violado)')}</div>
+    <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px; min-height:60px;">${ctx.extra?.description || ''}</div>
     <p style="margin-top:10px;">Fica o(a) empregado(a) advertido(a) formalmente, ficando ciente de que a reincidência poderá
     ensejar penalidades mais severas, incluindo suspensão disciplinar ou dispensa por justa causa (art. 482, CLT).</p>
     ${signatureBlock(ctx.employee?.name, 'Responsável pela advertência')}
@@ -236,7 +250,7 @@ const TEMPLATES = {
     ${employeeSummary(ctx.employee)}
     <p><strong>Período de suspensão:</strong> ${fmtDate(ctx.extra?.startDate)} a ${fmtDate(ctx.extra?.endDate)} (${blank(ctx.extra?.days, '—')} dia(s), respeitado o limite de 30 dias — art. 474 CLT).</p>
     <p><strong>Motivo:</strong></p>
-    <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px; min-height:60px;">${blank(ctx.extra?.description, '(descrever a conduta e histórico de advertências anteriores)')}</div>
+    <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px; min-height:60px;">${ctx.extra?.description || ''}</div>
     <p style="margin-top:10px;">Durante o período, ficam suspensos os efeitos do contrato de trabalho, sem prejuízo do tempo de serviço.</p>
     ${signatureBlock(ctx.employee?.name, 'Responsável pela suspensão')}
   `, ctx),
@@ -272,7 +286,6 @@ const TEMPLATES = {
     <table style="width:100%; border-collapse:collapse; font-size:10px; margin-top:10px;">
       ${(ctx.extra?.checklist || []).map((item) => `<tr><td style="padding:4px 8px; border:1px solid #e5e7eb; width:24px; text-align:center;">${item.done ? '☑' : '☐'}</td><td style="padding:4px 8px; border:1px solid #e5e7eb;">${item.label}</td></tr>`).join('')}
     </table>
-    ${placeholder('Este checklist não substitui o cálculo formal do TRCT, que deve ser feito pela contabilidade.')}
     ${signatureBlock(ctx.employee?.name, 'Responsável pelo RH')}
   `, ctx),
 
@@ -347,7 +360,7 @@ const TEMPLATES = {
 export function getEmployeeDocumentHtml(type, ctx) {
   const builder = TEMPLATES[type];
   if (!builder) {
-    return wrap('Documento não encontrado', placeholder(`Tipo de documento "${type}" não possui template implementado.`), ctx);
+    return wrap('Documento não encontrado', `<p>Tipo de documento "${type}" não possui template implementado.</p>`, ctx);
   }
   return builder(ctx);
 }

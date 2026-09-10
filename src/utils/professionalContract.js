@@ -87,11 +87,18 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
     </div>
   `;
 
+  const bankParts = [
+    p.bankName && `Banco ${esc(p.bankName)}`,
+    p.bankAgency && `agência ${esc(p.bankAgency)}`,
+    p.bankAccount && `conta ${esc(p.bankAccount)}`,
+    p.pixKey && `chave PIX ${esc(p.pixKey)}`,
+  ].filter(Boolean);
+  const bankInfo = bankParts.length ? ` (${bankParts.join(', ')})` : '';
+
   const clausesHtml = `
     <p style="margin: 10px 0;"><strong>CLÁUSULA 1ª — DO OBJETO.</strong> O presente contrato tem por objeto a prestação, pela
     CONTRATADA, de serviços profissionais de <strong>${esc(p.profession)}</strong>
-    (${esc(p.councilType)} nº ${esc(p.councilNumber)}${p.councilUf ? `/${esc(p.councilUf)}` : ''}), consistentes em:
-    ${esc(p.serviceDescription) || '[descrever o objeto dos serviços]'}.</p>
+    (${esc(p.councilType)} nº ${esc(p.councilNumber)}${p.councilUf ? `/${esc(p.councilUf)}` : ''})${p.serviceDescription ? `, consistentes em: ${esc(p.serviceDescription)}` : ', na forma e no alcance próprios de sua habilitação profissional'}.</p>
 
     <p style="margin: 10px 0;"><strong>CLÁUSULA 2ª — DA AUTONOMIA E DA NATUREZA CIVIL DO CONTRATO.</strong> Os serviços ora
     contratados serão executados pela CONTRATADA com plena autonomia técnica e organizacional, sem subordinação
@@ -121,11 +128,9 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
     desde que entregue a unidade de serviço descrita no item 4.1. Não há remuneração fixa, mensal ou mínima
     garantida, nem qualquer verba devida por mera disponibilidade, comparecimento, deslocamento ou tempo de espera,
     e a CONTRATANTE não se obriga a ofertar, nem a CONTRATADA a aceitar, qualquer quantidade mínima de módulos.
-    4.4. O pagamento se dará mediante emissão de Nota Fiscal, previsto para o dia ${p.paymentDay || '__'} do mês
-    subsequente à prestação dos serviços, exclusivamente em conta de titularidade da pessoa jurídica CONTRATADA
-    (Banco ${esc(p.bankName) || '_____'}, agência ${esc(p.bankAgency) || '____'}, conta
-    ${esc(p.bankAccount) || '_____'}${p.pixKey ? `, chave PIX ${esc(p.pixKey)}` : ''}), vedado o pagamento em conta
-    de pessoa física.${p.remunerationModel ? ` Modelo de remuneração de referência: ${esc(p.remunerationModel)}.` : ''}</p>
+    4.4. O pagamento se dará mediante emissão de Nota Fiscal${p.paymentDay ? `, previsto para o dia ${esc(String(p.paymentDay))} do mês
+    subsequente à prestação dos serviços` : ', no mês subsequente à prestação dos serviços'}, exclusivamente em conta de
+    titularidade da pessoa jurídica CONTRATADA${bankInfo}, vedado o pagamento em conta de pessoa física.${p.remunerationModel ? ` Modelo de remuneração de referência: ${esc(p.remunerationModel)}.` : ''}</p>
 
     <p style="margin: 10px 0;"><strong>CLÁUSULA 4ª-A — DA VEDAÇÃO DE LEITURA TRABALHISTA DA MÉTRICA E DO REGISTRO
     DE EXECUÇÃO.</strong> A adoção do Módulo Assistencial como unidade de preço não institui nem autoriza, entre as
@@ -141,8 +146,8 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
     pelos encargos previdenciários, trabalhistas (relativos a eventuais empregados ou prepostos próprios) e
     quaisquer outras obrigações decorrentes do exercício de sua atividade como pessoa jurídica.</p>
 
-    <p style="margin: 10px 0;"><strong>CLÁUSULA 6ª — DA VIGÊNCIA E RESCISÃO.</strong> Este contrato vigora a partir de
-    ${fmtDate(p.contractStart)}, por prazo indeterminado, podendo ser rescindido por qualquer das partes mediante aviso
+    <p style="margin: 10px 0;"><strong>CLÁUSULA 6ª — DA VIGÊNCIA E RESCISÃO.</strong> Este contrato vigora a partir
+    ${p.contractStart ? `de ${fmtDate(p.contractStart)}` : 'da data de sua assinatura'}, por prazo indeterminado, podendo ser rescindido por qualquer das partes mediante aviso
     prévio de ${p.noticeDays ?? 30} dias, sem ônus ou multa, ressalvada a liquidação de valores pendentes.</p>
 
     <p style="margin: 10px 0;"><strong>CLÁUSULA 7ª — DA CONFIDENCIALIDADE E PROTEÇÃO DE DADOS.</strong> As partes
@@ -199,7 +204,7 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
         </tr>
         <tr>
           <td style="border: 1px solid #d1d5db; padding: 5px; font-weight: bold;">Endereço:</td>
-          <td style="border: 1px solid #d1d5db; padding: 5px;">${enderecoCompleto || '_____________________'}</td>
+          <td style="border: 1px solid #d1d5db; padding: 5px;">${enderecoCompleto}</td>
         </tr>
         <tr>
           <td style="border: 1px solid #d1d5db; padding: 5px; font-weight: bold;">Representada por:</td>

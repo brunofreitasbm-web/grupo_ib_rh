@@ -5165,8 +5165,8 @@ export default function App() {
     const internName = intern?.name || '________________________________________';
     const courseName = intern?.course || '____________________';
     const institutionName = intern?.institution || '________________________________________';
-    const hoursCount = intern?.dailyHours || '[X]';
-    const shiftName = intern?.shift || '[Turno]';
+    const hoursCount = intern?.dailyHours || '____';
+    const shiftName = intern?.shift || '____________';
     const unitTitle = currentUnit?.name || currentUnit?.buttonLabel || (intern?.unitId ? unitName(intern.unitId) : '____________________');
 
     if (type === 'tce' || type === 'minuta') {
@@ -5249,7 +5249,7 @@ export default function App() {
             <p style="margin: 0 0 4px 0;"><strong>1) Período de vigência deste Instrumento:</strong> De <strong>${startFormatted}</strong> a <strong>${endFormatted}</strong>, podendo ser rescindido unilateralmente por qualquer das partes, a qualquer momento, sem ônus, multas ou aviso-prévio, mediante formalização do respectivo Termo de Rescisão;</p>
             <p style="margin: 0 0 4px 0;"><strong>2) Jornada:</strong> <strong>${hoursCount} horas diárias</strong> (${shiftName});</p>
             <p style="margin: 0 0 4px 0;"><strong>3) Atividade do(a) estagiário(a):</strong> A atividade de <strong>${courseName}</strong> será supervisionada pelo(a) seu(sua) supervisor(a) de estágio, o(a) profissional <strong>${intern?.supervisorName || '________________________'}</strong>;</p>
-            <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, a importância mensal correspondente a: <strong>${getBolsaAuxilioText(intern)}</strong> (não se applying ao benefício de auxílio-transporte o desconto previsto na CLT).</p>
+            <p style="margin: 0;"><strong>4) Valor da Bolsa-estágio:</strong> No período do estágio o(a) Estagiário(a) receberá, diretamente da Parte Concedente, a importância mensal correspondente a: <strong>${getBolsaAuxilioText(intern)}</strong> (não se aplicando ao benefício de auxílio-transporte o desconto previsto na CLT).</p>
           </div>
 
           <div style="text-align: justify; font-size: 8.5px; line-height: 1.4;">

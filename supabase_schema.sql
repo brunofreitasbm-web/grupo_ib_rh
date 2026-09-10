@@ -3902,3 +3902,129 @@ GRANT EXECUTE ON FUNCTION public.get_intern_course_counts(text) TO authenticated
 
 -- Popula a tabela na primeira execução.
 SELECT public.refresh_intern_course_stats();
+
+-- =============================================================================
+-- 21. DIRETÓRIO DE TERAPEUTAS PJ (UNIDADE 'clinica-a' — FAÇA AMIGOS)
+--
+-- Diferente da seção 20 (só números), aqui saem dados NOMINAIS, pelo mínimo
+-- necessário para o outro sistema montar o banco de terapeutas:
+--   nome, profissão (+ slug estável) e registro de classe (CRP/CRM/CRO/...).
+-- NÃO saem: CPF, CNPJ, banco/PIX, endereço, representante legal, valores.
+--
+-- Acesso: apenas service_role (integração servidor-a-servidor) ou supervisor
+-- da própria unidade. Nunca anon.
+-- Idempotente: seguro para rodar em bases já existentes.
+-- =============================================================================
+
+-- 21.1 Carimbo de atualização, para o outro sistema sincronizar de forma
+-- incremental (só o que mudou desde a última leitura).
+ALTER TABLE public.professionals
+  ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone NOT NULL DEFAULT now();
+
+CREATE OR REPLACE FUNCTION public.touch_professionals_updated_at() RETURNS trigger
+  LANGUAGE plpgsql
+  AS $fn$
+  BEGIN
+    NEW.updated_at := now();
+    RETURN NEW;
+  END;
+  $fn$;
+
+DROP TRIGGER IF EXISTS trg_professionals_updated_at ON public.professionals;
+CREATE TRIGGER trg_professionals_updated_at
+  BEFORE UPDATE ON public.professionals
+  FOR EACH ROW EXECUTE FUNCTION public.touch_professionals_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_professionals_updated_at
+  ON public.professionals(unit_id, updated_at DESC);
+
+-- 21.2 Slug estável da profissão (espelha src/config/professions.js).
+-- 'Educador(a) Físico(a)' -> 'educador-fisico'; 'Psicólogo(a)' -> 'psicologo'.
+CREATE OR REPLACE FUNCTION public.profession_slug(p_profession text) RETURNS text
+  LANGUAGE sql IMMUTABLE
+  AS $fn$
+    SELECT coalesce(
+      public.slugify_pt(
+        regexp_replace(coalesce(p_profession, ''), '\((a|o|as|os)\)', '', 'gi')),
+      'nao-informado');
+  $fn$;
+
+-- Registro de classe formatado: 'CRP 06/123456' / 'CRM-PA 12345'.
+CREATE OR REPLACE FUNCTION public.council_label(p_type text, p_number text, p_uf text)
+  RETURNS text LANGUAGE sql IMMUTABLE
+  AS $fn$
+    SELECT nullif(trim(
+      coalesce(upper(nullif(trim(p_type), '')), '')
+      || coalesce('-' || upper(nullif(trim(p_uf), '')), '')
+      || coalesce(' ' || nullif(trim(p_number), ''), '')), '');
+  $fn$;
+
+-- 21.3 View do diretório. security_invoker: quem consulta direto pela API
+-- continua sujeito às policies de public.professionals; o acesso externo é
+-- pela RPC 21.4.
+DROP VIEW IF EXISTS public.v_therapist_directory;
+CREATE VIEW public.v_therapist_directory
+  WITH (security_invoker = true) AS
+  SELECT p.id,
+         p.unit_id,
+         p.name,
+         p.profession,
+         public.profession_slug(p.profession) AS profession_slug,
+         p.council_type,
+         p.council_number,
+         p.council_uf,
+         p.council_validity,
+         public.council_label(p.council_type, p.council_number, p.council_uf) AS council_label,
+         p.specialties,
+         p.email,
+         p.phone,
+         p.active,
+         p.registration_status,
+         p.updated_at
+    FROM public.professionals p
+   WHERE p.registration_status = 'validated';
+
+COMMENT ON VIEW public.v_therapist_directory IS
+  'Diretorio nominal minimo de terapeutas PJ validados (nome, profissao, registro de classe). Sem CPF/CNPJ/banco/endereco.';
+
+-- 21.4 RPC de leitura. p_since: só quem mudou depois desse instante.
+-- p_include_inactive: traz também desligados, para o outro sistema inativar.
+CREATE OR REPLACE FUNCTION public.get_therapist_directory(
+    p_unit_id text DEFAULT 'clinica-a',
+    p_since timestamp with time zone DEFAULT NULL,
+    p_include_inactive boolean DEFAULT true)
+  RETURNS TABLE (
+    id uuid, unit_id text, name text,
+    profession text, profession_slug text,
+    council_type text, council_number text, council_uf text,
+    council_validity date, council_label text,
+    specialties text, email text, phone text,
+    active boolean, updated_at timestamp with time zone)
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+  AS $fn$
+  BEGIN
+    -- service_role (integração servidor-a-servidor) ou supervisor da unidade.
+    IF coalesce(current_setting('request.jwt.claims', true)::json ->> 'role', '') <> 'service_role'
+       AND NOT public.jwt_is_supervisor_for_unit(p_unit_id) THEN
+      RAISE EXCEPTION 'acesso negado ao diretorio de terapeutas';
+    END IF;
+
+    RETURN QUERY
+      SELECT v.id, v.unit_id, v.name,
+             v.profession, v.profession_slug,
+             v.council_type, v.council_number, v.council_uf,
+             v.council_validity, v.council_label,
+             v.specialties, v.email, v.phone,
+             v.active, v.updated_at
+        FROM public.v_therapist_directory v
+       WHERE v.unit_id = p_unit_id
+         AND (p_since IS NULL OR v.updated_at > p_since)
+         AND (p_include_inactive OR v.active)
+       ORDER BY v.updated_at;
+  END;
+  $fn$;
+
+REVOKE ALL ON FUNCTION public.get_therapist_directory(text, timestamp with time zone, boolean)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_therapist_directory(text, timestamp with time zone, boolean)
+  TO authenticated, service_role;
