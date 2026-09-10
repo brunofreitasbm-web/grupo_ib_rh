@@ -39,7 +39,8 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
       if (error) throw error;
       setProfessionals((data || []).map(mapProfessionalFromDb).filter((p) => !restrictedUnitIds.includes(p.unitId)));
     } catch (err) {
-      console.error('Erro ao carregar prestadores:', err);
+      console.error('Erro ao carregar prestadores:', err?.message || err);
+      toast.error(getFriendlyDbErrorMessage(err));
     } finally {
       setLoading(false);
     }

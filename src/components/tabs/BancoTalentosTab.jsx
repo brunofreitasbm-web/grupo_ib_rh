@@ -60,8 +60,13 @@ export default function BancoTalentosTab() {
       const list = Array.isArray(data) ? data : (data?.candidates ?? data?.data ?? []);
       setCandidates(Array.isArray(list) ? list : []);
     } catch (err) {
-      console.error('Erro ao carregar Banco de Talentos:', err);
-      setError(err?.message || 'Não foi possível carregar os candidatos do Banco de Talentos.');
+      console.error('Erro ao carregar Banco de Talentos:', err?.message || err);
+      const msg = err?.message || '';
+      if (msg.includes('Failed to send a request') || err?.name === 'FunctionsFetchError') {
+        setError('A Edge Function "fetch-talent-bank" não está implantada ou acessível no projeto Supabase. Certifique-se de implantar a função via Supabase CLI.');
+      } else {
+        setError(msg || 'Não foi possível carregar os candidatos do Banco de Talentos.');
+      }
       setCandidates([]);
     } finally {
       setLoading(false);

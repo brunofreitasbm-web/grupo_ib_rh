@@ -26,9 +26,13 @@ if (!TALENT_API_ANON_KEY || !TALENT_API_KEY) {
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// Precisa cobrir todo header que o supabase-js manda por padrão (authorization,
+// x-client-info, apikey, content-type, x-retry-count) — faltando um deles, o
+// preflight do navegador falha e o fetch nem chega a sair (erro genérico
+// "Failed to send a request to the Edge Function", sem detalhe do motivo).
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-retry-count",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
