@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, X, FileText, CheckCircle2, Loader2, DollarSign, Calendar, Building2, Tag, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Upload, X, FileText, CheckCircle2, Loader2, Calendar, Building2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fileToBase64, getFriendlyDbErrorMessage } from '../utils/mappings';
 import { toast } from 'sonner';
@@ -7,11 +7,6 @@ import { toast } from 'sonner';
 export default function PublicPayrollUploadModal({ isOpen, onClose, branding, units = [], initialUnitId = '' }) {
   const [unitId, setUnitId] = useState(initialUnitId || '');
   const [competencia, setCompetencia] = useState(() => new Date().toISOString().substring(0, 7)); // YYYY-MM
-  const [valor, setValor] = useState('');
-  const [tipoFolha, setTipoFolha] = useState('mensal');
-  const [dataPagamento, setDataPagamento] = useState(() => new Date().toISOString().substring(0, 10));
-  const [observacoes, setObservacoes] = useState('');
-  const [contadorNome, setContadorNome] = useState('Contador Senoguin');
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -50,22 +45,6 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
     setFile(selectedFile);
   };
 
-  const handleFormatValor = (e) => {
-    let raw = e.target.value.replace(/\D/g, '');
-    if (!raw) {
-      setValor('');
-      return;
-    }
-    const numeric = (parseInt(raw, 10) / 100).toFixed(2);
-    setValor(numeric.replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
-  };
-
-  const parseValorNumeric = (valStr) => {
-    if (!valStr) return 0;
-    const cleaned = valStr.replace(/\./g, '').replace(',', '.');
-    return parseFloat(cleaned) || 0;
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -77,12 +56,6 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
 
     if (!competencia) {
       setError('Selecione a competência (mês/ano) de referência.');
-      return;
-    }
-
-    const valorNum = parseValorNumeric(valor);
-    if (!valorNum || valorNum <= 0) {
-      setError('Informe o valor total da folha de pagamento (maior que zero).');
       return;
     }
 
@@ -103,15 +76,10 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
         unit_id: unitId,
         unit_name: unitName,
         competencia,
-        valor: valorNum,
-        tipo_folha: tipoFolha,
-        data_pagamento: dataPagamento,
-        observacoes: observacoes.trim(),
         file_name: file.name,
         file_size: (file.size / 1024).toFixed(1) + ' KB',
         content: base64,
-        uploaded_by: contadorNome.trim() || 'Contador Senoguin',
-        status: 'pendente', // 'pendente' | 'conferido' | 'aprovado'
+        status: 'semipronto', // 'semipronto' | 'pendente' | 'conferido' | 'aprovado'
         created_at: new Date().toISOString()
       };
 
@@ -128,13 +96,8 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
               unit_id: unitId,
               unit_name: unitName,
               competencia,
-              valor: valorNum,
-              tipo_folha: tipoFolha,
-              data_pagamento: dataPagamento,
-              observacoes: observacoes.trim(),
               file_name: file.name,
               file_size: recordData.file_size,
-              uploaded_by: recordData.uploaded_by,
               status: recordData.status,
               created_at: recordData.created_at
             }
@@ -162,8 +125,6 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
         protocol,
         unitName,
         competencia,
-        valorFormatted: valorNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-        tipoFolhaLabel: getTipoFolhaLabel(tipoFolha),
         uploadedAt: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR'),
       });
 
@@ -177,20 +138,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
     }
   };
 
-  const getTipoFolhaLabel = (tipo) => {
-    switch (tipo) {
-      case 'mensal': return 'Folha Mensal Regular';
-      case 'decimo_terceiro': return '13º Salário';
-      case 'adiantamento': return 'Adiantamento Salarial';
-      case 'rescisao': return 'Rescisão contratual';
-      case 'encargos': return 'Encargos / FGTS / INSS';
-      default: return 'Folha de Pagamento';
-    }
-  };
-
   const handleReset = () => {
-    setValor('');
-    setObservacoes('');
     setFile(null);
     setError('');
     setSuccessData(null);
@@ -250,14 +198,6 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                   <span className="text-slate-500">Competência:</span>
                   <span className="font-semibold text-slate-800">{successData.competencia}</span>
                 </div>
-                <div className="flex justify-between border-b border-slate-200 pb-2">
-                  <span className="text-slate-500">Tipo de Folha:</span>
-                  <span className="font-semibold text-indigo-700">{successData.tipoFolhaLabel}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-200 pb-2">
-                  <span className="text-slate-500">Valor Declarado:</span>
-                  <span className="font-extrabold text-emerald-700 text-sm">{successData.valorFormatted}</span>
-                </div>
                 <div className="flex justify-between pt-1 text-[11px]">
                   <span className="text-slate-500">Data e Hora do Envio:</span>
                   <span className="text-slate-700 font-medium">{successData.uploadedAt}</span>
@@ -292,21 +232,6 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                 </div>
               )}
 
-              {/* Responsável pelo envio */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nome do Contador / Responsável *
-                </label>
-                <input
-                  type="text"
-                  value={contadorNome}
-                  onChange={(e) => setContadorNome(e.target.value)}
-                  placeholder="Ex: Contador Senoguin / Contabilidade Externa"
-                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                  required
-                />
-              </div>
-
               {/* Unidade */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
@@ -328,83 +253,18 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                 </select>
               </div>
 
-              {/* Grid 2 colunas: Competência e Valor */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Calendar size={14} className="text-indigo-600" />
-                    Competência (Mês/Ano) *
-                  </label>
-                  <input
-                    type="month"
-                    value={competencia}
-                    onChange={(e) => setCompetencia(e.target.value)}
-                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <DollarSign size={14} className="text-indigo-600" />
-                    Valor Total da Folha (R$) *
-                  </label>
-                  <input
-                    type="text"
-                    value={valor}
-                    onChange={handleFormatValor}
-                    placeholder="0,00"
-                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white font-mono font-bold text-slate-800"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Grid 2 colunas: Tipo de Folha e Data Pagamento */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Tag size={14} className="text-indigo-600" />
-                    Tipo de Folha *
-                  </label>
-                  <select
-                    value={tipoFolha}
-                    onChange={(e) => setTipoFolha(e.target.value)}
-                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                  >
-                    <option value="mensal">Folha Mensal Regular</option>
-                    <option value="decimo_terceiro">13º Salário</option>
-                    <option value="adiantamento">Adiantamento Salarial</option>
-                    <option value="rescisao">Rescisão Contratual</option>
-                    <option value="encargos">Encargos / FGTS / INSS</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Calendar size={14} className="text-indigo-600" />
-                    Data Prevista de Pagamento
-                  </label>
-                  <input
-                    type="date"
-                    value={dataPagamento}
-                    onChange={(e) => setDataPagamento(e.target.value)}
-                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                  />
-                </div>
-              </div>
-
-              {/* Observações */}
+              {/* Competência */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Observações Contábeis (Opcional)
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Calendar size={14} className="text-indigo-600" />
+                  Competência (Mês/Ano) *
                 </label>
-                <textarea
-                  value={observacoes}
-                  onChange={(e) => setObservacoes(e.target.value)}
-                  placeholder="Ex: Folha enviada com valores referentes aos funcionários CLT e encargos patronais inclusos."
-                  rows={2}
-                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                <input
+                  type="month"
+                  value={competencia}
+                  onChange={(e) => setCompetencia(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white font-mono"
+                  required
                 />
               </div>
 
