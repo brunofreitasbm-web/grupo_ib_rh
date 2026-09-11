@@ -214,7 +214,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const payrollsSummary = useMemo(() => {
     const totalCount = filteredPayrolls.length;
     const totalValue = filteredPayrolls.reduce((sum, p) => sum + (Number(p.valor) || 0), 0);
-    const pendentesCount = filteredPayrolls.filter(p => p.status === 'pendente').length;
+    const pendentesCount = filteredPayrolls.filter(p => p.status === 'pendente' || p.status === 'semipronto').length;
     return { totalCount, totalValue, pendentesCount };
   }, [filteredPayrolls]);
 
@@ -733,9 +733,12 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
                               ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
                               : payroll.status === 'conferido'
                               ? 'bg-blue-50 border-blue-300 text-blue-800'
+                              : payroll.status === 'semipronto'
+                              ? 'bg-purple-50 border-purple-300 text-purple-800'
                               : 'bg-amber-50 border-amber-300 text-amber-800'
                           }`}
                         >
+                          <option value="semipronto">📥 Semipronto</option>
                           <option value="pendente">⏳ Pendente</option>
                           <option value="conferido">🔍 Conferido</option>
                           <option value="aprovado">✅ Aprovado</option>
