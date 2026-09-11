@@ -3414,14 +3414,16 @@ export default function App() {
           </div>
         </div>
         <div className="mt-4 flex flex-col items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowPublicPayrollModal(true)}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <FileText size={16} />
-            Portal do Contador - Enviar Folha PDF (Sem Login)
-          </button>
+          {BRANDING.id === 'grupoib' && (
+            <button
+              type="button"
+              onClick={() => setShowPublicPayrollModal(true)}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <FileText size={16} />
+              Portal do Contador - Enviar Folha PDF (Sem Login)
+            </button>
+          )}
           <p className="text-sm text-gray-500 mt-2">Módulo de Estágio • Lei nº 11.788/2008</p>
         </div>
       </div>
