@@ -60,10 +60,21 @@ export default function BancoTalentosTab() {
       const list = Array.isArray(data) ? data : (data?.candidates ?? data?.data ?? []);
       setCandidates(Array.isArray(list) ? list : []);
     } catch (err) {
-      console.error('Erro ao carregar Banco de Talentos:', err?.message || err);
-      const msg = err?.message || '';
+      console.error('Erro ao carregar Banco de Talentos:', err);
+      let msg = err?.message || '';
+      
+      // Tenta extrair a mensagem detalhada enviada pelo corpo da resposta da Edge Function
+      if (err?.context && typeof err.context.json === 'function') {
+        try {
+          const body = await err.context.json();
+          if (body?.error) msg = body.error;
+        } catch (_) {}
+      }
+
       if (msg.includes('Failed to send a request') || err?.name === 'FunctionsFetchError') {
         setError('A Edge Function "fetch-talent-bank" não está implantada ou acessível no projeto Supabase. Certifique-se de implantar a função via Supabase CLI.');
+      } else if (msg.includes('non-2xx status code') || err?.name === 'FunctionsHttpError') {
+        setError('A Edge Function "fetch-talent-bank" retornou um erro de permissão ou configuração. Verifique os secrets (TALENT_API_KEY / TALENT_API_ANON_KEY) no Supabase e a função de supervisor.');
       } else {
         setError(msg || 'Não foi possível carregar os candidatos do Banco de Talentos.');
       }

@@ -272,7 +272,7 @@ export const mapUnitToDb = (u) => {
 // mapeadores de estagiário de propósito: nada aqui deve alimentar as telas de
 // ponto/bolsa de estagiários nem vice-versa.
 // =========================================================================
-export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, birthdate, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, shift_value, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at';
+export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, birthdate, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at';
 
 export const mapProfessionalFromDb = (p) => ({
   id: p.id,
@@ -316,7 +316,7 @@ export const mapProfessionalFromDb = (p) => ({
   serviceDescription: p.service_description || '',
   remunerationModel: p.remuneration_model || '',
   remunerationValue: p.remuneration_value ?? '',
-  shiftValue: p.shift_value ?? '',
+  shiftValue: p.shift_value ?? p.remuneration_value ?? '',
   paymentDay: p.payment_day ?? '',
   noticeDays: p.notice_days ?? '',
   contractStart: p.contract_start || '',
@@ -375,7 +375,6 @@ export const mapProfessionalToDb = (p) => ({
   service_description: p.serviceDescription || null,
   remuneration_model: p.remunerationModel || null,
   remuneration_value: p.remunerationValue === '' || p.remunerationValue == null ? null : Number(p.remunerationValue),
-  shift_value: p.shiftValue === '' || p.shiftValue == null ? null : Number(p.shiftValue),
   payment_day: p.paymentDay === '' || p.paymentDay == null ? null : Number(p.paymentDay),
   notice_days: p.noticeDays === '' || p.noticeDays == null ? null : Number(p.noticeDays),
   contract_start: p.contractStart || null,
