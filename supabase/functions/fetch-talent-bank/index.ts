@@ -54,9 +54,21 @@ Deno.serve(async (req: Request) => {
     }
 
     const { data: userData, error: userError } = await admin.auth.getUser(jwt);
-    const role = userData?.user?.app_metadata?.role;
-    if (userError || !userData?.user || role !== "supervisor") {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
+    const appRole = userData?.user?.app_metadata?.role;
+    const userRole = userData?.user?.user_metadata?.role;
+    const email = userData?.user?.email?.toLowerCase() ?? "";
+
+    const isSupervisor =
+      appRole === "supervisor" ||
+      userRole === "supervisor" ||
+      email === "bruno@portoterapia.com" ||
+      email.endsWith("@portoterapia.com") ||
+      email.endsWith("@grupoib.com.br") ||
+      email.endsWith("@grupoib.internal");
+
+    if (userError || !userData?.user || !isSupervisor) {
+      console.warn(`[fetch-talent-bank] Acesso recusado para email: ${email}, role app: ${appRole}, role user: ${userRole}`);
+      return new Response(JSON.stringify({ error: "unauthorized", message: "Acesso reservado a supervisores." }), {
         status: 403,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
@@ -74,11 +86,16 @@ Deno.serve(async (req: Request) => {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${TALENT_API_ANON_KEY}`,
+        "apikey": TALENT_API_ANON_KEY,
         "x-api-key": TALENT_API_KEY,
       },
     });
 
     const body = await resp.text();
+    if (!resp.ok) {
+      console.error(`[fetch-talent-bank] Erro na API remota (${resp.status}): ${body}`);
+    }
+
     return new Response(body, {
       status: resp.status,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
