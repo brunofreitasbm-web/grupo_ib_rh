@@ -434,7 +434,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
             <Timer size={22} className="text-indigo-400" /> Gestão Financeira & Folhas de Pagamento
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Controle de bolsas de estagiários e upload de folhas de pagamento em PDF por unidade (Grupo IB)
+            Controle de bolsas de estagiários e upload de folhas de pagamento em PDF por unidade ({BRANDING.shortName})
           </p>
         </div>
 

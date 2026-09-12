@@ -2931,7 +2931,32 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300">
+                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 space-y-2">
+                    {BRANDING.id === 'grupoib' && (
+                      <button
+                        type="button"
+                        disabled={isProcessingProfile !== null}
+                        onClick={() => setShowPublicPayrollModal(true)}
+                        aria-label="Upload de Folha de Pagamento para o Contador sem login"
+                        className={`w-full p-4 border-2 border-emerald-200 rounded-xl bg-emerald-50/70 hover:bg-emerald-100 hover:border-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600 focus-visible:outline-offset-2 transition-all flex items-center gap-4 text-left group ${
+                          isProcessingProfile !== null ? 'pointer-events-none opacity-60 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        <div className="p-2.5 bg-emerald-600 text-white rounded-lg group-hover:bg-emerald-700 transition-colors flex items-center justify-center shadow-sm">
+                          <FileText size={20} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-gray-800 text-sm">Upload de Folha de Pagamento</h4>
+                            <span className="text-[9px] font-bold uppercase bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full">
+                              Sem Login
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-600">Envio mensal de documentos para {BRANDING.shortName} (PDF, Excel, CSV)</p>
+                        </div>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       disabled={isProcessingProfile !== null}
@@ -3418,10 +3443,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setShowPublicPayrollModal(true)}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
             >
               <FileText size={16} />
-              Portal do Contador - Enviar Folha PDF (Sem Login)
+              Portal do Contador - Enviar Folha (Sem Login)
             </button>
           )}
           <p className="text-sm text-gray-500 mt-2">Módulo de Estágio • Lei nº 11.788/2008</p>

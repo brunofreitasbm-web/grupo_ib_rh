@@ -3,11 +3,14 @@ import { Upload, X, FileText, CheckCircle2, Loader2, Calendar, Building2, AlertC
 import { supabase } from '../supabase';
 import { fileToBase64, getFriendlyDbErrorMessage } from '../utils/mappings';
 import { toast } from 'sonner';
+import { BRANDING } from '../config/branding';
 
 export default function PublicPayrollUploadModal({ isOpen, onClose, branding, units = [], initialUnitId = '' }) {
   const [unitId, setUnitId] = useState(initialUnitId || '');
   const [competencia, setCompetencia] = useState(() => new Date().toISOString().substring(0, 7)); // YYYY-MM
   const [file, setFile] = useState(null);
+  const [accountantName, setAccountantName] = useState('');
+  const [accountantEmail, setAccountantEmail] = useState('');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [successData, setSuccessData] = useState(null);
@@ -30,14 +33,18 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
     setError('');
     if (!selectedFile) return;
 
-    if (selectedFile.type !== 'application/pdf' && !selectedFile.name.toLowerCase().endsWith('.pdf')) {
-      setError('Por favor, selecione um arquivo no formato PDF.');
+    const allowedExtensions = ['.pdf', '.xlsx', '.xls', '.csv'];
+    const fileNameLower = selectedFile.name.toLowerCase();
+    const isAllowed = allowedExtensions.some(ext => fileNameLower.endsWith(ext));
+
+    if (!isAllowed) {
+      setError('Por favor, selecione um arquivo no formato PDF, Excel (.xlsx, .xls) ou CSV (.csv).');
       setFile(null);
       return;
     }
 
-    if (selectedFile.size > 20 * 1024 * 1024) {
-      setError('O arquivo PDF excede o limite máximo de 20MB.');
+    if (selectedFile.size > 25 * 1024 * 1024) {
+      setError('O arquivo excede o limite máximo de 25MB.');
       setFile(null);
       return;
     }
@@ -60,7 +67,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
     }
 
     if (!file) {
-      setError('Anexe o arquivo em PDF da folha de pagamento.');
+      setError('Anexe o arquivo (PDF, Excel ou CSV) da folha de pagamento.');
       return;
     }
 
@@ -78,6 +85,9 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
         competencia,
         file_name: file.name,
         file_size: (file.size / 1024).toFixed(1) + ' KB',
+        file_type: file.name.split('.').pop()?.toUpperCase() || 'DOCUMENTO',
+        accountant_name: accountantName.trim() || 'Contador Externo',
+        accountant_email: accountantEmail.trim() || null,
         content: base64,
         status: 'semipronto', // 'semipronto' | 'pendente' | 'conferido' | 'aprovado'
         created_at: new Date().toISOString()
@@ -98,6 +108,9 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
               competencia,
               file_name: file.name,
               file_size: recordData.file_size,
+              file_type: recordData.file_type,
+              accountant_name: recordData.accountant_name,
+              accountant_email: recordData.accountant_email,
               status: recordData.status,
               created_at: recordData.created_at
             }
@@ -125,10 +138,12 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
         protocol,
         unitName,
         competencia,
+        fileName: file.name,
+        accountantName: recordData.accountant_name,
         uploadedAt: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR'),
       });
 
-      toast.success('Folha de pagamento enviada com sucesso ao Grupo IB!');
+      toast.success(`Folha de pagamento arquivada com sucesso no ${branding?.shortName || BRANDING.shortName}!`);
     } catch (err) {
       console.error('Erro ao enviar folha pelo portal público:', err);
       setError(getFriendlyDbErrorMessage(err));
@@ -163,7 +178,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                 </span>
               </div>
               <h2 className="text-xl font-bold mt-1 text-white">Upload de Folha de Pagamento</h2>
-              <p className="text-xs text-indigo-100 mt-0.5">Envio mensal de documentos em PDF para as unidades do Grupo IB</p>
+              <p className="text-xs text-indigo-100 mt-0.5">Envio e arquivamento de documentos (PDF, Excel ou CSV) para {branding?.shortName || BRANDING.shortName}</p>
             </div>
           </div>
           <button
@@ -183,7 +198,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                 <CheckCircle2 size={36} />
               </div>
               <div>
-                <h3 className="text-2xl font-extrabold text-slate-900">Documento Recebido!</h3>
+                <h3 className="text-2xl font-extrabold text-slate-900">Documento Arquivado!</h3>
                 <p className="text-sm text-slate-600 mt-1">
                   Protocolo Oficial: <strong className="text-indigo-700 font-mono text-base">{successData.protocol}</strong>
                 </p>
@@ -198,6 +213,14 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                   <span className="text-slate-500">Competência:</span>
                   <span className="font-semibold text-slate-800">{successData.competencia}</span>
                 </div>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span className="text-slate-500">Arquivo Anetado:</span>
+                  <span className="font-medium text-indigo-800 truncate max-w-[200px]">{successData.fileName}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span className="text-slate-500">Enviado por:</span>
+                  <span className="font-medium text-slate-700">{successData.accountantName}</span>
+                </div>
                 <div className="flex justify-between pt-1 text-[11px]">
                   <span className="text-slate-500">Data e Hora do Envio:</span>
                   <span className="text-slate-700 font-medium">{successData.uploadedAt}</span>
@@ -205,7 +228,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
               </div>
 
               <div className="p-3 bg-indigo-50/80 border border-indigo-100 rounded-xl text-xs text-indigo-900 text-left">
-                ℹ️ A folha foi registrada no sistema e está disponível no painel dos administradores para conferência e aprovação.
+                ℹ️ A folha de pagamento foi devidamente arquivada no sistema e está disponível no painel de administração e RH do {branding?.shortName || BRANDING.shortName}.
               </div>
 
               <div className="flex gap-3 pt-3">
@@ -213,7 +236,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                   onClick={handleReset}
                   className="flex-1 py-3 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors"
                 >
-                  Enviar Folha de Outra Unidade
+                  Enviar Outro Arquivo
                 </button>
                 <button
                   onClick={() => { handleReset(); onClose(); }}
@@ -268,16 +291,44 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                 />
               </div>
 
-              {/* Upload de PDF */}
+              {/* Identificação do Contador (Opcional) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nome / Contabilidade (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Contabilidade Alfa / João"
+                    value={accountantName}
+                    onChange={(e) => setAccountantName(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    E-mail do Contador (Opcional)
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="contador@empresa.com"
+                    value={accountantEmail}
+                    onChange={(e) => setAccountantEmail(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Upload de Arquivos */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                   <Upload size={14} className="text-indigo-600" />
-                  Arquivo da Folha de Pagamento (PDF) *
+                  Arquivo da Folha de Pagamento (PDF, Excel ou CSV) *
                 </label>
                 <div className="relative border-2 border-dashed border-slate-300 hover:border-indigo-500 transition-colors rounded-2xl p-5 text-center bg-slate-50/70">
                   <input
                     type="file"
-                    accept=".pdf,application/pdf"
+                    accept=".pdf,.xlsx,.xls,.csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                     onChange={handleFileChange}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
@@ -286,14 +337,14 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                       <FileText size={24} className="text-indigo-600" />
                       <div className="text-left">
                         <p className="text-xs font-bold truncate max-w-[260px] text-slate-800">{file.name}</p>
-                        <p className="text-[10px] text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB • PDF Válido</p>
+                        <p className="text-[10px] text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB • Arquivo Válido</p>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-1.5">
                       <Upload className="mx-auto h-9 w-9 text-slate-400" />
-                      <p className="text-xs font-semibold text-slate-700">Arraste ou clique para selecionar a Folha em PDF</p>
-                      <p className="text-[10px] text-slate-400">Tamanho máximo permitido: 20MB</p>
+                      <p className="text-xs font-semibold text-slate-700">Arraste ou clique para anexar o arquivo da Folha</p>
+                      <p className="text-[10px] text-slate-400">Formatos suportados: PDF, Excel (.xlsx, .xls) ou CSV (.csv) — Máx: 25MB</p>
                     </div>
                   )}
                 </div>
@@ -316,7 +367,7 @@ export default function PublicPayrollUploadModal({ isOpen, onClose, branding, un
                   {uploading ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      Enviando ao Grupo IB...
+                      Arquivando no {branding?.shortName || BRANDING.shortName}...
                     </>
                   ) : (
                     <>

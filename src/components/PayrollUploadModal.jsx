@@ -3,6 +3,7 @@ import { Upload, X, FileText, CheckCircle2, Loader2, DollarSign, Calendar, Build
 import { supabase } from '../supabase';
 import { fileToBase64, getFriendlyDbErrorMessage } from '../utils/mappings';
 import { toast } from 'sonner';
+import { BRANDING } from '../config/branding';
 
 export default function PayrollUploadModal({ isOpen, onClose, branding, units = [], initialUnitId = '', onSuccess }) {
   const [unitId, setUnitId] = useState(initialUnitId || '');
@@ -205,7 +206,7 @@ export default function PayrollUploadModal({ isOpen, onClose, branding, units = 
             <FileText className="w-6 h-6 text-indigo-200" />
             <div>
               <h2 className="text-lg font-bold">Upload de Folha de Pagamento (PDF)</h2>
-              <p className="text-xs text-indigo-100">Cadastro de folha por unidade para conferência do Grupo IB</p>
+              <p className="text-xs text-indigo-100">Cadastro de folha por unidade para conferência do {branding?.shortName || BRANDING.shortName}</p>
             </div>
           </div>
           <button

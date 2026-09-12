@@ -6,15 +6,15 @@
 export const WORKSPACES = {
   'porto-terapia': {
     id: 'porto-terapia',
-    appTitle: 'FaçaAmigos • Gestão de Pessoas',
-    shortName: 'FaçaAmigos',
+    appTitle: 'Porto Terapia • Gestão de Pessoas',
+    shortName: 'Porto Terapia',
     themeColor: '#1a1a2e',
     logoPath: '/logo.jpg',
-    logoAlt: 'Logo FaçaAmigos',
+    logoAlt: 'Logo Porto Terapia',
     // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx).
     subtitle: 'Gestão de Pessoas',
     loginSubtitle: 'Gestão de Pessoas',
-    displayName: 'FaçaAmigos',
+    displayName: 'Porto Terapia',
     legalEntityName: 'Porto Terapia Clínica de Psicologia LTDA',
     legalEntityShort: 'Porto Terapia Clínica de Psicologia',
     documentTagline: 'Clínica de Psicologia e Desenvolvimento Humano',

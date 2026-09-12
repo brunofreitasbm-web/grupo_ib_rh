@@ -117,7 +117,7 @@ export default function BancoTalentosTab() {
             Banco de Talentos
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Candidatos captados pelo Banco de Talentos do app Faça Amigos (módulo gerencial).
+            Candidatos captados pelo Banco de Talentos do sistema.
           </p>
         </div>
         <button
