@@ -21,6 +21,8 @@ export default defineConfig(({ mode }) => {
         // pelo glob padrão do workbox, então precisam ser incluídos explicitamente.
         includeAssets: ['models/**/*'],
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
           cleanupOutdatedCaches: true,
           navigateFallbackDenylist: [/^\/assets\//],
           maximumFileSizeToCacheInBytes: 5000000,

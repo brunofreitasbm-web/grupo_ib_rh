@@ -12,7 +12,7 @@ Não abra uma issue pública. Contate diretamente a administração do sistema (
 
 ## Escopo
 
-Este repositório é o front-end React/Vite e as migrações/Edge Functions do Supabase do sistema de RH (`controle-de-estagiario`). O mesmo projeto Supabase também hospeda um sistema clínico separado (prontuário/agenda/faturamento) mantido em outro repositório — problemas nesse outro sistema não são cobertos aqui.
+Este repositório é o front-end React/Vite e as migrações/Edge Functions do Supabase do sistema de RH (`gestao-pessoas-grupoib`). O mesmo projeto Supabase também hospeda um sistema clínico separado (prontuário/agenda/faturamento) mantido em outro repositório — problemas nesse outro sistema não são cobertos aqui.
 
 ## Rotação de segredos
 
