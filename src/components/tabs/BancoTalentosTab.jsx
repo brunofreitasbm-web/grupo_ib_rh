@@ -62,21 +62,33 @@ export default function BancoTalentosTab() {
     } catch (err) {
       console.error('Erro ao carregar Banco de Talentos:', err);
       let msg = err?.message || '';
+      let detailMsg = '';
+      let statusCode = err?.context?.status || null;
       
-      // Tenta extrair a mensagem detalhada enviada pelo corpo da resposta da Edge Function
-      if (err?.context && typeof err.context.json === 'function') {
+      // Tenta extrair a mensagem detalhada enviada pelo corpo da resposta da Edge Function sem consumir a resposta principal
+      if (err?.context) {
         try {
-          const body = await err.context.json();
-          if (body?.error) msg = body.error;
-        } catch (_) {}
+          const cloned = typeof err.context.clone === 'function' ? err.context.clone() : err.context;
+          const body = await cloned.json();
+          if (body?.error) detailMsg = body.error;
+        } catch (_) {
+          try {
+            const clonedText = typeof err.context.clone === 'function' ? err.context.clone() : err.context;
+            detailMsg = await clonedText.text();
+          } catch (_) {}
+        }
       }
 
-      if (msg.includes('Failed to send a request') || err?.name === 'FunctionsFetchError') {
-        setError('A Edge Function "fetch-talent-bank" não está implantada ou acessível no projeto Supabase. Certifique-se de implantar a função via Supabase CLI.');
+      if (statusCode === 403 || detailMsg === 'unauthorized') {
+        setError('Acesso negado (HTTP 403): O seu usuário logado precisa ter a role "supervisor" configurada no Supabase Auth para visualizar o Banco de Talentos.');
+      } else if (statusCode === 500 || detailMsg.includes('TALENT_API') || detailMsg.includes('não configuradas')) {
+        setError('Erro na Edge Function (HTTP 500): Verifique se os secrets (TALENT_API_KEY e TALENT_API_ANON_KEY) foram configurados no Supabase CLI via `supabase secrets set`.');
+      } else if (msg.includes('Failed to send a request') || err?.name === 'FunctionsFetchError' || statusCode === 404) {
+        setError('A Edge Function "fetch-talent-bank" não está implantada ou acessível no projeto Supabase. Certifique-se de implantar a função via Supabase CLI (`supabase functions deploy fetch-talent-bank`).');
       } else if (msg.includes('non-2xx status code') || err?.name === 'FunctionsHttpError') {
-        setError('A Edge Function "fetch-talent-bank" retornou um erro de permissão ou configuração. Verifique os secrets (TALENT_API_KEY / TALENT_API_ANON_KEY) no Supabase e a função de supervisor.');
+        setError(`A Edge Function "fetch-talent-bank" retornou o código de status ${statusCode || 'de erro'}${detailMsg ? `: ${detailMsg}` : '.'} Verifique os secrets do Supabase e as permissões do usuário.`);
       } else {
-        setError(msg || 'Não foi possível carregar os candidatos do Banco de Talentos.');
+        setError(detailMsg || msg || 'Não foi possível carregar os candidatos do Banco de Talentos.');
       }
       setCandidates([]);
     } finally {
