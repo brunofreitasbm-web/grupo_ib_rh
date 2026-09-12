@@ -65,28 +65,32 @@ export default function BancoTalentosTab() {
       let detailMsg = '';
       let statusCode = err?.context?.status || null;
       
-      // Tenta extrair a mensagem detalhada enviada pelo corpo da resposta da Edge Function sem consumir a resposta principal
+      // Tenta extrair a mensagem detalhada enviada pelo corpo da resposta da Edge Function
       if (err?.context) {
         try {
-          const cloned = typeof err.context.clone === 'function' ? err.context.clone() : err.context;
+          const res = err.context;
+          const cloned = typeof res.clone === 'function' ? res.clone() : res;
           const body = await cloned.json();
-          if (body?.error) detailMsg = body.error;
+          if (body?.message) detailMsg = body.message;
+          else if (body?.error) detailMsg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+          else if (body?.details) detailMsg = typeof body.details === 'string' ? body.details : JSON.stringify(body.details);
         } catch (_) {
           try {
-            const clonedText = typeof err.context.clone === 'function' ? err.context.clone() : err.context;
+            const res = err.context;
+            const clonedText = typeof res.clone === 'function' ? res.clone() : res;
             detailMsg = await clonedText.text();
           } catch (_) {}
         }
       }
 
-      if (statusCode === 403 || detailMsg === 'unauthorized') {
-        setError('Acesso negado (HTTP 403): O seu usuário logado precisa ter a role "supervisor" configurada no Supabase Auth para visualizar o Banco de Talentos.');
+      if (statusCode === 403 || detailMsg === 'unauthorized' || detailMsg.includes('supervisores') || detailMsg.includes('reservado')) {
+        setError(detailMsg || 'Acesso negado (HTTP 403): O seu usuário precisa ser supervisor ou ter email autorizado para visualizar o Banco de Talentos.');
       } else if (statusCode === 500 || detailMsg.includes('TALENT_API') || detailMsg.includes('não configuradas')) {
-        setError('Erro na Edge Function (HTTP 500): Verifique se os secrets (TALENT_API_KEY e TALENT_API_ANON_KEY) foram configurados no Supabase CLI via `supabase secrets set`.');
+        setError(detailMsg || 'Erro na Edge Function (HTTP 500): Secrets (TALENT_API_KEY e TALENT_API_ANON_KEY) não configuradas no Supabase.');
       } else if (msg.includes('Failed to send a request') || err?.name === 'FunctionsFetchError' || statusCode === 404) {
-        setError('A Edge Function "fetch-talent-bank" não está implantada ou acessível no projeto Supabase. Certifique-se de implantar a função via Supabase CLI (`supabase functions deploy fetch-talent-bank`).');
+        setError('A Edge Function "fetch-talent-bank" não está acessível no projeto Supabase. Certifique-se de implantar a função via Supabase CLI (`supabase functions deploy fetch-talent-bank`).');
       } else if (msg.includes('non-2xx status code') || err?.name === 'FunctionsHttpError') {
-        setError(`A Edge Function "fetch-talent-bank" retornou o código de status ${statusCode || 'de erro'}${detailMsg ? `: ${detailMsg}` : '.'} Verifique os secrets do Supabase e as permissões do usuário.`);
+        setError(detailMsg ? `Erro na Edge Function (${statusCode || 'non-2xx'}): ${detailMsg}` : `A Edge Function "fetch-talent-bank" retornou status HTTP ${statusCode || 'não-2xx'}. Verifique as permissões de usuário e se as variáveis TALENT_API_ANON_KEY e TALENT_API_KEY foram configuradas via Supabase CLI.`);
       } else {
         setError(detailMsg || msg || 'Não foi possível carregar os candidatos do Banco de Talentos.');
       }

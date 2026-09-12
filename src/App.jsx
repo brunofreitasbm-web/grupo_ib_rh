@@ -72,7 +72,6 @@ const SaudeOcupacionalTab = lazyWithRetry(() => import('./components/tabs/SaudeO
 const OcorrenciasFuncionariosTab = lazyWithRetry(() => import('./components/tabs/OcorrenciasFuncionariosTab'));
 const EncerramentoFuncionariosTab = lazyWithRetry(() => import('./components/tabs/EncerramentoFuncionariosTab'));
 const AlertasFuncionariosTab = lazyWithRetry(() => import('./components/tabs/AlertasFuncionariosTab'));
-import LandingPage from './components/LandingPage';
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
 import EmployeeKiosk from './components/EmployeeKiosk';
