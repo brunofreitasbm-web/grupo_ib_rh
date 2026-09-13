@@ -168,6 +168,12 @@ CONTRATANTE e CONTRATADA, quando referidas em conjunto, doravante "Partes", têm
 
 **9.2.** As obrigações desta cláusula subsistem por prazo indeterminado após o término deste contrato, independentemente do motivo da extinção.
 
+#### CLÁUSULA 9ª-A — DA ASSINATURA ELETRÔNICA E DO CANAL OFICIAL DE COMUNICAÇÃO
+
+**9-A.1.** Este contrato e quaisquer aditivos, notificações, avisos ou demais documentos a ele relacionados deverão ser assinados eletronicamente mediante Certificado Digital do tipo **A1**, emitido no âmbito da Infraestrutura de Chaves Públicas Brasileira (ICP-Brasil), em nome da CONTRATADA (e-CNPJ) e/ou de seu(sua) representante legal (e-CPF), reconhecendo as partes a validade jurídica e a presunção de autenticidade e integridade de tal assinatura, nos termos do art. 10, §1º, da Medida Provisória nº 2.200-2/2001.
+
+**9-A.2.** Toda comunicação, notificação, tratativa e troca de documentos entre as partes no âmbito deste contrato dar-se-á exclusivamente por meio do e-mail institucional oficial da CONTRATANTE e do e-mail da CONTRATADA cadastrado no sistema da CONTRATANTE, competindo a cada parte manter seu respectivo endereço eletrônico atualizado e comunicar formalmente à outra qualquer alteração, sob pena de se reputarem válidas e eficazes as comunicações enviadas ao último endereço informado.
+
 #### CLÁUSULA 10ª — DA PROPRIEDADE INTELECTUAL
 
 **10.1.** Protocolos clínicos, materiais didáticos, marca, identidade visual, sistemas de prontuário e demais ativos de titularidade da CONTRATANTE permanecem de sua exclusiva propriedade, sendo cedidos à CONTRATADA em regime de mero uso, pelo prazo e para os fins deste contrato.

@@ -16,6 +16,7 @@ import {
   generateUsername,
   mapInternFromDb,
   mapInternToDb,
+  mapEmployeeFromDb,
   mapRecordFromDb,
   mapRecordToDb,
   mapUnitFromDb,
@@ -472,7 +473,7 @@ export default function App() {
     setSelectedActivityIntern('');
   }, [filterUnit]);
 
-  // Autogestão de Biometria
+  // Autogestão de Biometria (Estagiários)
   const [autogestaoUnitId, setAutogestaoUnitId] = useState('');
   const [autogestaoInternId, setAutogestaoInternId] = useState('');
   const [autogestaoCpf, setAutogestaoCpf] = useState('');
@@ -483,6 +484,16 @@ export default function App() {
   const [autogestaoLockedUntil, setAutogestaoLockedUntil] = useState(0);
   const [publicInterns, setPublicInterns] = useState([]);
   const [loadingPublicInterns, setLoadingPublicInterns] = useState(false);
+
+  // Autogestão de Biometria Facial (Funcionários CLT)
+  const [cltAutogestaoUnitId, setCltAutogestaoUnitId] = useState('');
+  const [cltAutogestaoEmployeeId, setCltAutogestaoEmployeeId] = useState('');
+  const [cltAutogestaoCpf, setCltAutogestaoCpf] = useState('');
+  const [cltAutogestaoSuccess, setCltAutogestaoSuccess] = useState(false);
+  const [cltAutogestaoCpfAttempts, setCltAutogestaoCpfAttempts] = useState(0);
+  const [cltAutogestaoLockedUntil, setCltAutogestaoLockedUntil] = useState(0);
+  const [publicEmployees, setPublicEmployees] = useState([]);
+  const [loadingPublicEmployees, setLoadingPublicEmployees] = useState(false);
 
   // Cadastro obrigatório (do zero)
   const [cadastroForm, setCadastroForm] = useState({
@@ -3089,7 +3100,7 @@ export default function App() {
                   </div>
 
                   {BRANDING.showEmployeeSelfRegistration && (
-                    <div className="border-t border-gray-100 pt-4 mt-2">
+                    <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
                       <button
                         type="button"
                         onClick={() => setCurrentView('clt_autocadastro')}
@@ -3101,10 +3112,34 @@ export default function App() {
                           </div>
                           <div>
                             <h4 className="font-bold text-indigo-800 text-sm">⚠️ Cadastro Obrigatório de {BRANDING.employeeLabels?.singular || 'Funcionário(a)'}</h4>
-                            <p className="text-[10px] text-indigo-600/80">Faça o seu cadastro completo, incluindo biometria facial, para a admissão</p>
+                            <p className="text-[10px] text-indigo-600/80">Faça o seu cadastro completo de dados e documentos para a admissão</p>
                           </div>
                         </div>
                         <span className="text-indigo-500 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          loadPublicEmployees();
+                          setCltAutogestaoUnitId('');
+                          setCltAutogestaoEmployeeId('');
+                          setCltAutogestaoCpf('');
+                          setCltAutogestaoSuccess(false);
+                          setCurrentView('clt_biometria_autogestao');
+                        }}
+                        className="w-full p-4 border-2 border-indigo-200 rounded-xl bg-indigo-50/50 hover:bg-indigo-100/70 hover:border-indigo-400 transition-all flex items-center justify-between text-left group shadow-sm"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-2.5 bg-indigo-600 text-white rounded-lg group-hover:bg-indigo-700 transition-colors shadow-sm">
+                            <ScanFace size={20} className="text-white" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-indigo-900 text-sm">📸 Cadastro de Biometria Facial</h4>
+                            <p className="text-[10px] text-indigo-700/80">Cadastre ou atualize sua biometria facial para o registro de ponto</p>
+                          </div>
+                        </div>
+                        <span className="text-indigo-700 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Cadastrar &rarr;</span>
                       </button>
                     </div>
                   )}
@@ -3651,6 +3686,210 @@ export default function App() {
                             internName={selectedInternObj.name}
                             internCpf={selectedInternObj.cpf}
                             onEnrollmentComplete={handleAutogestaoComplete}
+                            onCancel={() => setCurrentView('kiosk')}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const loadPublicEmployees = async () => {
+    setLoadingPublicEmployees(true);
+    try {
+      const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('status', 'ativo')
+        .in('unit_id', workspaceUnitIds)
+        .order('name', { ascending: true });
+      if (!error && data) {
+        setPublicEmployees(data.map(mapEmployeeFromDb));
+      }
+    } catch (e) {
+      console.error("Erro público ao carregar funcionários CLT:", e);
+    } finally {
+      setLoadingPublicEmployees(false);
+    }
+  };
+
+  const renderCltAutogestaoBiometria = () => {
+    const selectedEmployeeObj = publicEmployees.find(e => e.id === cltAutogestaoEmployeeId);
+    const cleanInputCpf = cltAutogestaoCpf.replace(/\D/g, '');
+    const cleanEmpCpf = selectedEmployeeObj ? (selectedEmployeeObj.cpf || '').replace(/\D/g, '') : '';
+    const isAutogestaoLocked = Date.now() < cltAutogestaoLockedUntil;
+    const isCpfValid = !isAutogestaoLocked && selectedEmployeeObj && cleanInputCpf && cleanInputCpf === cleanEmpCpf;
+    const AUTOGESTAO_MAX_ATTEMPTS = 5;
+    const AUTOGESTAO_LOCK_MS = 60000;
+
+    const handleCpfBlur = () => {
+      if (isAutogestaoLocked || !selectedEmployeeObj || cleanInputCpf.length !== 11 || cleanInputCpf === cleanEmpCpf) return;
+      const nextAttempts = cltAutogestaoCpfAttempts + 1;
+      setCltAutogestaoCpfAttempts(nextAttempts);
+      if (nextAttempts >= AUTOGESTAO_MAX_ATTEMPTS) {
+        setCltAutogestaoLockedUntil(Date.now() + AUTOGESTAO_LOCK_MS);
+        toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+      }
+    };
+
+    const handleCltAutogestaoComplete = async (payload) => {
+      if (!selectedEmployeeObj) return;
+      try {
+        const { error } = await supabase
+          .from('employees')
+          .update({
+            face_descriptor: JSON.stringify(payload.embedding),
+            biometric_consent_at: new Date().toISOString(),
+            biometric_consent_version: BRANDING.biometricConsentVersion || '1.0',
+          })
+          .eq('id', selectedEmployeeObj.id);
+
+        if (error) throw error;
+        setCltAutogestaoCpfAttempts(0);
+        setCltAutogestaoSuccess(true);
+        toast.success('Biometria cadastrada com sucesso!');
+        loadPublicEmployees();
+      } catch (err) {
+        console.error(err);
+        toast.error('Erro ao atualizar biometria facial no banco de dados.');
+      }
+    };
+
+    const hasBiometria = selectedEmployeeObj && selectedEmployeeObj.faceDescriptor && selectedEmployeeObj.faceDescriptor !== '[]';
+
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+          <div className="bg-indigo-600 p-6 text-white text-center relative flex flex-col items-center justify-center">
+            <button
+              onClick={() => setCurrentView('kiosk')}
+              className="absolute top-4 left-4 p-2 bg-indigo-700 hover:bg-indigo-800 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+            >
+              <ArrowLeft size={14} /> Voltar
+            </button>
+            {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-14 w-auto mb-2 rounded-lg shadow-sm" />}
+            <h1 className="text-xl font-bold">Cadastro de Biometria Facial</h1>
+            <p className="text-indigo-100 text-xs mt-1">Configuração biométrica para Funcionários CLT</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {cltAutogestaoSuccess ? (
+              <div className="py-8 flex flex-col items-center justify-center text-center animate-fade-in space-y-4">
+                <div className="p-4 bg-emerald-100 rounded-full text-emerald-600">
+                  <CheckCircle size={48} />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-800">Biometria OK!</h2>
+                <p className="text-slate-600 text-sm max-w-sm">
+                  Sua biometria facial foi cadastrada com sucesso. Você já pode bater o ponto usando a câmera.
+                </p>
+                <button
+                  onClick={() => setCurrentView('kiosk')}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors text-sm shadow-md"
+                >
+                  Ir para a Tela Inicial
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Unidade contratante:
+                  </label>
+                  <select
+                    value={cltAutogestaoUnitId}
+                    onChange={(e) => {
+                      setCltAutogestaoUnitId(e.target.value);
+                      setCltAutogestaoEmployeeId('');
+                      setCltAutogestaoCpf('');
+                      setCltAutogestaoCpfAttempts(0);
+                      setCltAutogestaoLockedUntil(0);
+                    }}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
+                  >
+                    <option value="">Selecione a unidade...</option>
+                    {BRANDING.kioskUnits.filter((ku) => ku.employeeKioskEmail).map((ku) => (
+                      <option key={ku.id} value={ku.id}>{ku.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {cltAutogestaoUnitId && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Selecione o seu nome na lista:
+                    </label>
+                    <select
+                      value={cltAutogestaoEmployeeId}
+                      onChange={(e) => {
+                        setCltAutogestaoEmployeeId(e.target.value);
+                        setCltAutogestaoCpf('');
+                        setCltAutogestaoCpfAttempts(0);
+                        setCltAutogestaoLockedUntil(0);
+                      }}
+                      className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
+                    >
+                      <option value="">Selecione seu nome...</option>
+                      {publicEmployees.filter((emp) => emp.unitId === cltAutogestaoUnitId).map((emp) => (
+                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {cltAutogestaoEmployeeId && (
+                  isAutogestaoLocked ? (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center text-red-800 text-xs font-semibold animate-fade-in">
+                      ⛔ Muitas tentativas de CPF incorretas. Aguarde um minuto antes de tentar novamente.
+                    </div>
+                  ) : (
+                    <div className="animate-fade-in space-y-4">
+                      {hasBiometria && (
+                        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs font-medium space-y-1 animate-fade-in">
+                          <p className="font-semibold">ℹ️ Biometria facial já cadastrada</p>
+                          <p className="text-[11px] text-blue-700">Para atualizar seu cadastro biométrico, confirme seu CPF abaixo para prosseguir com a nova captura facial.</p>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Confirme seu CPF para validação de identidade:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Apenas números ou formatado"
+                          value={cltAutogestaoCpf}
+                          onChange={(e) => setCltAutogestaoCpf(e.target.value)}
+                          onBlur={handleCpfBlur}
+                          className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
+                        />
+                      </div>
+
+                      {cltAutogestaoCpf && !isCpfValid && (
+                        <p className="text-red-500 text-[11px] font-semibold">
+                          ❌ O CPF informado não coincide com o do funcionário selecionado.
+                        </p>
+                      )}
+
+                      {isCpfValid && (
+                        <div className="border border-slate-200 rounded-xl overflow-hidden p-4 bg-slate-50 space-y-4 animate-fade-in">
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2.5 text-amber-800 text-[11px] font-medium leading-relaxed">
+                            <ShieldAlert size={16} className="shrink-0 text-amber-600 mt-0.5" />
+                            <span>
+                              <strong>Orientações para captura:</strong> Posicione seu rosto no centro do quadro de vídeo e aguarde a verificação Liveness. O sistema fará a captação e validação automática assim que a pose for confirmada.
+                            </span>
+                          </div>
+
+                          <BiometricEnrollment
+                            internName={selectedEmployeeObj.name}
+                            internCpf={selectedEmployeeObj.cpf}
+                            onEnrollmentComplete={handleCltAutogestaoComplete}
                             onCancel={() => setCurrentView('kiosk')}
                           />
                         </div>
@@ -8448,6 +8687,8 @@ export default function App() {
             />
           </Suspense>
         </ErrorBoundary>
+      ) : currentView === 'clt_biometria_autogestao' ? (
+        renderCltAutogestaoBiometria()
       ) : (
         renderAdmin()
       )}

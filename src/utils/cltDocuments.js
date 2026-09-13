@@ -10,7 +10,8 @@
 //   dependents: [] de mapDependentFromDb
 //   extra: dados específicos do tipo de documento (ver cada template)
 
-import { CONTRACT_TYPES } from '../config/cltConstants';
+import { CONTRACT_TYPES, EXPERIENCE_PRESETS } from '../config/cltConstants';
+import { experienceDates } from './cltCalculations';
 
 const fmtDate = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('pt-BR') : '____/____/________');
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('pt-BR') : '____/____/________ __:__');
@@ -80,10 +81,14 @@ function employeeSummary(employee) {
 }
 
 const TEMPLATES = {
-  contrato_experiencia: (ctx) => wrap('Contrato de Experiência', `
+  contrato_experiencia: (ctx) => {
+    const admissionDate = ctx.employee?.admissionDate;
+    const firstEnd = ctx.employee?.experienceFirstEnd || (admissionDate ? experienceDates(admissionDate, EXPERIENCE_PRESETS[0]).firstEnd : '');
+    const secondEnd = ctx.employee?.experienceSecondEnd;
+    return wrap('Contrato de Experiência', `
     ${employeeSummary(ctx.employee)}
     <p>As partes acima identificadas firmam o presente <strong>Contrato de Experiência</strong>, nos termos do art. 443, §2º, "c", da CLT,
-    com vigência de ${fmtDate(ctx.employee?.admissionDate)} a ${fmtDate(ctx.employee?.experienceFirstEnd)}${ctx.employee?.experienceSecondEnd ? `, prorrogável até ${fmtDate(ctx.employee?.experienceSecondEnd)}` : ', sem prorrogação'},
+    com vigência de ${fmtDate(admissionDate)} a ${fmtDate(firstEnd)}${secondEnd ? `, prorrogável até ${fmtDate(secondEnd)}` : ', sem prorrogação'},
     respeitado o limite máximo de 90 (noventa) dias corridos somados os dois períodos.</p>
     <p><strong>Jornada:</strong> ${blank(ctx.employee?.weeklyHours)}h semanais. <strong>Salário base:</strong> ${fmtMoney(ctx.employee?.baseSalary)}.</p>
     <p><strong>Jornada e intervalos:</strong> a jornada será cumprida conforme escala definida pelo empregador, respeitados o
@@ -95,7 +100,8 @@ const TEMPLATES = {
     <p><strong>Demais condições:</strong> aplicam-se a este contrato as normas da CLT, o regulamento interno e as políticas
     da empresa e a convenção ou acordo coletivo da categoria, que o(a) empregado(a) declara conhecer.</p>
     ${signatureBlock(ctx.employee?.name)}
-  `, ctx),
+  `, ctx);
+  },
 
   prorrogacao_experiencia: (ctx) => wrap('Termo de Prorrogação de Experiência', `
     ${employeeSummary(ctx.employee)}

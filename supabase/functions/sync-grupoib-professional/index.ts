@@ -23,6 +23,10 @@ if (!WEBHOOK_SECRET) {
 
 const CLINIC_ID = "c0000000-0000-0000-0000-000000000001";
 const TARGET_UNIT_ID = "clinica-a";
+// URL do sistema CLINICA para onde o link de convite deve redirecionar após
+// o profissional/funcionário definir a senha. Opcional: se ausente, o
+// Supabase usa o "Site URL" configurado no painel de Auth do projeto.
+const INVITE_REDIRECT_URL = Deno.env.get("CLINICA_INVITE_REDIRECT_URL");
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
@@ -133,24 +137,6 @@ function resolveRoleForEmployee(jobTitle?: string, department?: string) {
   return "recepcao";
 }
 
-// NOTA DE SEGURANÇA (não alterado nesta correção — decisão pendente, ver
-// SECURITY_HARDENING_PROMPT.md item C-3): a senha inicial abaixo é
-// `primeiro.ultimo123`, previsível a partir do nome (dado público dentro da
-// clínica). O jeito certo de corrigir isso é gerar uma senha aleatória forte
-// e convidar por e-mail (`admin.inviteUserByEmail` ou
-// `admin.generateLink({ type: 'invite' })`), mas esta função não tem
-// visibilidade de como o sistema CLINICA hoje comunica a senha inicial ao
-// profissional/funcionário recém-sincronizado — trocar para uma senha
-// totalmente aleatória sem garantir que exista um canal para entregá-la
-// deixaria a conta criada, porém inacessível. Fica registrado como decisão
-// que só quem opera o sistema CLINICA pode tomar com segurança.
-function buildInitialPassword(fullName: string) {
-  const parts = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
-  const first = stripAccents(parts[0] || "profissional").toLowerCase();
-  const last = stripAccents(parts[parts.length - 1] || first).toLowerCase();
-  return `${first}.${last}123`;
-}
-
 Deno.serve(async (req: Request) => {
   const provided = req.headers.get("X-Webhook-Secret") ?? "";
   if (!timingSafeEqual(provided, WEBHOOK_SECRET)) {
@@ -215,12 +201,12 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ skipped: true, reason: "sem email cadastrado" }), { status: 200 });
     }
 
-    const password = buildInitialPassword(record["name"] as string);
-    const { data: userData, error: userError } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { must_change_password: true, source: "grupo_ib" },
+    // Sem senha previsível: o profissional/funcionário recebe um e-mail do
+    // Supabase com um link temporário (token de convite) e define a própria
+    // senha ao acessar o sistema CLINICA pela primeira vez.
+    const { data: userData, error: userError } = await admin.auth.admin.inviteUserByEmail(email, {
+      data: { must_change_password: true, source: "grupo_ib" },
+      ...(INVITE_REDIRECT_URL ? { redirectTo: INVITE_REDIRECT_URL } : {}),
     });
 
     if (userError) {

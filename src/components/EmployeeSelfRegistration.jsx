@@ -5,7 +5,6 @@ import { supabase } from '../supabase';
 import { validateCPF } from '../utils/helpers';
 import { fileToBase64, employeeRpcErrorMessage } from '../utils/mappings';
 import { ADMISSIONAL_DOCUMENTS } from '../config/cltConstants';
-import BiometricEnrollment from './BiometricEnrollment';
 
 // Autocadastro de Funcionários CLT — tela pública, SEM sessão, espelhando o
 // autocadastro de Profissionais PJ (ProfessionalSelfRegistration.jsx), mas
@@ -50,7 +49,6 @@ export default function EmployeeSelfRegistration({ branding, onCancel }) {
   const [dependents, setDependents] = useState([]);
   const [newDependent, setNewDependent] = useState(emptyDependent);
   const [files, setFiles] = useState({}); // { [doc_key]: File }
-  const [biometricPayload, setBiometricPayload] = useState(null);
   const [lgpdAccepted, setLgpdAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [progressLabel, setProgressLabel] = useState('');
@@ -108,7 +106,6 @@ export default function EmployeeSelfRegistration({ branding, onCancel }) {
     requiredDocs.forEach((d) => {
       if (isDocRequired(d) && !files[d.key]) e[`doc_${d.key}`] = `Anexe: ${d.label}.`;
     });
-    if (!biometricPayload) e.biometric = 'É necessário concluir a captura da biometria facial abaixo.';
     if (!lgpdAccepted) e.lgpd = 'É necessário aceitar o consentimento de tratamento de dados (LGPD).';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -163,8 +160,8 @@ export default function EmployeeSelfRegistration({ branding, onCancel }) {
         p_bank_account_type: form.bankAccountType || null,
         p_pix_key: form.pixKey.trim() || null,
         p_dependents: dependents,
-        p_face_descriptor: JSON.stringify(biometricPayload.embedding),
-        p_biometric_consent_accepted: true,
+        p_face_descriptor: null,
+        p_biometric_consent_accepted: false,
         p_biometric_consent_version: branding?.biometricConsentVersion || '1.0',
         p_lgpd_consent_accepted: lgpdAccepted,
       });
@@ -213,9 +210,9 @@ export default function EmployeeSelfRegistration({ branding, onCancel }) {
           <CheckCircle2 size={48} className="mx-auto text-indigo-600 mb-4" />
           <h2 className="text-lg font-bold text-gray-800 mb-2">Cadastro enviado com sucesso</h2>
           <p className="text-sm text-gray-600 mb-6">
-            Seus dados, documentos e biometria facial foram recebidos e ficam aguardando validação pelo RH de{' '}
+            Seus dados e documentos foram recebidos e ficam aguardando validação pelo RH de{' '}
             <strong>{unitName(form.unitId)}</strong>. Você será contatado(a) para os próximos passos, incluindo a
-            formalização do contrato de trabalho.
+            formalização do contrato de trabalho. A biometria facial poderá ser cadastrada a qualquer momento na tela inicial.
           </p>
           <button
             type="button"
@@ -239,9 +236,9 @@ export default function EmployeeSelfRegistration({ branding, onCancel }) {
           <h1 className="text-lg font-bold text-gray-800">Cadastro Obrigatório de {labels.singular}</h1>
         </div>
         <p className="text-xs text-gray-500 ml-9 mb-6">
-          Preencha seus dados pessoais, anexe os documentos e cadastre sua biometria facial para que o RH possa
-          validar seu cadastro e dar sequência à admissão. Cargo, salário, jornada e data de admissão serão
-          definidos pelo RH na validação.
+          Preencha seus dados pessoais e anexe os documentos para que o RH possa validar seu cadastro e dar
+          sequência à admissão. Cargo, salário, jornada e data de admissão serão definidos pelo RH na validação.
+          A biometria facial poderá ser cadastrada a qualquer momento na tela inicial.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-8">
@@ -411,27 +408,6 @@ export default function EmployeeSelfRegistration({ branding, onCancel }) {
               })}
             </div>
             <p className="text-[10px] text-gray-400 mt-2">Formatos aceitos: JPG, PNG ou PDF. Tamanho máximo: 2MB por arquivo.</p>
-          </section>
-
-          {/* Biometria facial */}
-          <section>
-            <h2 className="text-sm font-bold text-indigo-800 border-b border-indigo-100 pb-2 mb-3">Biometria Facial *</h2>
-            {biometricPayload ? (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-800">
-                <CheckCircle2 size={18} />
-                Biometria facial capturada com sucesso.
-                <button type="button" onClick={() => setBiometricPayload(null)} className="ml-auto text-xs font-semibold text-emerald-700 underline">
-                  Refazer
-                </button>
-              </div>
-            ) : (
-              <BiometricEnrollment
-                internName={form.name}
-                internCpf={form.cpf}
-                onEnrollmentComplete={(payload) => setBiometricPayload(payload)}
-              />
-            )}
-            {errors.biometric && <p className="text-[11px] text-red-600 mt-2">{errors.biometric}</p>}
           </section>
 
           {/* LGPD */}

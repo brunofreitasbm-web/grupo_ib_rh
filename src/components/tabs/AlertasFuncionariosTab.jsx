@@ -124,6 +124,11 @@ export default function AlertasFuncionariosTab({ filterUnit, restrictedUnitIds =
                 <div className="flex-1">
                   <p className="font-semibold">{a.message}</p>
                   {a.dueDate && <p className="text-[10px] opacity-70 mt-0.5">Data de referência: {a.dueDate}</p>}
+                  {a.actionRequired && (
+                    <p className="text-[11px] font-medium text-amber-900 mt-1.5 bg-amber-100/90 border border-amber-200 px-2.5 py-1 rounded-md inline-block">
+                      📌 <strong>Gestor de RH:</strong> {a.actionRequired}
+                    </p>
+                  )}
                 </div>
               </div>
             );

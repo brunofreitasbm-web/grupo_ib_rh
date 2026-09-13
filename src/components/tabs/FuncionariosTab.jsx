@@ -24,7 +24,7 @@ const emptyForm = {
   address: { logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', cep: '' },
   ctpsNumber: '', ctpsSeries: '', ctpsUf: '', pis: '', voterTitle: '', reservistCert: '', cnh: '', cnhCategory: '',
   bankName: '', bankAgency: '', bankAccount: '', bankAccountType: 'corrente', pixKey: '',
-  jobTitle: '', cbo: '', department: '', admissionDate: '', contractType: 'indeterminado',
+  jobTitle: '', cbo: '', department: '', admissionDate: '', contractType: 'experiencia',
   experienceFirstEnd: '', experienceSecondEnd: '', contractEnd: '',
   baseSalary: '', weeklyHours: 44, schedule: { preset: '44h_5x2', days: SCHEDULE_PRESETS[0].days },
   workRegime: 'presencial', nightWork: false, hoursBank: false, hoursBankStartedAt: '',
@@ -114,13 +114,40 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
     }));
   };
 
-  const applyExperiencePreset = (presetKey) => {
+  const applyExperiencePreset = (presetKey, currentAdmissionDate = form.admissionDate) => {
     setExperiencePreset(presetKey);
-    if (!form.admissionDate) return;
-    const preset = EXPERIENCE_PRESETS.find((p) => p.key === presetKey);
-    if (!preset) return;
-    const { firstEnd, secondEnd } = experienceDates(form.admissionDate, preset);
+    if (!currentAdmissionDate) return;
+    const preset = EXPERIENCE_PRESETS.find((p) => p.key === presetKey) || EXPERIENCE_PRESETS[0];
+    const { firstEnd, secondEnd } = experienceDates(currentAdmissionDate, preset);
     setForm((f) => ({ ...f, experienceFirstEnd: firstEnd, experienceSecondEnd: secondEnd || '' }));
+  };
+
+  const handleAdmissionDateChange = (dateVal) => {
+    setForm((f) => {
+      let firstEnd = f.experienceFirstEnd;
+      let secondEnd = f.experienceSecondEnd;
+      if (f.contractType === 'experiencia' && dateVal && !f.experienceFirstEnd) {
+        const preset = EXPERIENCE_PRESETS.find((p) => p.key === experiencePreset) || EXPERIENCE_PRESETS[0];
+        const dates = experienceDates(dateVal, preset);
+        firstEnd = dates.firstEnd;
+        secondEnd = dates.secondEnd || '';
+      }
+      return { ...f, admissionDate: dateVal, experienceFirstEnd: firstEnd, experienceSecondEnd: secondEnd };
+    });
+  };
+
+  const handleContractTypeChange = (typeVal) => {
+    setForm((f) => {
+      let firstEnd = f.experienceFirstEnd;
+      let secondEnd = f.experienceSecondEnd;
+      if (typeVal === 'experiencia' && f.admissionDate && !f.experienceFirstEnd) {
+        const preset = EXPERIENCE_PRESETS.find((p) => p.key === experiencePreset) || EXPERIENCE_PRESETS[0];
+        const dates = experienceDates(f.admissionDate, preset);
+        firstEnd = dates.firstEnd;
+        secondEnd = dates.secondEnd || '';
+      }
+      return { ...f, contractType: typeVal, experienceFirstEnd: firstEnd, experienceSecondEnd: secondEnd };
+    });
   };
 
   const handlePhotoUpload = async (file) => {
@@ -413,8 +440,8 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                   <Field label="Cargo" value={form.jobTitle} onChange={(v) => setForm({ ...form, jobTitle: v })} />
                   <Field label="CBO" value={form.cbo} onChange={(v) => setForm({ ...form, cbo: v })} />
                   <Field label="Departamento" value={form.department} onChange={(v) => setForm({ ...form, department: v })} />
-                  <Field label="Data de admissão *" type="date" value={form.admissionDate} onChange={(v) => setForm({ ...form, admissionDate: v })} required />
-                  <Field label="Tipo de contrato" as="select" value={form.contractType} onChange={(v) => setForm({ ...form, contractType: v })}>
+                  <Field label="Data de admissão *" type="date" value={form.admissionDate} onChange={(v) => handleAdmissionDateChange(v)} required />
+                  <Field label="Tipo de contrato" as="select" value={form.contractType} onChange={(v) => handleContractTypeChange(v)}>
                     {CONTRACT_TYPES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
                   </Field>
                   {form.contractType === 'experiencia' && (

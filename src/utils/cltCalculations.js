@@ -531,11 +531,28 @@ export function computeEmployeeAlerts({
     if (emp.status === 'desligado') continue;
 
     if (emp.contractType === 'experiencia') {
-      if (emp.experienceFirstEnd && emp.experienceFirstEnd >= today && emp.experienceFirstEnd <= in7 && !emp.experienceSecondEnd) {
-        alerts.push({ level: 'critico', kind: 'experiencia_vencendo', employeeId: emp.id, message: `Fim do período de experiência de ${emp.name} em ${emp.experienceFirstEnd}.`, dueDate: emp.experienceFirstEnd });
+      const firstEnd = emp.experienceFirstEnd || (emp.admissionDate ? addDays(emp.admissionDate, 29) : null);
+      if (firstEnd && firstEnd >= today && firstEnd <= in7 && !emp.experienceSecondEnd) {
+        const daysLeft = diffDays(today, firstEnd);
+        alerts.push({
+          level: 'critico',
+          kind: 'experiencia_vencendo',
+          employeeId: emp.id,
+          message: `Fim do 1º período de experiência (30 dias) de ${emp.name} em ${firstEnd} (${daysLeft} dia(s) restante(s)).`,
+          dueDate: firstEnd,
+          actionRequired: 'Decisão do Gestor de RH: renovar/prorrogar contrato de experiência por mais 30 dias ou realizar a rescisão.',
+        });
       }
       if (emp.experienceSecondEnd && emp.experienceSecondEnd >= today && emp.experienceSecondEnd <= in7) {
-        alerts.push({ level: 'critico', kind: 'experiencia_vencendo', employeeId: emp.id, message: `Fim do 2º período de experiência de ${emp.name} em ${emp.experienceSecondEnd}.`, dueDate: emp.experienceSecondEnd });
+        const daysLeft = diffDays(today, emp.experienceSecondEnd);
+        alerts.push({
+          level: 'critico',
+          kind: 'experiencia_vencendo',
+          employeeId: emp.id,
+          message: `Fim do 2º período de experiência de ${emp.name} em ${emp.experienceSecondEnd} (${daysLeft} dia(s) restante(s)).`,
+          dueDate: emp.experienceSecondEnd,
+          actionRequired: 'Decisão do Gestor de RH: efetivar por prazo indeterminado ou realizar a rescisão por término de contrato.',
+        });
       }
     }
 

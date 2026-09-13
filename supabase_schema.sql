@@ -2910,9 +2910,6 @@ BEGIN
   IF trim(COALESCE(p_name, '')) = '' OR v_cpf_clean = '' THEN
     RAISE EXCEPTION 'missing_required_fields';
   END IF;
-  IF NOT COALESCE(p_biometric_consent_accepted, false) OR COALESCE(trim(p_face_descriptor), '') = '' THEN
-    RAISE EXCEPTION 'biometric_required';
-  END IF;
   IF NOT COALESCE(p_lgpd_consent_accepted, false) THEN
     RAISE EXCEPTION 'lgpd_consent_required';
   END IF;
@@ -2956,7 +2953,7 @@ BEGIN
     NULLIF(trim(p_ctps_number), ''), NULLIF(trim(p_ctps_series), ''), NULLIF(trim(p_ctps_uf), ''), NULLIF(trim(p_pis), ''),
     NULLIF(trim(p_voter_title), ''), NULLIF(trim(p_reservist_cert), ''), NULLIF(trim(p_cnh), ''), NULLIF(trim(p_cnh_category), ''),
     NULLIF(trim(p_bank_name), ''), NULLIF(trim(p_bank_agency), ''), NULLIF(trim(p_bank_account), ''), NULLIF(trim(p_bank_account_type), ''), NULLIF(trim(p_pix_key), ''),
-    NULL, 'ativo', p_face_descriptor, now(), NULLIF(trim(p_biometric_consent_version), ''),
+    NULL, 'ativo', NULLIF(trim(p_face_descriptor), ''), CASE WHEN COALESCE(p_biometric_consent_accepted, false) THEN now() ELSE NULL END, NULLIF(trim(p_biometric_consent_version), ''),
     v_final_status, CASE WHEN v_final_status = 'pending_validation' THEN now() ELSE NULL END, now(), NULL
   ) RETURNING id INTO v_new_id;
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { FileText, Printer, Download, Upload } from 'lucide-react';
+import { FileText, Printer, Download, Upload, Bell, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../../supabase';
 import {
   mapProfessionalFromDb,
@@ -29,6 +30,8 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   const [loading, setLoading] = useState(true);
   const [monthKey, setMonthKey] = useState(new Date().toISOString().substring(0, 7));
   const [showNfseModal, setShowNfseModal] = useState(false);
+  const [notifyingId, setNotifyingId] = useState(null);
+  const [notifyingBulk, setNotifyingBulk] = useState(false);
 
   const labels = BRANDING.professionalLabels || { production: 'Apuração de Produção' };
 
@@ -60,6 +63,84 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
     () => calculateProfessionalProduction(presence, professionals, monthKey, filterUnit),
     [presence, professionals, monthKey, filterUnit]
   );
+
+  // Aviso de emissão de NF e a própria NF são registrados em
+  // professional_documents (doc_key `aviso-nf-<mês>` e `nf-<mês>-*`,
+  // respectivamente) — deriva por prestador o estado da competência corrente.
+  const noticeByProfessional = useMemo(() => {
+    const map = new Map();
+    nfDocs.forEach((doc) => {
+      if (doc.doc_key === `aviso-nf-${monthKey}`) {
+        map.set(doc.professional_id, doc.meta);
+      }
+    });
+    return map;
+  }, [nfDocs, monthKey]);
+
+  const hasNfForMonth = useMemo(() => {
+    const set = new Set();
+    nfDocs.forEach((doc) => {
+      if (doc.doc_key.startsWith(`nf-${monthKey}-`) || doc.meta?.competencia === monthKey) {
+        set.add(doc.professional_id);
+      }
+    });
+    return set;
+  }, [nfDocs, monthKey]);
+
+  const notifyProfessionals = async (professionalIds) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('notify-professional-nfse', {
+        body: { competencia: monthKey, professionalIds },
+      });
+      if (error) throw error;
+
+      const results = data?.results || [];
+      const sent = results.filter((r) => r.status === 'enviado').length;
+      const semEmail = results.filter((r) => r.status === 'sem_email').length;
+      const erros = results.filter((r) => r.status === 'erro').length;
+
+      if (sent > 0) toast.success(`Aviso enviado para ${sent} prestador(es).`);
+      if (semEmail > 0) toast.warning(`${semEmail} prestador(es) sem e-mail cadastrado.`);
+      if (erros > 0) toast.error(`Falha ao avisar ${erros} prestador(es).`);
+      if (results.length === 0) toast.error('Nenhum resultado retornado pelo envio de aviso.');
+
+      await fetchData();
+    } catch (err) {
+      console.error('Erro ao emitir aviso de NF:', err);
+      toast.error('Erro ao emitir aviso de emissão de NF.');
+    }
+  };
+
+  const handleNotifyOne = async (professionalId) => {
+    setNotifyingId(professionalId);
+    try {
+      await notifyProfessionals([professionalId]);
+    } finally {
+      setNotifyingId(null);
+    }
+  };
+
+  const handleNotifyPending = async () => {
+    const pendingIds = production
+      .filter((row) => !hasNfForMonth.has(row.professional.id) && !noticeByProfessional.has(row.professional.id))
+      .map((row) => row.professional.id);
+
+    if (pendingIds.length === 0) {
+      toast.info('Nenhum prestador pendente de aviso nesta competência.');
+      return;
+    }
+
+    if (!window.confirm(`Enviar aviso de emissão de NF para ${pendingIds.length} prestador(es) sem NF nem aviso nesta competência?`)) {
+      return;
+    }
+
+    setNotifyingBulk(true);
+    try {
+      await notifyProfessionals(pendingIds);
+    } finally {
+      setNotifyingBulk(false);
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -114,6 +195,14 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
           >
             <Upload size={14} /> Enviar NFSe (PDF)
           </button>
+          <button
+            onClick={handleNotifyPending}
+            disabled={notifyingBulk}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm disabled:opacity-50"
+            title="Avisar todos os prestadores pendentes de emissão de NF nesta competência"
+          >
+            {notifyingBulk ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />} Avisar Pendentes de NF
+          </button>
           <button onClick={handleExportCSV} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700" title="Exportar CSV">
             <Download size={14} />
           </button>
@@ -142,25 +231,49 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
               <th className="p-3 font-semibold">Módulos Entregues</th>
               <th className="p-3 font-semibold">Preço do Módulo</th>
               <th className="p-3 font-semibold text-right">Honorários</th>
+              <th className="p-3 font-semibold text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {production.length === 0 ? (
-              <tr><td colSpan={7} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
+              <tr><td colSpan={8} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
             ) : (
-              production.map((row) => (
-                <tr key={row.professional.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-3 font-semibold text-gray-800">{row.professional.name}</td>
-                  <td className="p-3 text-gray-600">{row.daysPresent}</td>
-                  <td className="p-3 text-gray-600">{row.totalHours.toFixed(1)}h</td>
-                  <td className="p-3 text-gray-600">{row.morningShifts} / {row.afternoonShifts}</td>
-                  <td className="p-3 font-semibold text-gray-700">{row.shiftsPresent}</td>
-                  <td className="p-3 text-gray-600">
-                    {row.shiftValue > 0 ? fmtBRL(row.shiftValue) : <span className="text-amber-600">não informado</span>}
-                  </td>
-                  <td className="p-3 text-right font-bold text-gray-800">{fmtBRL(row.shiftTotal)}</td>
-                </tr>
-              ))
+              production.map((row) => {
+                const notice = noticeByProfessional.get(row.professional.id);
+                const hasNf = hasNfForMonth.has(row.professional.id);
+                const isNotifying = notifyingId === row.professional.id;
+
+                return (
+                  <tr key={row.professional.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-3 font-semibold text-gray-800">{row.professional.name}</td>
+                    <td className="p-3 text-gray-600">{row.daysPresent}</td>
+                    <td className="p-3 text-gray-600">{row.totalHours.toFixed(1)}h</td>
+                    <td className="p-3 text-gray-600">{row.morningShifts} / {row.afternoonShifts}</td>
+                    <td className="p-3 font-semibold text-gray-700">{row.shiftsPresent}</td>
+                    <td className="p-3 text-gray-600">
+                      {row.shiftValue > 0 ? fmtBRL(row.shiftValue) : <span className="text-amber-600">não informado</span>}
+                    </td>
+                    <td className="p-3 text-right font-bold text-gray-800">{fmtBRL(row.shiftTotal)}</td>
+                    <td className="p-3 text-right">
+                      {hasNf ? (
+                        <span className="text-[10px] text-emerald-700 font-semibold">NF recebida</span>
+                      ) : (
+                        <button
+                          onClick={() => handleNotifyOne(row.professional.id)}
+                          disabled={isNotifying}
+                          title={notice ? `Aviso enviado em ${new Date(notice.sentAt).toLocaleDateString('pt-BR')} — clique para reenviar` : 'Emitir aviso de NF ao prestador'}
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+                            notice ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                          }`}
+                        >
+                          {isNotifying ? <Loader2 size={12} className="animate-spin" /> : <Bell size={12} />}
+                          {notice ? 'Reenviar aviso' : 'Emitir aviso de NF'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
           {production.length > 0 && (
@@ -170,6 +283,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
                 <td className="p-3">{production.reduce((acc, r) => acc + r.shiftsPresent, 0)}</td>
                 <td className="p-3"></td>
                 <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.shiftTotal, 0))}</td>
+                <td className="p-3"></td>
               </tr>
             </tfoot>
           )}

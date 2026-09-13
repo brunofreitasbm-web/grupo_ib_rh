@@ -374,7 +374,7 @@ export default function DashboardFuncionariosTab({ filterUnit, restrictedUnitIds
                   <div>
                     <h4 className="text-xs font-bold text-amber-950">Períodos de Experiência</h4>
                     <p className="text-[10px] text-amber-800 leading-normal mt-0.5">
-                      {inExperience.length} colaborador(es) em contrato de experiência — acompanhe os prazos de 45/90 dias.
+                      {inExperience.length} colaborador(es) em experiência — acompanhe os 30 dias para decisão de renovação/rescisão.
                     </p>
                   </div>
                 </div>

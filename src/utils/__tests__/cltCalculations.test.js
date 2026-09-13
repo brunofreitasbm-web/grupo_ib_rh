@@ -4,7 +4,7 @@ import {
   computeWorkedIntervals, nightMinutes, computeDay, computeMonth,
   vacationEntitlementDays, validateVacationFractions, noticeDays,
   experienceDates, interjornadaViolations, movableHolidays, easterDate,
-  dailyPayRate, absenceDeduction, payAfterAbsences,
+  dailyPayRate, absenceDeduction, payAfterAbsences, computeEmployeeAlerts,
 } from '../cltCalculations';
 
 describe('toMinutes / addDays / diffDays', () => {
@@ -164,12 +164,45 @@ describe('noticeDays — aviso prévio proporcional (Lei 12.506/2011)', () => {
   });
 });
 
-describe('experienceDates — presets de contrato de experiência', () => {
+describe('experienceDates — presets de contrato de experiência (Grupo IB)', () => {
   it('30+60 dias: primeiro período termina no dia 30, segundo mais 60 dias depois', () => {
     const { firstEnd, secondEnd } = experienceDates('2026-01-01', { firstDays: 30, secondDays: 60 });
     expect(firstEnd).toBe('2026-01-30');
     expect(secondEnd).toBe(addDays(firstEnd, 60));
     expect(diffDays('2026-01-01', secondEnd)).toBeLessThanOrEqual(90);
+  });
+
+  it('valida que o padrão do Grupo IB para CLT inicia com 30 dias de experiência', () => {
+    const { firstEnd } = experienceDates('2026-03-01', { firstDays: 30, secondDays: 60 });
+    expect(firstEnd).toBe('2026-03-30');
+  });
+
+  it('emite alerta crítico faltando 1 semana (7 dias) para encerrar o 1º período de 30 dias de experiência', () => {
+    const emp = {
+      id: 'e1',
+      name: 'João Silva',
+      contractType: 'experiencia',
+      admissionDate: '2026-03-01',
+      experienceFirstEnd: '2026-03-30',
+      experienceSecondEnd: '',
+      status: 'ativo',
+    };
+    // Faltando 7 dias para 2026-03-30 (today = 2026-03-23)
+    const alerts = computeEmployeeAlerts({
+      employees: [emp],
+      vacationPeriods: [],
+      exams: [],
+      occurrences: [],
+      terminations: [],
+      documentsByEmployee: {},
+      today: '2026-03-23',
+    });
+    const expAlert = alerts.find((a) => a.kind === 'experiencia_vencendo');
+    expect(expAlert).toBeDefined();
+    expect(expAlert.level).toBe('critico');
+    expect(expAlert.message).toContain('Fim do 1º período de experiência (30 dias)');
+    expect(expAlert.message).toContain('7 dia(s) restante(s)');
+    expect(expAlert.actionRequired).toContain('Decisão do Gestor de RH');
   });
 });
 

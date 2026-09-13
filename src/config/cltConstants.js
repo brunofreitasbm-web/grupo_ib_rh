@@ -4,8 +4,8 @@
 // (templates) para serem reaproveitadas por ambos e pelas abas de UI.
 
 export const CONTRACT_TYPES = [
+  { key: 'experiencia', label: 'Contrato de experiência (30 dias)' },
   { key: 'indeterminado', label: 'Prazo indeterminado' },
-  { key: 'experiencia', label: 'Contrato de experiência' },
   { key: 'tempo_determinado', label: 'Prazo determinado' },
   { key: 'intermitente', label: 'Intermitente' },
   { key: 'aprendiz', label: 'Aprendiz' },
@@ -13,8 +13,10 @@ export const CONTRACT_TYPES = [
 
 // Presets de experiência: [dias 1º período, dias 2º período]. Soma nunca
 // pode exceder 90 dias (art. 445, parágrafo único, CLT); só uma prorrogação.
+// No Grupo IB, contratos CLT utilizam sempre 30 dias no 1º período de experiência.
 export const EXPERIENCE_PRESETS = [
-  { key: '30+60', label: '30 + 60 dias', firstDays: 30, secondDays: 60 },
+  { key: '30+60', label: '30 + 60 dias (30 dias 1º período)', firstDays: 30, secondDays: 60 },
+  { key: '30+30', label: '30 + 30 dias (30 dias 1º período)', firstDays: 30, secondDays: 30 },
   { key: '45+45', label: '45 + 45 dias', firstDays: 45, secondDays: 45 },
   { key: '90', label: '90 dias (sem prorrogação)', firstDays: 90, secondDays: 0 },
 ];

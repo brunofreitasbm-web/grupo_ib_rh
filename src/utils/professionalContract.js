@@ -63,6 +63,8 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
   const unitAddress = u.address || u.endereco || branding?.documentLocation || '';
   const unitDisplayName = u.name || u.nome || u.buttonLabel || branding?.displayName || '';
   const unitLogo = u.logoUrl || u.logo_url || branding?.logoPath || '';
+  const unitEmail = u.email || u.contactEmail || u.contact_email || branding?.contactEmail || '';
+  const contractedEmail = p.email || '';
   const customClauses = u.contratoPjCustomText || u.contrato_pj_custom_text || '';
   const defaultClauses = branding?.contractDefaultClauses || '';
 
@@ -153,6 +155,19 @@ export const getProfessionalContractHtml = (professional, unit, branding) => {
     <p style="margin: 10px 0;"><strong>CLÁUSULA 7ª — DA CONFIDENCIALIDADE E PROTEÇÃO DE DADOS.</strong> As partes
     comprometem-se a manter sigilo sobre informações confidenciais a que tiverem acesso em razão deste contrato,
     observando a Lei nº 13.709/2018 (LGPD) no tratamento de dados pessoais de pacientes/clientes e de terceiros.</p>
+
+    <p style="margin: 10px 0;"><strong>CLÁUSULA 7ª-A — DA ASSINATURA ELETRÔNICA E DO CANAL OFICIAL DE COMUNICAÇÃO.</strong>
+    7-A.1. O presente contrato e quaisquer aditivos, notificações, avisos ou demais documentos a ele relacionados
+    deverão ser assinados eletronicamente mediante Certificado Digital do tipo <strong>A1</strong>, emitido no
+    âmbito da Infraestrutura de Chaves Públicas Brasileira (ICP-Brasil), em nome da CONTRATADA (e-CNPJ) e/ou de
+    seu(sua) representante legal (e-CPF), reconhecendo as partes, desde já, a validade jurídica e a presunção de
+    autenticidade e integridade de tal assinatura, nos termos do art. 10, §1º, da Medida Provisória nº 2.200-2/2001.
+    7-A.2. Toda comunicação, notificação, tratativa e troca de documentos entre as partes no âmbito deste contrato
+    dar-se-á, exclusivamente, por meio do canal oficial de e-mail da CONTRATANTE (<strong>${esc(unitEmail) || 'a informar'}</strong>)
+    e do e-mail da CONTRATADA cadastrado no sistema da CONTRATANTE${contractedEmail ? ` (<strong>${esc(contractedEmail)}</strong>)` : ''},
+    competindo a cada parte manter seu respectivo endereço eletrônico atualizado e comunicar formalmente à outra
+    qualquer alteração, sob pena de se reputarem válidas e eficazes as comunicações enviadas ao último endereço
+    informado.</p>
 
     <p style="margin: 10px 0;"><strong>CLÁUSULA 8ª — DO FORO.</strong> Fica eleito o foro da comarca de
     ${esc(branding?.documentLocation) || esc(unitAddress)} para dirimir quaisquer controvérsias oriundas deste contrato.</p>
