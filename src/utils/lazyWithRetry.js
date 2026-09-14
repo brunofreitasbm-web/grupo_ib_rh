@@ -2,7 +2,7 @@ import { lazy } from 'react';
 
 /**
  * Utilitário para envolver `React.lazy` com um mecanismo de tentativa de recarregamento
- * da página caso o módulo dinâmico falhe ao ser carregado (ex.: após um novo deploy no Netlify
+ * da página caso o módulo dinâmico falhe ao ser carregado (ex.: após um novo deploy na Vercel
  * onde os hashes dos arquivos estáticos mudaram).
  *
  * @param {Function} componentImport - Função que retorna uma Promise de importação ex: () => import('./MyComponent')
