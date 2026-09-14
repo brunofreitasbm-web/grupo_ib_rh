@@ -11,6 +11,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY") ?? "";
 const PORTAL_URL = Deno.env.get("PORTAL_URL") ?? "";
+// institutofacaamigos.com.br não tem caixa de entrada própria (sem MX) —
+// sem Reply-To, uma resposta do prestador ao aviso de NF volta com erro de
+// entrega. institutofacaamigos@gmail.com é a caixa oficial monitorada
+// (definida pelo dono em 2026-09-14); BREVO_REPLY_TO sobrescreve se preciso.
+const BREVO_REPLY_TO = Deno.env.get("BREVO_REPLY_TO") ?? "institutofacaamigos@gmail.com";
 
 // Remetente: aceita BREVO_FROM já configurado no projeto (formato
 // "Nome <email>" ou apenas "email"), com fallback para variáveis
@@ -86,6 +91,7 @@ async function sendBrevoEmail(to: { email: string; name?: string }[], subject: s
       to,
       subject,
       htmlContent,
+      ...(BREVO_REPLY_TO ? { replyTo: { email: BREVO_REPLY_TO } } : {}),
     }),
   });
 
