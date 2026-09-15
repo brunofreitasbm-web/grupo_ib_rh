@@ -1,6 +1,6 @@
 // Auxiliar de depuração para erros em produção (tela branca).
 // Extraído do <script> inline do index.html para permitir uma Content-Security-Policy
-// sem 'unsafe-inline' em script-src (ver netlify.toml / vercel.json). Comportamento
+// sem 'unsafe-inline' em script-src (ver vercel.json). Comportamento
 // idêntico ao anterior, sem nenhuma mudança funcional.
 window.addEventListener('error', function (event) {
   const errorContainer = document.getElementById('debug-error-container') || document.createElement('div');
