@@ -6,6 +6,7 @@ import { DISC_PROFILE_INFO, discProfileCode } from '../../utils/disc';
 import { ROLE_PROFILES, ROLE_BY_ID, SIMULATION_UNITS, UNIT_ACCENT_CLASSES } from '../../config/roleProfiles';
 import { computeRoleFit, bestRoleFor, FIT_LEVELS } from '../../utils/roleFit';
 import { teamDiscComposition, teamSynergyNote } from '../../utils/teamFit';
+import DiscResultModal from './DiscResultModal';
 
 // Quadro de simulação: um "basket" por unidade, com um quadrante por função.
 // O gestor arrasta candidatos (com DISC concluído) da coluna esquerda para um
@@ -19,8 +20,18 @@ import { teamDiscComposition, teamSynergyNote } from '../../utils/teamFit';
 
 const DRAG_MIME = 'text/plain';
 
-// Equipe já contratada (estagiários/PJ/CLT) com função marcada, agrupada por
-// quadrante unit_id×role_id, com o resultado DISC de quem já respondeu.
+// A função interna de quem já foi contratado é o próprio módulo em que a
+// pessoa está cadastrada — não há marcação manual: estagiário → Estagiário,
+// profissional PJ → Profissional PJ, funcionário CLT → Operador/Recepção.
+const SUBJECT_TYPE_ROLE_ID = {
+  intern: 'estagiario',
+  professional: 'profissional_pj',
+  employee: 'operador_recepcao',
+};
+
+// Equipe já contratada (estagiários/PJ/CLT), agrupada por quadrante
+// unit_id×role_id (função implícita pelo módulo), com o resultado DISC de
+// quem já respondeu.
 function useHiredTeamByQuadrant() {
   const [byQuadrant, setByQuadrant] = useState({});
   const [loading, setLoading] = useState(true);
@@ -31,9 +42,9 @@ function useHiredTeamByQuadrant() {
       setLoading(true);
       try {
         const [internsRes, professionalsRes, employeesRes, assessmentsRes] = await Promise.all([
-          supabase.from('interns').select('id, name, unit_id, role_id').not('role_id', 'is', null).neq('active', false),
-          supabase.from('professionals').select('id, name, unit_id, role_id').not('role_id', 'is', null).neq('active', false),
-          supabase.from('employees').select('id, name, unit_id, role_id').not('role_id', 'is', null).eq('status', 'ativo'),
+          supabase.from('interns').select('id, name, unit_id').neq('active', false),
+          supabase.from('professionals').select('id, name, unit_id').neq('active', false),
+          supabase.from('employees').select('id, name, unit_id').eq('status', 'ativo'),
           supabase.from('staff_disc_assessments').select('*'),
         ]);
         if (internsRes.error) throw internsRes.error;
@@ -52,7 +63,8 @@ function useHiredTeamByQuadrant() {
 
         const map = {};
         for (const r of roster) {
-          const key = `${r.unit_id}::${r.role_id}`;
+          const roleId = SUBJECT_TYPE_ROLE_ID[r.subjectType];
+          const key = `${r.unit_id}::${roleId}`;
           const assessment = assessmentByKey[`${r.subjectType}:${r.id}`] || null;
           (map[key] ||= []).push({ id: r.id, name: r.name, subjectType: r.subjectType, assessment });
         }
@@ -93,6 +105,7 @@ export default function UnitBasketBoard({
 }) {
   const units = useMemo(resolveUnits, []);
   const [search, setSearch] = useState('');
+  const [teamDetail, setTeamDetail] = useState(null); // membro da equipe em detalhe (DiscResultModal)
   const [draggingId, setDraggingId] = useState(null);
   const [hoverKey, setHoverKey] = useState(null);
   const { byQuadrant: teamByQuadrant } = useHiredTeamByQuadrant();
@@ -229,7 +242,7 @@ export default function UnitBasketBoard({
                         <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Equipe atual ({team.length})</p>
                         <div className="flex flex-wrap gap-1">
                           {teamWithDisc.map((t) => (
-                            <TeamSquare key={t.id} member={t} />
+                            <TeamSquare key={t.id} member={t} onOpen={() => setTeamDetail(t)} />
                           ))}
                           {team.length > teamWithDisc.length && (
                             <span
@@ -271,6 +284,14 @@ export default function UnitBasketBoard({
           </div>
         ))}
       </div>
+
+      {teamDetail && (
+        <DiscResultModal
+          candidate={{ full_name: teamDetail.name }}
+          assessment={teamDetail.assessment}
+          onClose={() => setTeamDetail(null)}
+        />
+      )}
     </div>
   );
 }
@@ -339,17 +360,19 @@ function CandidateCard({ candidate, assignment, units, busy, dragging, onDragSta
 // Quadradinho fixo de um colaborador já contratado: letra do perfil primário
 // sobre a cor do fator DISC (ver DISC_PROFILE_INFO). Não é arrastável — é só
 // referência visual da equipe atual do quadrante.
-function TeamSquare({ member }) {
+function TeamSquare({ member, onOpen }) {
   const { primary_profile: primary, secondary_profile: secondary } = member.assessment;
   const info = DISC_PROFILE_INFO[primary];
   return (
-    <span
-      className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white shadow-sm hover:ring-2 hover:ring-offset-1 hover:ring-slate-300"
       style={{ backgroundColor: info.color }}
-      title={`${member.name} — ${info.label}${secondary ? ' / ' + DISC_PROFILE_INFO[secondary].label : ''}`}
+      title={`${member.name} — ${info.label}${secondary ? ' / ' + DISC_PROFILE_INFO[secondary].label : ''} — clique para ver o resultado completo`}
     >
       {primary}
-    </span>
+    </button>
   );
 }
 

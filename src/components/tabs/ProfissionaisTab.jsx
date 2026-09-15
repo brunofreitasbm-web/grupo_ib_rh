@@ -13,11 +13,9 @@ import { BRANDING } from '../../config/branding';
 import { ProfessionSelect } from '../CourseFields';
 import { getProfessionCouncil, normalizeProfessionValue } from '../../config/professions';
 import { toast } from 'sonner';
-import { ROLE_PROFILES, roleLabel } from '../../config/roleProfiles';
 import { useStaffDiscOverlay } from '../../hooks/useStaffDisc';
 import { useCandidateDiscByEmail } from '../../hooks/useCandidateDiscByEmail';
 import StaffDiscCell from '../talent/StaffDiscCell';
-import RoleQuickPicker from '../talent/RoleQuickPicker';
 
 // Cadastro de Profissionais PJ (prestadores de serviço). Deliberadamente sem
 // biometria, sem username/conta de login individual e sem campos financeiros
@@ -31,7 +29,7 @@ const emptyForm = {
   bankName: '', bankAgency: '', bankAccount: '', bankAccountType: 'Conta Corrente', pixKey: '',
   repName: '', repCpf: '', repRg: '', repBirthdate: '', repEmail: '', repPhone: '', repRole: '',
   serviceDescription: '', remunerationModel: '', remunerationValue: '', shiftValue: '', paymentDay: '', noticeDays: 30,
-  contractStart: '', contractEnd: '', contractNotes: '', active: true, roleId: '',
+  contractStart: '', contractEnd: '', contractNotes: '', active: true,
 };
 
 export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], units = [] }) {
@@ -165,22 +163,6 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
   const { tokensById: discTokensById, assessmentsById: discAssessmentsById, reload: reloadDisc } = useStaffDiscOverlay('professional', professionalIds);
   const candidateDiscByEmail = useCandidateDiscByEmail(filteredProfessionals.map((p) => p.email));
 
-  const [roleBusyId, setRoleBusyId] = useState(null);
-  const handleSetRole = async (p, roleId) => {
-    setRoleBusyId(p.id);
-    try {
-      const { error } = await supabase.from('professionals').update({ role_id: roleId }).eq('id', p.id);
-      if (error) throw error;
-      setProfessionals((prev) => prev.map((row) => (row.id === p.id ? { ...row, roleId: roleId || '' } : row)));
-      toast.success(roleId ? `Função marcada: ${roleLabel(roleId)}.` : 'Marcação de função removida.');
-    } catch (err) {
-      console.error('Erro ao marcar Função Interna do prestador:', err);
-      toast.error(getFriendlyDbErrorMessage(err));
-    } finally {
-      setRoleBusyId(null);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -223,10 +205,7 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
               filteredProfessionals.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-3 font-semibold text-gray-800">{p.name}</td>
-                  <td className="p-3 text-gray-600">
-                    {p.profession || '—'}{p.councilType ? ` (${p.councilType} ${p.councilNumber || ''})` : ''}
-                    {p.roleId && <span className="block text-[9px] text-indigo-600 font-semibold mt-0.5">{roleLabel(p.roleId)}</span>}
-                  </td>
+                  <td className="p-3 text-gray-600">{p.profession || '—'}{p.councilType ? ` (${p.councilType} ${p.councilNumber || ''})` : ''}</td>
                   <td className="p-3 text-gray-600">{unitName(p.unitId)}</td>
                   <td className="p-3 text-gray-600">{p.cnpj || '—'}</td>
                   <td className="p-3 text-gray-600">{p.contractStart || '—'} a {p.contractEnd || '—'}</td>
@@ -259,11 +238,6 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                         assessment={discAssessmentsById[p.id]}
                         candidateMatch={candidateDiscByEmail[(p.email || '').toLowerCase()]}
                         onSent={reloadDisc}
-                      />
-                      <RoleQuickPicker
-                        roleId={p.roleId}
-                        busy={roleBusyId === p.id}
-                        onPick={(roleId) => handleSetRole(p, roleId)}
                       />
                       <button
                         onClick={() => setPinModalId(p.id)}
@@ -354,12 +328,6 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                   </div>
                   <Field label="Validade do registro" type="date" value={form.councilValidity} onChange={(v) => setForm({ ...form, councilValidity: v })} />
                   <Field label="Especialidades" value={form.specialties} onChange={(v) => setForm({ ...form, specialties: v })} />
-                  <Field label="Função Interna (Simulação por Unidade)" as="select" value={form.roleId} onChange={(v) => setForm({ ...form, roleId: v })}>
-                    <option value="">— não marcado —</option>
-                    {ROLE_PROFILES.map((r) => (
-                      <option key={r.id} value={r.id}>{r.label}</option>
-                    ))}
-                  </Field>
                 </div>
               </div>
 

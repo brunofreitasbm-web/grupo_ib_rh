@@ -12,11 +12,9 @@ import { BRANDING } from '../../config/branding';
 import { CONTRACT_TYPES, SCHEDULE_PRESETS, EMPLOYEE_STATUS, EXPERIENCE_PRESETS } from '../../config/cltConstants';
 import { experienceDates } from '../../utils/cltCalculations';
 import { toast } from 'sonner';
-import { ROLE_PROFILES, roleLabel } from '../../config/roleProfiles';
 import { useStaffDiscOverlay } from '../../hooks/useStaffDisc';
 import { useCandidateDiscByEmail } from '../../hooks/useCandidateDiscByEmail';
 import StaffDiscCell from '../talent/StaffDiscCell';
-import RoleQuickPicker from '../talent/RoleQuickPicker';
 
 // Cadastro de Funcionários CLT. Terceiro tipo de vínculo do hub de RH, ao
 // lado de Estagiários (EstagiariosTab) e Profissionais PJ (ProfissionaisTab).
@@ -35,7 +33,7 @@ const emptyForm = {
   workRegime: 'presencial', nightWork: false, hoursBank: false, hoursBankStartedAt: '',
   vtOpted: false, vtDailyCost: '', vrOpted: false, healthPlan: false, unionName: '', cbaReference: '',
   photo: '', faceDescriptor: '', biometricConsentAt: null, biometricConsentVersion: '',
-  status: 'ativo', notes: '', roleId: '',
+  status: 'ativo', notes: '',
 };
 
 export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], units = [] }) {
@@ -82,22 +80,6 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
   const employeeIds = filteredEmployees.map((e) => e.id);
   const { tokensById: discTokensById, assessmentsById: discAssessmentsById, reload: reloadDisc } = useStaffDiscOverlay('employee', employeeIds);
   const candidateDiscByEmail = useCandidateDiscByEmail(filteredEmployees.map((e) => e.email));
-
-  const [roleBusyId, setRoleBusyId] = useState(null);
-  const handleSetEmployeeRole = async (emp, roleId) => {
-    setRoleBusyId(emp.id);
-    try {
-      const { error } = await supabase.from('employees').update({ role_id: roleId }).eq('id', emp.id);
-      if (error) throw error;
-      setEmployees((prev) => prev.map((row) => (row.id === emp.id ? { ...row, roleId: roleId || '' } : row)));
-      toast.success(roleId ? `Função marcada: ${roleLabel(roleId)}.` : 'Marcação de função removida.');
-    } catch (err) {
-      console.error('Erro ao marcar Função Interna do funcionário:', err);
-      toast.error(getFriendlyDbErrorMessage(err));
-    } finally {
-      setRoleBusyId(null);
-    }
-  };
 
   const fetchDependents = async (employeeId) => {
     if (!employeeId) { setDependents([]); return; }
@@ -344,10 +326,7 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                         <span className="ml-1 text-[9px] text-amber-600 font-normal">(sem consentimento biométrico)</span>
                       )}
                     </td>
-                    <td className="p-3 text-gray-600">
-                      {emp.jobTitle || '—'}{emp.department ? ` · ${emp.department}` : ''}
-                      {emp.roleId && <span className="block text-[9px] text-indigo-600 font-semibold mt-0.5">{roleLabel(emp.roleId)}</span>}
-                    </td>
+                    <td className="p-3 text-gray-600">{emp.jobTitle || '—'}{emp.department ? ` · ${emp.department}` : ''}</td>
                     <td className="p-3 text-gray-600">{unitName(emp.unitId)}</td>
                     <td className="p-3 text-gray-600">{emp.admissionDate || '—'}</td>
                     <td className="p-3 text-gray-600">{CONTRACT_TYPES.find((c) => c.key === emp.contractType)?.label || emp.contractType}</td>
@@ -478,12 +457,6 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                   <Field label="Cargo" value={form.jobTitle} onChange={(v) => setForm({ ...form, jobTitle: v })} />
                   <Field label="CBO" value={form.cbo} onChange={(v) => setForm({ ...form, cbo: v })} />
                   <Field label="Departamento" value={form.department} onChange={(v) => setForm({ ...form, department: v })} />
-                  <Field label="Função Interna (Simulação por Unidade)" as="select" value={form.roleId} onChange={(v) => setForm({ ...form, roleId: v })}>
-                    <option value="">— não marcado —</option>
-                    {ROLE_PROFILES.map((r) => (
-                      <option key={r.id} value={r.id}>{r.label}</option>
-                    ))}
-                  </Field>
                   <Field label="Data de admissão *" type="date" value={form.admissionDate} onChange={(v) => handleAdmissionDateChange(v)} required />
                   <Field label="Tipo de contrato" as="select" value={form.contractType} onChange={(v) => handleContractTypeChange(v)}>
                     {CONTRACT_TYPES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}

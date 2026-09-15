@@ -3,6 +3,7 @@ import { Send, Loader2, Sparkles, History } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { toast } from 'sonner';
 import { DISC_PROFILE_INFO, discProfileCode } from '../../utils/disc';
+import DiscResultModal from './DiscResultModal';
 
 // Célula reutilizável para as abas de Estagiários / Profissionais PJ /
 // Funcionários CLT: mostra o resultado do DISC (se já respondido), um botão
@@ -15,6 +16,7 @@ import { DISC_PROFILE_INFO, discProfileCode } from '../../utils/disc';
 // botões de ícone inline nas linhas/cards.
 export default function StaffDiscCell({ subjectType, subjectId, name, email, phone, token, assessment, candidateMatch, onSent }) {
   const [busy, setBusy] = useState(false);
+  const [showResult, setShowResult] = useState(false);
 
   const send = async () => {
     if (!email) return;
@@ -64,12 +66,23 @@ export default function StaffDiscCell({ subjectType, subjectId, name, email, pho
   if (assessment) {
     const info = DISC_PROFILE_INFO[assessment.primary_profile];
     return (
-      <span
-        className={`inline-flex px-1.5 py-0.5 text-[10px] font-bold rounded border ${info.badge}`}
-        title={`${info.label}${assessment.secondary_profile ? ' / ' + DISC_PROFILE_INFO[assessment.secondary_profile].label : ''} — concluído`}
-      >
-        {discProfileCode(assessment.primary_profile, assessment.secondary_profile)}
-      </span>
+      <>
+        <button
+          type="button"
+          onClick={() => setShowResult(true)}
+          className={`inline-flex px-1.5 py-0.5 text-[10px] font-bold rounded border ${info.badge} hover:opacity-80`}
+          title={`${info.label}${assessment.secondary_profile ? ' / ' + DISC_PROFILE_INFO[assessment.secondary_profile].label : ''} — clique para ver o resultado completo`}
+        >
+          {discProfileCode(assessment.primary_profile, assessment.secondary_profile)}
+        </button>
+        {showResult && (
+          <DiscResultModal
+            candidate={{ full_name: name }}
+            assessment={assessment}
+            onClose={() => setShowResult(false)}
+          />
+        )}
+      </>
     );
   }
 
