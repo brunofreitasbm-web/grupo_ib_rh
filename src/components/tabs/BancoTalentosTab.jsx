@@ -1,12 +1,23 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles } from 'lucide-react';
+import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { toast } from 'sonner';
 import { STATUS_OPTIONS, STATUS_BADGE, OPPORTUNITY_LABEL, statusLabel } from '../../constants/talentBank';
 import { DISC_PROFILE_INFO } from '../../utils/disc';
+import { computeRoleFit, bestRoleFor } from '../../utils/roleFit';
+import { ROLE_BY_ID, SIMULATION_UNITS } from '../../config/roleProfiles';
 import CandidateActionsMenu from '../talent/CandidateActionsMenu';
 import CandidateNotesModal from '../talent/CandidateNotesModal';
 import DiscResultModal from '../talent/DiscResultModal';
+import UnitBasketBoard from '../talent/UnitBasketBoard';
+import RoleFitModal from '../talent/RoleFitModal';
+import RoleProfilesPanel from '../talent/RoleProfilesPanel';
+
+const SUB_TABS = [
+  { id: 'candidatos', label: 'Candidatos', icon: Users },
+  { id: 'simulacao', label: 'Simulação por Unidade', icon: LayoutGrid },
+  { id: 'perfis', label: 'Perfis das Funções', icon: ListChecks },
+];
 
 // Candidatos vêm somente-leitura do projeto Faça Amigos (ver fetch-talent-bank
 // edge function). Status, notas e resultado DISC são uma camada local
@@ -47,36 +58,46 @@ export default function BancoTalentosTab() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('NOVO');
+  const [activeSubTab, setActiveSubTab] = useState('candidatos');
 
   // Overlay local, indexado por candidate_id.
   const [metaById, setMetaById] = useState({});
   const [tokensById, setTokensById] = useState({});
   const [assessmentsById, setAssessmentsById] = useState({});
+  // Simulação por unidade (talent_basket_assignments).
+  const [basketById, setBasketById] = useState({});
 
   const [busyId, setBusyId] = useState(null);
   const [notesTarget, setNotesTarget] = useState(null);
   const [resultTarget, setResultTarget] = useState(null);
+  const [fitTarget, setFitTarget] = useState(null); // { candidate, role, unit }
 
   const loadOverlay = useCallback(async (ids) => {
     if (ids.length === 0) {
       setMetaById({});
       setTokensById({});
       setAssessmentsById({});
+      setBasketById({});
       return;
     }
     try {
-      const [metaRes, tokenRes, assessmentRes] = await Promise.all([
+      const [metaRes, tokenRes, assessmentRes, basketRes] = await Promise.all([
         supabase.from('talent_candidates_meta').select('*').in('candidate_id', ids),
         supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at').in('candidate_id', ids),
         supabase.from('talent_disc_assessments').select('*').in('candidate_id', ids),
+        supabase.from('talent_basket_assignments').select('*').in('candidate_id', ids),
       ]);
       if (metaRes.error) throw metaRes.error;
       if (tokenRes.error) throw tokenRes.error;
       if (assessmentRes.error) throw assessmentRes.error;
+      // A tabela da simulação pode ainda não existir (migração pendente):
+      // não derruba o resto do overlay.
+      if (basketRes.error) console.error('Erro ao carregar simulação por unidade:', basketRes.error);
 
       setMetaById(Object.fromEntries((metaRes.data || []).map((m) => [m.candidate_id, m])));
       setTokensById(Object.fromEntries((tokenRes.data || []).map((t) => [t.candidate_id, t])));
       setAssessmentsById(Object.fromEntries((assessmentRes.data || []).map((a) => [a.candidate_id, a])));
+      setBasketById(Object.fromEntries((basketRes.data || []).map((b) => [b.candidate_id, b])));
     } catch (err) {
       // A camada local é um "plus" sobre a lista remota — se falhar, a tabela
       // continua funcional, só sem status próprio/notas/perfil.
@@ -156,9 +177,13 @@ export default function BancoTalentosTab() {
         notes: meta?.notes || '',
         discToken: token || null,
         discAssessment: assessment || null,
+        bestFit: assessment ? bestRoleFor(assessment) : null,
       };
     });
   }, [candidates, metaById, tokensById, assessmentsById]);
+
+  // Só quem concluiu o Levantamento de Perfil entra na simulação.
+  const withProfile = useMemo(() => enriched.filter((c) => c.discAssessment), [enriched]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -227,6 +252,61 @@ export default function BancoTalentosTab() {
     }
   };
 
+  const assignToBasket = async (candidate, unitId, roleId) => {
+    const role = ROLE_BY_ID[roleId];
+    const fit = computeRoleFit(candidate.discAssessment, role);
+    setBusyId(candidate.id);
+    try {
+      // Garante a linha-mãe do overlay (FK) sem sobrescrever status/notas.
+      const { error: metaErr } = await supabase.from('talent_candidates_meta').upsert(
+        {
+          candidate_id: candidate.id,
+          snapshot: { full_name: candidate.full_name, email: candidate.email, phone: candidate.phone },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'candidate_id', ignoreDuplicates: true }
+      );
+      if (metaErr) throw metaErr;
+
+      const row = {
+        candidate_id: candidate.id,
+        unit_id: unitId,
+        role_id: roleId,
+        fit_score: fit?.score ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error: err } = await supabase.from('talent_basket_assignments').upsert(row, { onConflict: 'candidate_id' });
+      if (err) throw err;
+      setBasketById((prev) => ({ ...prev, [candidate.id]: row }));
+      const unitLabel = SIMULATION_UNITS.find((u) => u.id === unitId)?.shortLabel || unitId;
+      toast.success(`${candidate.full_name} → ${unitLabel} · ${role?.label || roleId} (compatibilidade ${fit?.score ?? '—'}).`);
+    } catch (err) {
+      console.error('Erro ao alocar candidato na simulação:', err);
+      toast.error('Não foi possível salvar a alocação. A migração talent_basket_assignments foi aplicada?');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const removeFromBasket = async (candidate) => {
+    setBusyId(candidate.id);
+    try {
+      const { error: err } = await supabase.from('talent_basket_assignments').delete().eq('candidate_id', candidate.id);
+      if (err) throw err;
+      setBasketById((prev) => {
+        const next = { ...prev };
+        delete next[candidate.id];
+        return next;
+      });
+      toast.success(`${candidate.full_name} removido(a) da simulação.`);
+    } catch (err) {
+      console.error('Erro ao remover candidato da simulação:', err);
+      toast.error('Não foi possível remover a alocação.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 border-b border-slate-100 pb-3">
@@ -255,6 +335,55 @@ export default function BancoTalentosTab() {
         </div>
       )}
 
+      {/* Subpáginas */}
+      <div className="flex flex-wrap gap-1.5">
+        {SUB_TABS.map((t) => {
+          const Icon = t.icon;
+          const active = activeSubTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveSubTab(t.id)}
+              className={`px-3 py-2 text-sm font-medium rounded-xl border flex items-center gap-2 transition-colors ${
+                active
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} />
+              {t.label}
+              {t.id === 'simulacao' && withProfile.length > 0 && (
+                <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  {withProfile.length}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeSubTab === 'perfis' && <RoleProfilesPanel />}
+
+      {activeSubTab === 'simulacao' && (
+        loading ? (
+          <div className="p-10 flex flex-col items-center justify-center text-slate-400 gap-2">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            <p className="text-sm">Carregando candidatos...</p>
+          </div>
+        ) : (
+          <UnitBasketBoard
+            candidates={withProfile}
+            assignmentsById={basketById}
+            busyId={busyId}
+            onAssign={assignToBasket}
+            onUnassign={removeFromBasket}
+            onOpenFit={(candidate, role, unit) => setFitTarget({ candidate, role, unit })}
+          />
+        )
+      )}
+
+      <div style={{ display: activeSubTab === 'candidatos' ? 'block' : 'none' }} className="space-y-6">
       {/* Filtros */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -361,15 +490,22 @@ export default function BancoTalentosTab() {
                       </td>
                       <td className="p-3">
                         {profileInfo ? (
-                          <button
-                            type="button"
-                            onClick={() => setResultTarget(c)}
-                            className={`px-2 py-1 text-xs font-bold rounded-md border ${profileInfo.badge}`}
-                            title="Ver resultado do Levantamento de Perfil"
-                          >
-                            {c.discAssessment.primary_profile}
-                            {c.discAssessment.secondary_profile ? `/${c.discAssessment.secondary_profile}` : ''}
-                          </button>
+                          <div className="flex flex-col items-start gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setResultTarget(c)}
+                              className={`px-2 py-1 text-xs font-bold rounded-md border ${profileInfo.badge}`}
+                              title="Ver resultado do Levantamento de Perfil"
+                            >
+                              {c.discAssessment.primary_profile}
+                              {c.discAssessment.secondary_profile ? `/${c.discAssessment.secondary_profile}` : ''}
+                            </button>
+                            {c.bestFit && (
+                              <span className="text-[10px] text-slate-500 whitespace-nowrap" title="Função com maior compatibilidade (ver Simulação por Unidade)">
+                                Sugestão: <span className="font-semibold">{c.bestFit.role.short}</span> {c.bestFit.fit.score}
+                              </span>
+                            )}
+                          </div>
                         ) : pendingToken ? (
                           <span className={`text-[11px] flex items-center gap-1 ${isLate ? 'text-red-500 font-semibold' : 'text-slate-400'}`}>
                             <Sparkles className="w-3 h-3" />
@@ -413,6 +549,17 @@ export default function BancoTalentosTab() {
           </div>
         )}
       </div>
+      </div>
+
+      {fitTarget && fitTarget.candidate.discAssessment && (
+        <RoleFitModal
+          candidate={fitTarget.candidate}
+          assessment={fitTarget.candidate.discAssessment}
+          role={fitTarget.role}
+          unitLabel={fitTarget.unit?.label}
+          onClose={() => setFitTarget(null)}
+        />
+      )}
 
       {notesTarget && (
         <CandidateNotesModal
