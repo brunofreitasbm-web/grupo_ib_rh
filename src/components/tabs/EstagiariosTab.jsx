@@ -9,6 +9,11 @@ import { normalizeCourseValue, getInternshipTypeLabel } from '../../config/acade
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
 import Skeleton from '../Skeleton';
 import { toast } from 'sonner';
+import { ROLE_PROFILES, roleLabel } from '../../config/roleProfiles';
+import { useStaffDiscOverlay } from '../../hooks/useStaffDisc';
+import { useCandidateDiscByEmail } from '../../hooks/useCandidateDiscByEmail';
+import StaffDiscCell from '../talent/StaffDiscCell';
+import RoleQuickPicker from '../talent/RoleQuickPicker';
 
 export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -213,7 +218,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
     photo: '', cpf: '', email: '', rg: '', phone: '', address: '',
     bankName: '', bankAgency: '', bankAccount: '', pixKey: '',
     emergencyName: '', emergencyRelationship: 'Pais', emergencyPhone: '',
-    allowance: 0, supervisorName: '', birthdate: '', faceDescriptor: '',
+    allowance: 0, supervisorName: '', birthdate: '', faceDescriptor: '', roleId: '',
   });
 
   const fetchData = useCallback(async () => {
@@ -275,7 +280,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       photo: '', cpf: '', email: '', rg: '', phone: '', address: '',
       bankName: '', bankAgency: '', bankAccount: '', pixKey: '',
       emergencyName: '', emergencyRelationship: 'Pais', emergencyPhone: '',
-      allowance: 0, supervisorName: '', birthdate: '', faceDescriptor: '',
+      allowance: 0, supervisorName: '', birthdate: '', faceDescriptor: '', roleId: '',
     });
     setShowManage(false);
   };
@@ -310,6 +315,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       supervisorName: intern.supervisorName || '',
       birthdate: intern.birthdate || '',
       faceDescriptor: intern.faceDescriptor || '',
+      roleId: intern.roleId || '',
     });
     setShowManage(true);
   };
@@ -526,7 +532,8 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
               face_descriptor: payload.faceDescriptor || null,
-              internship_type: payload.internshipType || null
+              internship_type: payload.internshipType || null,
+              role_id: payload.roleId || null
             }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
@@ -535,12 +542,13 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
           }
         } else {
           const newId = createResult.data;
-          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor || payload.internshipType)) {
+          if (newId && (payload.supervisorName || payload.birthdate || payload.faceDescriptor || payload.internshipType || payload.roleId)) {
             const { error: updateError } = await supabase.from('interns').update({
               supervisor_name: payload.supervisorName,
               birthdate: payload.birthdate || null,
               face_descriptor: payload.faceDescriptor || null,
-              internship_type: payload.internshipType || null
+              internship_type: payload.internshipType || null,
+              role_id: payload.roleId || null
             }).eq('id', newId);
             if (updateError) {
               console.error('Erro ao gravar dados complementares do estagiário:', updateError);
@@ -663,6 +671,26 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
     [interns, filterUnit]
   );
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
+
+  const internIds = useMemo(() => filteredInterns.map((i) => i.id), [filteredInterns]);
+  const { tokensById: discTokensById, assessmentsById: discAssessmentsById, reload: reloadDisc } = useStaffDiscOverlay('intern', internIds);
+  const candidateDiscByEmail = useCandidateDiscByEmail(filteredInterns.map((i) => i.email));
+
+  const [roleBusyId, setRoleBusyId] = useState(null);
+  const handleSetInternRole = async (intern, roleId) => {
+    setRoleBusyId(intern.id);
+    try {
+      const { error } = await supabase.from('interns').update({ role_id: roleId }).eq('id', intern.id);
+      if (error) throw error;
+      setInterns((prev) => prev.map((i) => (i.id === intern.id ? { ...i, roleId: roleId || '' } : i)));
+      toast.success(roleId ? `Função marcada: ${roleLabel(roleId)}.` : 'Marcação de função removida.');
+    } catch (err) {
+      console.error('Erro ao marcar Função Interna do estagiário:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setRoleBusyId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -814,6 +842,20 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                     ))}
                   </select>
                 )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-gray-700">Função Interna (Simulação por Unidade)</label>
+                <select
+                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                  value={form.roleId || ''}
+                  onChange={e => setForm(f => ({ ...f, roleId: e.target.value || '' }))}
+                >
+                  <option value="">— não marcado —</option>
+                  {ROLE_PROFILES.map(r => (
+                    <option key={r.id} value={r.id}>{r.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1">
@@ -1019,6 +1061,9 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                     )}
                     <p className="text-[9px] text-indigo-600 font-semibold">{unitName(intern.unitId)}</p>
                     <p className="text-[9px] text-slate-500 font-medium">Turno: {intern.shift} ({intern.dailyHours}h/dia)</p>
+                    {intern.roleId && (
+                      <p className="text-[9px] text-slate-400">Função: {roleLabel(intern.roleId)}</p>
+                    )}
                   </div>
                 </div>
 
@@ -1029,6 +1074,22 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                   </div>
 
                   <div className="flex items-center gap-1">
+                    <StaffDiscCell
+                      subjectType="intern"
+                      subjectId={intern.id}
+                      name={intern.name}
+                      email={intern.email}
+                      phone={intern.phone}
+                      token={discTokensById[intern.id]}
+                      assessment={discAssessmentsById[intern.id]}
+                      candidateMatch={candidateDiscByEmail[(intern.email || '').toLowerCase()]}
+                      onSent={reloadDisc}
+                    />
+                    <RoleQuickPicker
+                      roleId={intern.roleId}
+                      busy={roleBusyId === intern.id}
+                      onPick={(roleId) => handleSetInternRole(intern, roleId)}
+                    />
                     <button
                       onClick={() => handleOpenBiometricsModal(intern)}
                       className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 border shadow-2xs ${

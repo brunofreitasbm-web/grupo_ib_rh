@@ -378,7 +378,7 @@ export default function BancoTalentosTab() {
             busyId={busyId}
             onAssign={assignToBasket}
             onUnassign={removeFromBasket}
-            onOpenFit={(candidate, role, unit) => setFitTarget({ candidate, role, unit })}
+            onOpenFit={(candidate, role, unit, composition) => setFitTarget({ candidate, role, unit, composition })}
           />
         )
       )}
@@ -557,6 +557,7 @@ export default function BancoTalentosTab() {
           assessment={fitTarget.candidate.discAssessment}
           role={fitTarget.role}
           unitLabel={fitTarget.unit?.label}
+          composition={fitTarget.composition}
           onClose={() => setFitTarget(null)}
         />
       )}

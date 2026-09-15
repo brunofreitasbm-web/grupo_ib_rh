@@ -1,13 +1,25 @@
 import React, { useMemo } from 'react';
-import { X, User2, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { X, User2, CheckCircle2, AlertTriangle, Info, Users } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { DISC_FACTORS, DISC_PROFILE_INFO, discProfileCode } from '../../utils/disc';
 import { computeRoleFit, FIT_LEVELS } from '../../utils/roleFit';
+import { teamSynergyNote } from '../../utils/teamFit';
 
-// Detalhe do encaixe de um candidato com uma função (e unidade) na simulação.
-// Mesmo esqueleto de DiscResultModal.jsx.
-export default function RoleFitModal({ candidate, assessment, role, unitLabel, onClose }) {
+const SYNERGY_TONE_CLASSES = {
+  empty: 'bg-slate-50 border-slate-200 text-slate-500',
+  positive: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  caution: 'bg-amber-50 border-amber-200 text-amber-700',
+  neutral: 'bg-sky-50 border-sky-200 text-sky-700',
+};
+
+// Detalhe do encaixe de um candidato com uma função (e unidade) na simulação:
+// compatibilidade com o perfil esperado da função (roleFit.js) e, quando
+// disponível, sinergia com a composição DISC da equipe já contratada que
+// ocupa o mesmo quadrante (composition, de teamFit.js). Mesmo esqueleto de
+// DiscResultModal.jsx.
+export default function RoleFitModal({ candidate, assessment, role, unitLabel, composition, onClose }) {
   const fit = useMemo(() => computeRoleFit(assessment, role), [assessment, role]);
+  const synergy = useMemo(() => teamSynergyNote(assessment, composition), [assessment, composition]);
   if (!candidate || !assessment || !role || !fit) return null;
 
   const level = FIT_LEVELS[fit.level];
@@ -56,6 +68,21 @@ export default function RoleFitModal({ candidate, assessment, role, unitLabel, o
             </p>
           </div>
         </div>
+
+        {synergy && (
+          <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 mb-4 ${SYNERGY_TONE_CLASSES[synergy.tone]}`}>
+            <Users className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide">Sinergia com a equipe atual</p>
+              <p className="text-xs mt-0.5">{synergy.note}</p>
+              {composition?.count > 0 && (
+                <p className="text-[10px] mt-1 opacity-80">
+                  Composição atual: {['D', 'I', 'S', 'C'].filter((f) => composition.counts[f] > 0).map((f) => `${f} ${composition.counts[f]}`).join(' · ')}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {fit.notes.length > 0 && (
           <div className="space-y-1.5 mb-5">

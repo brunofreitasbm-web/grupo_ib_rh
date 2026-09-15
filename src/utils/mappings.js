@@ -1,7 +1,7 @@
 // Inclui photo e face_descriptor: necessários para a comparação biométrica no
 // quiosque (login de unidade compartilhado), que lê intern.faceDescriptor/intern.photo
 // a partir desta mesma lista de estagiários.
-export const INTERN_SELECT_FIELDS = 'id, name, course, institution, internship_type, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, photo, face_descriptor';
+export const INTERN_SELECT_FIELDS = 'id, name, course, institution, internship_type, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, photo, face_descriptor, role_id';
 
 export const fileToBase64 = (file) => {
   return new Promise((resolve, reject) => {
@@ -125,6 +125,9 @@ export const mapInternFromDb = (i) => ({
   contractTermination: i.contract_termination || {},
   birthdate: i.birthdate || '',
   faceDescriptor: i.face_descriptor || '',
+  // Função esperada na Simulação por Unidade do Banco de Talentos (ver
+  // src/config/roleProfiles.js). Nula até o gestor marcar.
+  roleId: i.role_id || '',
 });
 
 export const mapInternToDb = (i) => ({
@@ -158,6 +161,7 @@ export const mapInternToDb = (i) => ({
   emergency_phone: i.emergencyPhone || '',
   allowance: Number(i.allowance) || 0,
   supervisor_name: i.supervisorName || '',
+  role_id: i.roleId || null,
   registration_status: i.registrationStatus || 'validated',
   semestral_reports: i.semestralReports || {},
   contract_termination: i.contractTermination || {},
@@ -272,7 +276,7 @@ export const mapUnitToDb = (u) => {
 // mapeadores de estagiário de propósito: nada aqui deve alimentar as telas de
 // ponto/bolsa de estagiários nem vice-versa.
 // =========================================================================
-export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, birthdate, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at';
+export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, birthdate, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at, role_id';
 
 export const mapProfessionalFromDb = (p) => ({
   id: p.id,
@@ -332,6 +336,7 @@ export const mapProfessionalFromDb = (p) => ({
   termsVersion: p.terms_version || '',
   photo: p.photo || '',
   createdAt: p.created_at,
+  roleId: p.role_id || '',
 });
 
 export const mapProfessionalToDb = (p) => ({
@@ -382,6 +387,7 @@ export const mapProfessionalToDb = (p) => ({
   contract_notes: p.contractNotes || null,
   active: p.active !== false,
   photo: p.photo || null,
+  role_id: p.roleId || null,
 });
 
 export const PROFESSIONAL_PRESENCE_SELECT_FIELDS = 'id, professional_id, professional_name, unit_id, action, timestamp, auth_method, geo, note, created_by, created_at';
@@ -444,7 +450,7 @@ export const professionalRpcErrorMessage = (err) => {
 
 // Inclui photo e face_descriptor: necessários para o matching biométrico no
 // quiosque CLT. Usada no cadastro (FuncionariosTab) e onde a foto é exibida.
-export const EMPLOYEE_SELECT_FIELDS = 'id, unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace, mother_name, father_name, phone, email, address, ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category, bank_name, bank_agency, bank_account, bank_account_type, pix_key, job_title, cbo, department, admission_date, contract_type, experience_first_end, experience_second_end, contract_end, base_salary, weekly_hours, schedule, work_regime, night_work, hours_bank, hours_bank_started_at, vt_opted, vt_daily_cost, vr_opted, health_plan, union_name, cba_reference, photo, face_descriptor, biometric_consent_at, biometric_consent_version, status, termination_date, notes, registration_status, self_registered_at, lgpd_consent_accepted_at, lgpd_consent_version, created_at, updated_at';
+export const EMPLOYEE_SELECT_FIELDS = 'id, unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace, mother_name, father_name, phone, email, address, ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category, bank_name, bank_agency, bank_account, bank_account_type, pix_key, job_title, cbo, department, admission_date, contract_type, experience_first_end, experience_second_end, contract_end, base_salary, weekly_hours, schedule, work_regime, night_work, hours_bank, hours_bank_started_at, vt_opted, vt_daily_cost, vr_opted, health_plan, union_name, cba_reference, photo, face_descriptor, biometric_consent_at, biometric_consent_version, status, termination_date, notes, registration_status, self_registered_at, lgpd_consent_accepted_at, lgpd_consent_version, created_at, updated_at, role_id';
 
 // Versão enxuta para listas/tabelas — nunca carrega photo/face_descriptor.
 export const EMPLOYEE_LIST_FIELDS = 'id, unit_id, name, cpf, job_title, department, admission_date, contract_type, status, weekly_hours, hours_bank, birthdate, base_salary';
@@ -514,6 +520,7 @@ export const mapEmployeeFromDb = (e) => ({
   lgpdConsentVersion: e.lgpd_consent_version || '',
   createdAt: e.created_at,
   updatedAt: e.updated_at,
+  roleId: e.role_id || '',
 });
 
 export const mapEmployeeToDb = (e) => ({
@@ -574,6 +581,7 @@ export const mapEmployeeToDb = (e) => ({
   status: e.status || 'ativo',
   termination_date: e.terminationDate || null,
   notes: e.notes || null,
+  role_id: e.roleId || null,
 });
 
 export const mapDependentFromDb = (d) => ({

@@ -982,9 +982,9 @@ UPDATE public.units SET kiosk_email = 'generalissimo@portoterapia.com' WHERE id 
 
 -- Unidades do Grupo IB (endereço/coordenadas placeholder — calibrar na unidade física antes do go-live)
 INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m, workspace_id, kiosk_email, biometric_required) VALUES
-  ('faca-amigos-parque-shopping', 'Faça Amigos Parque Shopping', 'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'parqueshopping@grupoib.internal', true),
-  ('faca-amigos-grao-para',       'Faça Amigos Grão Pará',       'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'graopara@grupoib.internal',       true),
-  ('clinica-a',                   'Faça Amigos, Centro de Terapia Comportamental', 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true),
+  ('faca-amigos-parque-shopping', 'FaçaAmigos Parque Shopping', 'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'parqueshopping@grupoib.internal', true),
+  ('faca-amigos-grao-para',       'FaçaAmigos Grão Pará',       'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'graopara@grupoib.internal',       true),
+  ('clinica-a',                   'FaçaAmigos, Centro de Terapia Comportamental', 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true),
   ('clinica-b',                   'Clínica B',                    'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'clinicab@grupoib.internal',       true)
 ON CONFLICT (id) DO NOTHING;
 
@@ -992,7 +992,7 @@ ON CONFLICT (id) DO NOTHING;
 -- do CNPJ 22.161.197/0001-83 - INSTITUTO FACA AMIGOS LTDA. O INSERT acima e
 -- ON CONFLICT DO NOTHING, entao a linha ja existente em producao so muda aqui.
 UPDATE public.units
-SET name = 'Faça Amigos, Centro de Terapia Comportamental',
+SET name = 'FaçaAmigos, Centro de Terapia Comportamental',
     address = 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147'
 WHERE id = 'clinica-a';
 
@@ -1312,9 +1312,9 @@ GRANT EXECUTE ON FUNCTION public.reset_intern_password(uuid, text) TO authentica
 DO $$
 DECLARE
   units_data jsonb := '[
-    {"email": "parqueshopping@grupoib.internal", "name": "Estagiário Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
-    {"email": "graopara@grupoib.internal", "name": "Estagiário Faça Amigos Grão Pará", "unit_id": "faca-amigos-grao-para"},
-    {"email": "clinicaa@grupoib.internal", "name": "Estagiário Faça Amigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
+    {"email": "parqueshopping@grupoib.internal", "name": "Estagiário FaçaAmigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
+    {"email": "graopara@grupoib.internal", "name": "Estagiário FaçaAmigos Grão Pará", "unit_id": "faca-amigos-grao-para"},
+    {"email": "clinicaa@grupoib.internal", "name": "Estagiário FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
     {"email": "clinicab@grupoib.internal", "name": "Estagiário Clínica B", "unit_id": "clinica-b"}
   ]'::jsonb;
   u jsonb;
@@ -1684,9 +1684,9 @@ GRANT EXECUTE ON FUNCTION public.professional_has_pin(uuid) TO authenticated;
 DO $$
 DECLARE
   units_data jsonb := '[
-    {"email": "pj-parqueshopping@grupoib.internal", "name": "Prestadores Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
-    {"email": "pj-graopara@grupoib.internal",       "name": "Prestadores Faça Amigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
-    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores Faça Amigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
+    {"email": "pj-parqueshopping@grupoib.internal", "name": "Prestadores FaçaAmigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
+    {"email": "pj-graopara@grupoib.internal",       "name": "Prestadores FaçaAmigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
+    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
     {"email": "pj-clinicab@grupoib.internal",       "name": "Prestadores Clínica B",                   "unit_id": "clinica-b"}
   ]'::jsonb;
   u jsonb;
@@ -2364,9 +2364,9 @@ GRANT EXECUTE ON FUNCTION public.close_employee_timesheet(uuid, text, jsonb) TO 
 DO $$
 DECLARE
   units_data jsonb := '[
-    {"email": "clt-parqueshopping@grupoib.internal", "name": "Funcionários Faça Amigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
-    {"email": "clt-graopara@grupoib.internal",       "name": "Funcionários Faça Amigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
-    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários Faça Amigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
+    {"email": "clt-parqueshopping@grupoib.internal", "name": "Funcionários FaçaAmigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
+    {"email": "clt-graopara@grupoib.internal",       "name": "Funcionários FaçaAmigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
+    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
     {"email": "clt-clinicab@grupoib.internal",       "name": "Funcionários Clínica B",                   "unit_id": "clinica-b"}
   ]'::jsonb;
   u jsonb;
