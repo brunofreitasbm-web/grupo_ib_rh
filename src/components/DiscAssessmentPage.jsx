@@ -132,7 +132,10 @@ export default function DiscAssessmentPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center py-8 px-4">
       <div className="w-full max-w-xl">
-        <div className="text-center mb-6">
+        <div className="text-center mb-6 flex flex-col items-center">
+          {BRANDING.logoPath && (
+            <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-14 w-auto mb-2 rounded-lg shadow-sm" />
+          )}
           <h1 className="text-lg font-bold text-slate-800">{BRANDING.displayName || BRANDING.shortName}</h1>
           <p className="text-xs text-slate-500 mt-0.5">Levantamento de Perfil Comportamental</p>
         </div>
