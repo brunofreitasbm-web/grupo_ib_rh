@@ -29,6 +29,18 @@ const formatShortDate = (isoString) => {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 };
 
+const formatDateTime = (isoString) => {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+// SLA do levantamento de perfil DISC: a partir da primeira abertura do link
+// pelo candidato (first_opened_at), 48h para concluir. Passado o prazo sem
+// conclusão, sinaliza atraso para o gestor.
+const DISC_SLA_MS = 48 * 60 * 60 * 1000;
+
 export default function BancoTalentosTab() {
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +67,7 @@ export default function BancoTalentosTab() {
     try {
       const [metaRes, tokenRes, assessmentRes] = await Promise.all([
         supabase.from('talent_candidates_meta').select('*').in('candidate_id', ids),
-        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at').in('candidate_id', ids),
+        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at').in('candidate_id', ids),
         supabase.from('talent_disc_assessments').select('*').in('candidate_id', ids),
       ]);
       if (metaRes.error) throw metaRes.error;
@@ -308,11 +320,23 @@ export default function BancoTalentosTab() {
                   const profileInfo = c.discAssessment ? DISC_PROFILE_INFO[c.discAssessment.primary_profile] : null;
                   const pendingToken = !c.discAssessment && c.discToken && !c.discToken.consumed_at;
                   const sentLabel = pendingToken ? formatShortDate(c.discToken.sent_at) : null;
+                  const openedAt = pendingToken ? c.discToken.first_opened_at : null;
+                  const isLate = Boolean(openedAt) && (Date.now() - new Date(openedAt).getTime()) > DISC_SLA_MS;
 
                   return (
                     <tr key={c.id} className="hover:bg-slate-50">
                       <td className="p-3">
-                        <div className="font-semibold text-slate-800">{c.full_name || '—'}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-800">{c.full_name || '—'}</span>
+                          {isLate && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-red-200 bg-red-50 text-red-600"
+                              title={`Atraso no preenchimento do perfil — link aberto em ${formatDateTime(openedAt)}, prazo de 48h expirado`}
+                            >
+                              <AlertTriangle className="w-3 h-3" /> Atraso no preenchimento
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
                           {c.email && (
                             <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>
@@ -347,8 +371,9 @@ export default function BancoTalentosTab() {
                             {c.discAssessment.secondary_profile ? `/${c.discAssessment.secondary_profile}` : ''}
                           </button>
                         ) : pendingToken ? (
-                          <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                            <Sparkles className="w-3 h-3" /> Enviado {sentLabel}
+                          <span className={`text-[11px] flex items-center gap-1 ${isLate ? 'text-red-500 font-semibold' : 'text-slate-400'}`}>
+                            <Sparkles className="w-3 h-3" />
+                            {openedAt ? `Aberto ${formatShortDate(openedAt)}` : `Enviado ${sentLabel}`}
                           </span>
                         ) : (
                           <span className="text-xs text-slate-300">—</span>
