@@ -72,30 +72,102 @@ function buildEmail(candidateName: string, link: string, expiresAt: Date) {
   const firstName = escapeHtml(candidateName.split(/\s+/)[0] || "candidato(a)");
   const safeLink = escapeHtml(link);
   const company = escapeHtml(SENDER.name);
+  const logoUrl = APP_PUBLIC_URL ? escapeHtml(`${APP_PUBLIC_URL}/logo.jpg`) : "";
   const expiresLabel = expiresAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
+  // Cores da marca Faça Amigos: rosa #F0196B (CTA), verde escuro #1A3F35 (texto de
+  // destaque), amarelo #FFE234 (faixa de detalhe). Layout em tabela para compatibilidade
+  // com clientes de e-mail (Outlook não renderiza flex/grid nem @import de fontes).
   const subject = `Levantamento de Perfil Comportamental — ${SENDER.name}`;
   const htmlContent = `
-  <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1e293b;line-height:1.55">
-    <h2 style="color:#1e3a8a;margin:0 0 16px">Olá, ${firstName}!</h2>
-    <p>Obrigado pelo seu interesse em fazer parte da equipe <strong>${company}</strong>.</p>
-    <p>Como próxima etapa, convidamos você a responder um breve <strong>Levantamento de Perfil Comportamental (DISC)</strong>.
-       Ele nos ajuda a conhecer melhor a sua forma de trabalhar — não existe resposta certa ou errada.</p>
-    <ul style="padding-left:18px;color:#334155">
-      <li>Tempo médio: <strong>cerca de 10 minutos</strong></li>
-      <li>24 grupos de palavras: escolha a que <strong>mais</strong> e a que <strong>menos</strong> descreve você</li>
-      <li>Responda de uma só vez, em um local tranquilo</li>
-    </ul>
-    <p style="text-align:center;margin:28px 0">
-      <a href="${safeLink}" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;display:inline-block">
-        Responder levantamento
-      </a>
-    </p>
-    <p style="font-size:13px;color:#64748b">Se o botão não funcionar, copie e cole este endereço no navegador:<br/>
-      <span style="word-break:break-all">${safeLink}</span></p>
-    <p style="font-size:13px;color:#64748b">O link é pessoal, pode ser usado uma única vez e é válido até <strong>${expiresLabel}</strong>.</p>
-    <p>Atenciosamente,<br/>${company}</p>
-  </div>`;
+  <!DOCTYPE html>
+  <html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${subject}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f4f1ea;font-family:'Nunito',Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f1ea;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+            <!-- Faixa amarela de detalhe -->
+            <tr>
+              <td style="background-color:#FFE234;height:6px;font-size:0;line-height:0;border-radius:6px 6px 0 0;">&nbsp;</td>
+            </tr>
+            <!-- Cartão branco -->
+            <tr>
+              <td style="background-color:#ffffff;border-radius:0 0 24px 24px;padding:32px 32px 24px;box-shadow:0 4px 16px rgba(26,63,53,0.08);">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="padding-bottom:20px;">
+                      ${logoUrl ? `<img src="${logoUrl}" alt="${company}" width="72" style="display:block;border-radius:16px;" />` : `<span style="font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:22px;color:#1A3F35;">${company}</span>`}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:24px;color:#F0196B;text-align:center;padding-bottom:16px;">
+                      Olá, ${firstName}!
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="color:#1A3F35;font-size:15px;line-height:1.6;padding-bottom:12px;">
+                      Obrigado pelo seu interesse em fazer parte da equipe <strong>${company}</strong>!
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="color:#1A3F35;font-size:15px;line-height:1.6;padding-bottom:16px;">
+                      Como próxima etapa, te convidamos a responder um breve <strong>Levantamento de Perfil Comportamental (DISC)</strong>.
+                      Ele nos ajuda a te conhecer melhor — não existe resposta certa ou errada, é só ser você mesmo(a).
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding-bottom:20px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f4f1ea;border-radius:16px;">
+                        <tr>
+                          <td style="padding:16px 20px;color:#1A3F35;font-size:14px;line-height:1.7;">
+                            ⏱️ <strong>Tempo médio:</strong> cerca de 10 minutos<br/>
+                            📝 24 grupos de palavras: escolha a que <strong>mais</strong> e a que <strong>menos</strong> combina com você<br/>
+                            🌿 Responda de uma só vez, em um local tranquilo
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding-bottom:20px;">
+                      <a href="${safeLink}" style="background-color:#F0196B;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:9999px;font-family:'Nunito',Arial,Helvetica,sans-serif;font-weight:800;font-size:15px;display:inline-block;">
+                        Responder levantamento
+                      </a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12px;color:#6b7a75;line-height:1.6;padding-bottom:8px;">
+                      Se o botão não funcionar, copie e cole este endereço no navegador:<br/>
+                      <span style="word-break:break-all;color:#2ECFB5;">${safeLink}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12px;color:#6b7a75;line-height:1.6;">
+                      O link é pessoal, pode ser usado uma única vez e é válido até <strong>${expiresLabel}</strong>.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <!-- Rodapé -->
+            <tr>
+              <td align="center" style="padding:20px 12px 0;font-family:'Nunito',Arial,Helvetica,sans-serif;font-size:12px;color:#9aa5a1;">
+                Atenciosamente,<br/>
+                <strong style="color:#1A3F35;">${company}</strong>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>`;
 
   const textContent =
     `Olá, ${candidateName}!\n\n` +
