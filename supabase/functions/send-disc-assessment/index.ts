@@ -72,7 +72,10 @@ function buildEmail(candidateName: string, link: string, expiresAt: Date) {
   const firstName = escapeHtml(candidateName.split(/\s+/)[0] || "candidato(a)");
   const safeLink = escapeHtml(link);
   const company = escapeHtml(SENDER.name);
-  const logoUrl = APP_PUBLIC_URL ? escapeHtml(`${APP_PUBLIC_URL}/logo.jpg`) : "";
+  // Logo fixo da Faça Amigos (não o /logo.jpg genérico, que muda conforme o
+  // workspace/deploy que chama esta função — este e-mail é sempre da marca
+  // Faça Amigos, então não pode depender de qual site disparou o envio).
+  const logoUrl = APP_PUBLIC_URL ? escapeHtml(`${APP_PUBLIC_URL}/brand/facaamigos-email-logo.png`) : "";
   const expiresLabel = expiresAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
   // Cores da marca Faça Amigos: rosa #F0196B (CTA), verde escuro #1A3F35 (texto de
@@ -102,7 +105,7 @@ function buildEmail(candidateName: string, link: string, expiresAt: Date) {
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td align="center" style="padding-bottom:20px;">
-                      ${logoUrl ? `<img src="${logoUrl}" alt="${company}" width="72" style="display:block;border-radius:16px;" />` : `<span style="font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:22px;color:#1A3F35;">${company}</span>`}
+                      ${logoUrl ? `<img src="${logoUrl}" alt="${company}" width="220" style="display:block;max-width:220px;height:auto;" />` : `<span style="font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:22px;color:#1A3F35;">${company}</span>`}
                     </td>
                   </tr>
                   <tr>
