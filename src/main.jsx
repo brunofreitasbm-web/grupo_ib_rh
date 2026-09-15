@@ -1,9 +1,17 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App.jsx';
 import { Toaster } from 'sonner';
 import './index.css';
 import { BRANDING } from './config/branding';
+import { lazyWithRetry } from './utils/lazyWithRetry';
+
+// Única rota pública do sistema: o link temporário do Levantamento de Perfil
+// DISC (Banco de Talentos), enviado por e-mail ao candidato. O resto do app
+// continua navegando por estado (App.jsx), sem react-router — ver
+// src/components/tabs/BancoTalentosTab.jsx e src/components/DiscAssessmentPage.jsx.
+const DiscAssessmentPage = lazyWithRetry(() => import('./components/DiscAssessmentPage.jsx'));
 
 document.title = BRANDING.appTitle;
 document.querySelector('meta[name="theme-color"]')?.setAttribute('content', BRANDING.themeColor);
@@ -36,7 +44,19 @@ window.addEventListener('unhandledrejection', (event) => {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/disc/:token"
+          element={(
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <DiscAssessmentPage />
+            </Suspense>
+          )}
+        />
+        <Route path="*" element={<App />} />
+      </Routes>
+    </BrowserRouter>
     <Toaster position="top-right" richColors />
   </React.StrictMode>
 );

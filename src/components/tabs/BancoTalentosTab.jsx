@@ -1,33 +1,18 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail } from 'lucide-react';
+import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { toast } from 'sonner';
+import { STATUS_OPTIONS, STATUS_BADGE, OPPORTUNITY_LABEL, statusLabel } from '../../constants/talentBank';
+import { DISC_PROFILE_INFO } from '../../utils/disc';
+import CandidateActionsMenu from '../talent/CandidateActionsMenu';
+import CandidateNotesModal from '../talent/CandidateNotesModal';
+import DiscResultModal from '../talent/DiscResultModal';
 
-const STATUS_OPTIONS = [
-  { value: 'todos', label: 'Todos' },
-  { value: 'NOVO', label: 'Novo' },
-  { value: 'LIDO', label: 'Lido' },
-  { value: 'ESPERA', label: 'Em espera' },
-  { value: 'ENTREVISTA', label: 'Entrevista' },
-  { value: 'EM_ANALISE', label: 'Em análise' },
-  { value: 'CONTATADO', label: 'Contatado' },
-  { value: 'ARQUIVADO', label: 'Arquivado' },
-];
-
-const STATUS_BADGE = {
-  NOVO: 'bg-blue-100 text-blue-700 border-blue-200',
-  LIDO: 'bg-slate-100 text-slate-600 border-slate-200',
-  ESPERA: 'bg-amber-100 text-amber-700 border-amber-200',
-  ENTREVISTA: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  EM_ANALISE: 'bg-purple-100 text-purple-700 border-purple-200',
-  CONTATADO: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  ARQUIVADO: 'bg-rose-100 text-rose-700 border-rose-200',
-};
-
-const OPPORTUNITY_LABEL = {
-  REMUNERADO: 'Remunerado',
-  VOLUNTARIO: 'Voluntário',
-  ESTAGIO: 'Estágio',
-};
+// Candidatos vêm somente-leitura do projeto Faça Amigos (ver fetch-talent-bank
+// edge function). Status, notas e resultado DISC são uma camada local
+// (overlay) neste projeto — talent_candidates_meta / talent_disc_tokens /
+// talent_disc_assessments (migração 20260915_talent_bank_overlay_disc) — e o
+// merge acontece aqui no cliente.
 
 const formatDate = (candidate) => {
   const ms = candidate.created_at_ms;
@@ -37,6 +22,13 @@ const formatDate = (candidate) => {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
+const formatShortDate = (isoString) => {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+};
+
 export default function BancoTalentosTab() {
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,13 +36,50 @@ export default function BancoTalentosTab() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('NOVO');
 
+  // Overlay local, indexado por candidate_id.
+  const [metaById, setMetaById] = useState({});
+  const [tokensById, setTokensById] = useState({});
+  const [assessmentsById, setAssessmentsById] = useState({});
+
+  const [busyId, setBusyId] = useState(null);
+  const [notesTarget, setNotesTarget] = useState(null);
+  const [resultTarget, setResultTarget] = useState(null);
+
+  const loadOverlay = useCallback(async (ids) => {
+    if (ids.length === 0) {
+      setMetaById({});
+      setTokensById({});
+      setAssessmentsById({});
+      return;
+    }
+    try {
+      const [metaRes, tokenRes, assessmentRes] = await Promise.all([
+        supabase.from('talent_candidates_meta').select('*').in('candidate_id', ids),
+        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at').in('candidate_id', ids),
+        supabase.from('talent_disc_assessments').select('*').in('candidate_id', ids),
+      ]);
+      if (metaRes.error) throw metaRes.error;
+      if (tokenRes.error) throw tokenRes.error;
+      if (assessmentRes.error) throw assessmentRes.error;
+
+      setMetaById(Object.fromEntries((metaRes.data || []).map((m) => [m.candidate_id, m])));
+      setTokensById(Object.fromEntries((tokenRes.data || []).map((t) => [t.candidate_id, t])));
+      setAssessmentsById(Object.fromEntries((assessmentRes.data || []).map((a) => [a.candidate_id, a])));
+    } catch (err) {
+      // A camada local é um "plus" sobre a lista remota — se falhar, a tabela
+      // continua funcional, só sem status próprio/notas/perfil.
+      console.error('Erro ao carregar dados locais do Banco de Talentos:', err);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ limit: '100' });
-      if (statusFilter !== 'todos') params.set('status', statusFilter);
-
+      // Busca sempre a lista completa (sem filtro remoto de status): o status
+      // "efetivo" pode ter sido sobrescrito localmente, então o filtro por
+      // status passa a ser feito no cliente junto com a busca textual.
+      const params = new URLSearchParams({ limit: '200' });
       const { data, error: err } = await supabase.functions.invoke(
         `fetch-talent-bank?${params.toString()}`,
         { method: 'GET' }
@@ -58,13 +87,15 @@ export default function BancoTalentosTab() {
       if (err) throw err;
 
       const list = Array.isArray(data) ? data : (data?.candidates ?? data?.data ?? []);
-      setCandidates(Array.isArray(list) ? list : []);
+      const safeList = Array.isArray(list) ? list : [];
+      setCandidates(safeList);
+      await loadOverlay(safeList.map((c) => c.id).filter(Boolean));
     } catch (err) {
       console.error('Erro ao carregar Banco de Talentos:', err);
       let msg = err?.message || '';
       let detailMsg = '';
       let statusCode = err?.context?.status || null;
-      
+
       // Tenta extrair a mensagem detalhada enviada pelo corpo da resposta da Edge Function
       if (err?.context) {
         try {
@@ -98,19 +129,91 @@ export default function BancoTalentosTab() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [loadOverlay]);
 
   useEffect(() => { load(); }, [load]);
 
+  const enriched = useMemo(() => {
+    return candidates.map((c) => {
+      const meta = metaById[c.id];
+      const token = tokensById[c.id];
+      const assessment = assessmentsById[c.id];
+      return {
+        ...c,
+        effectiveStatus: meta?.status || c.status,
+        notes: meta?.notes || '',
+        discToken: token || null,
+        discAssessment: assessment || null,
+      };
+    });
+  }, [candidates, metaById, tokensById, assessmentsById]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return candidates;
-    return candidates.filter((c) =>
-      [c.full_name, c.email, c.course, c.desired_area]
+    return enriched.filter((c) => {
+      if (statusFilter !== 'todos' && c.effectiveStatus !== statusFilter) return false;
+      if (!q) return true;
+      return [c.full_name, c.email, c.course, c.desired_area]
         .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q))
-    );
-  }, [candidates, search]);
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [enriched, search, statusFilter]);
+
+  const changeStatus = async (candidate, newStatus) => {
+    setBusyId(candidate.id);
+    try {
+      const { error: err } = await supabase.from('talent_candidates_meta').upsert({
+        candidate_id: candidate.id,
+        status: newStatus,
+        snapshot: { full_name: candidate.full_name, email: candidate.email, phone: candidate.phone },
+        updated_at: new Date().toISOString(),
+      });
+      if (err) throw err;
+      setMetaById((prev) => ({
+        ...prev,
+        [candidate.id]: { ...(prev[candidate.id] || { candidate_id: candidate.id }), status: newStatus },
+      }));
+      toast.success(`Status atualizado para "${statusLabel(newStatus)}".`);
+    } catch (err) {
+      console.error('Erro ao atualizar status do candidato:', err);
+      toast.error('Não foi possível atualizar o status.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const sendDiscAssessment = async (candidate) => {
+    if (!candidate.email) {
+      toast.warning('Candidato sem e-mail cadastrado.');
+      return;
+    }
+    setBusyId(candidate.id);
+    try {
+      const { data, error: err } = await supabase.functions.invoke('send-disc-assessment', {
+        body: {
+          candidateId: candidate.id,
+          fullName: candidate.full_name,
+          email: candidate.email,
+          phone: candidate.phone,
+        },
+      });
+      if (err) throw err;
+      toast.success(`Levantamento de Perfil enviado para ${data?.sentTo || candidate.email}.`);
+      await loadOverlay(candidates.map((c) => c.id).filter(Boolean));
+    } catch (err) {
+      console.error('Erro ao enviar Levantamento de Perfil:', err);
+      let detailMsg = '';
+      try {
+        const res = err?.context;
+        const cloned = res && typeof res.clone === 'function' ? res.clone() : res;
+        const body = cloned ? await cloned.json() : null;
+        detailMsg = body?.message || '';
+      } catch (_) {}
+      toast.error(detailMsg || 'Não foi possível enviar o Levantamento de Perfil.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -194,55 +297,119 @@ export default function BancoTalentosTab() {
                   <th className="p-3">Área desejada</th>
                   <th className="p-3">Oportunidade</th>
                   <th className="p-3">Status</th>
+                  <th className="p-3">Perfil</th>
                   <th className="p-3">Data</th>
                   <th className="p-3 text-right">Currículo</th>
+                  <th className="p-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filtered.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50">
-                    <td className="p-3">
-                      <div className="font-semibold text-slate-800">{c.full_name || '—'}</div>
-                      <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
-                        {c.email && (
-                          <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>
+                {filtered.map((c) => {
+                  const profileInfo = c.discAssessment ? DISC_PROFILE_INFO[c.discAssessment.primary_profile] : null;
+                  const pendingToken = !c.discAssessment && c.discToken && !c.discToken.consumed_at;
+                  const sentLabel = pendingToken ? formatShortDate(c.discToken.sent_at) : null;
+
+                  return (
+                    <tr key={c.id} className="hover:bg-slate-50">
+                      <td className="p-3">
+                        <div className="font-semibold text-slate-800">{c.full_name || '—'}</div>
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                          {c.email && (
+                            <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>
+                          )}
+                          {c.phone && (
+                            <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>
+                          )}
+                        </div>
+                        {c.notes && (
+                          <div className="text-[11px] text-slate-400 mt-1 italic truncate max-w-[220px]" title={c.notes}>
+                            📝 {c.notes}
+                          </div>
                         )}
-                        {c.phone && (
-                          <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>
+                      </td>
+                      <td className="p-3 text-slate-600">{c.course || '—'}</td>
+                      <td className="p-3 text-slate-600">{c.desired_area || '—'}</td>
+                      <td className="p-3 text-slate-600">{OPPORTUNITY_LABEL[c.opportunity_type] || c.opportunity_type || '—'}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-md border ${STATUS_BADGE[c.effectiveStatus] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                          {statusLabel(c.effectiveStatus)}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        {profileInfo ? (
+                          <button
+                            type="button"
+                            onClick={() => setResultTarget(c)}
+                            className={`px-2 py-1 text-xs font-bold rounded-md border ${profileInfo.badge}`}
+                            title="Ver resultado do Levantamento de Perfil"
+                          >
+                            {c.discAssessment.primary_profile}
+                            {c.discAssessment.secondary_profile ? `/${c.discAssessment.secondary_profile}` : ''}
+                          </button>
+                        ) : pendingToken ? (
+                          <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> Enviado {sentLabel}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="p-3 text-slate-600">{c.course || '—'}</td>
-                    <td className="p-3 text-slate-600">{c.desired_area || '—'}</td>
-                    <td className="p-3 text-slate-600">{OPPORTUNITY_LABEL[c.opportunity_type] || c.opportunity_type || '—'}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-md border ${STATUS_BADGE[c.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                        {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status || '—'}
-                      </span>
-                    </td>
-                    <td className="p-3 text-xs text-slate-500">{formatDate(c)}</td>
-                    <td className="p-3 text-right">
-                      {c.resume_url ? (
-                        <a
-                          href={c.resume_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          Ver currículo
-                        </a>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="p-3 text-xs text-slate-500">{formatDate(c)}</td>
+                      <td className="p-3 text-right">
+                        {c.resume_url ? (
+                          <a
+                            href={c.resume_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            Ver currículo
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-right">
+                        <CandidateActionsMenu
+                          candidate={{ ...c, hasDiscToken: Boolean(c.discToken || c.discAssessment) }}
+                          effectiveStatus={c.effectiveStatus}
+                          busy={busyId === c.id}
+                          onChangeStatus={(newStatus) => changeStatus(c, newStatus)}
+                          onSendDisc={() => sendDiscAssessment(c)}
+                          onOpenNotes={() => setNotesTarget(c)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {notesTarget && (
+        <CandidateNotesModal
+          candidate={notesTarget}
+          initialNotes={notesTarget.notes}
+          onClose={() => setNotesTarget(null)}
+          onSaved={(savedNotes) => {
+            setMetaById((prev) => ({
+              ...prev,
+              [notesTarget.id]: { ...(prev[notesTarget.id] || { candidate_id: notesTarget.id }), notes: savedNotes },
+            }));
+          }}
+        />
+      )}
+
+      {resultTarget && resultTarget.discAssessment && (
+        <DiscResultModal
+          candidate={resultTarget}
+          assessment={resultTarget.discAssessment}
+          onClose={() => setResultTarget(null)}
+        />
+      )}
     </div>
   );
 }
