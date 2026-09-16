@@ -118,7 +118,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
       cnpj: BRANDING.cnpj,
       emailEmpresa: BRANDING.contactEmail,
       telefone: BRANDING.phone,
-      geofencePadraoM: 5000,
+      geofencePadraoM: 50,
       toleranciaAtrasoMinutos: 15,
       exigirBiometriaFacial: true,
       bloquearPontoForaDoRaio: true,
@@ -712,9 +712,16 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                       type="number"
                       step="1"
                       min="1"
-                      max="50"
-                      value={settings.geofencePadraoM || (settings.geofencePadraoKm ? Math.min(50, settings.geofencePadraoKm * 1000) : 15)}
-                      onChange={(e) => setSettings({ ...settings, geofencePadraoM: Math.min(50, Math.max(1, parseInt(e.target.value) || 15)) })}
+                      value={settings.geofencePadraoM !== undefined && settings.geofencePadraoM !== '' ? settings.geofencePadraoM : (settings.geofencePadraoKm ? settings.geofencePadraoKm * 1000 : 50)}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? '' : parseInt(e.target.value, 10);
+                        setSettings({ ...settings, geofencePadraoM: val });
+                      }}
+                      onBlur={() => {
+                        if (settings.geofencePadraoM === '' || settings.geofencePadraoM === null || settings.geofencePadraoM === undefined || Number(settings.geofencePadraoM) < 1) {
+                          setSettings({ ...settings, geofencePadraoM: 50 });
+                        }
+                      }}
                       className="w-32 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
                     <span className="text-sm font-semibold text-slate-600">m</span>
