@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { LogOut, User, ScanFace, CheckCircle, Loader2, Building2, MapPin, Camera, AlertTriangle, Coffee, LogIn, LogOut as LogOutIcon } from 'lucide-react';
+import { LogOut, User, ScanFace, CheckCircle, Loader2, Building2, MapPin, Camera, AlertTriangle, Coffee, LogIn, LogOut as LogOutIcon, ArrowLeft, ShieldAlert } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../supabase';
 import { employeeRpcErrorMessage } from '../utils/mappings';
 import { getCurrentPosition, geoErrorMessage, haversineKm } from '../hooks/useGeolocation';
 import { getFaceDescriptor, compareFaces, loadModels } from '../utils/faceBiometrics';
 import { allowedNextTypes } from '../utils/cltCalculations';
+import BiometricEnrollment from './BiometricEnrollment';
 
 // Quiosque de Funcionários CLT (empregados), por unidade. Papel próprio
 // 'employee_unit', isolado no servidor de 'intern_unit'/'professional_unit'
@@ -29,14 +31,21 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
   const [roster, setRoster] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState('');
-  const [step, setStep] = useState('select'); // select | camera | validating | receipt
+  const [step, setStep] = useState('select'); // select | camera | validating | receipt | autogestao
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState(null);
+
+  // Estados de Autogestão de Biometria no Quiosque
+  const [autogestaoCpf, setAutogestaoCpf] = useState('');
+  const [autogestaoSaving, setAutogestaoSaving] = useState(false);
+  const [autogestaoAttempts, setAutogestaoAttempts] = useState(0);
+  const [autogestaoLockedUntil, setAutogestaoLockedUntil] = useState(0);
+
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const resetTimerRef = useRef(null);
 
-  const labels = branding.employeeLabels || { plural: 'Funcionários CLT', timesheet: 'Ponto Eletrônico' };
+  const labels = branding?.employeeLabels || { plural: 'Funcionários CLT', timesheet: 'Ponto Eletrônico' };
 
   const fetchRoster = useCallback(async () => {
     setLoading(true);
@@ -65,6 +74,50 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
   const selectedEmployee = roster.find((e) => e.id === selectedId) || null;
   const nextTypes = selectedEmployee ? allowedNextTypes(selectedEmployee.last_type) : [];
   const needsConsent = selectedEmployee && !selectedEmployee.biometric_consent_at;
+
+  const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
+  const cleanEmpCpf = selectedEmployee ? (selectedEmployee.cpf || '').replace(/\D/g, '') : '';
+  const isAutogestaoLocked = Date.now() < autogestaoLockedUntil;
+  const isAutogestaoCpfValid = !isAutogestaoLocked && selectedEmployee && cleanInputCpf.length === 11 && cleanInputCpf === cleanEmpCpf;
+
+  const handleAutogestaoCpfBlur = () => {
+    if (isAutogestaoLocked || !selectedEmployee || cleanInputCpf.length !== 11 || cleanInputCpf === cleanEmpCpf) return;
+    const nextAttempts = autogestaoAttempts + 1;
+    setAutogestaoAttempts(nextAttempts);
+    if (nextAttempts >= 5) {
+      setAutogestaoLockedUntil(Date.now() + 60000);
+      toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+    }
+  };
+
+  const handleAutogestaoComplete = async (payload) => {
+    if (!selectedEmployee) return;
+    setAutogestaoSaving(true);
+    try {
+      const descriptorStr = JSON.stringify(payload.embedding);
+      const { error: dbErr } = await supabase
+        .from('employees')
+        .update({
+          face_descriptor: descriptorStr,
+          biometric_consent_at: new Date().toISOString(),
+          biometric_consent_version: branding?.biometricConsentVersion || '1.0',
+        })
+        .eq('id', selectedEmployee.id);
+
+      if (dbErr) throw dbErr;
+      toast.success('Biometria facial atualizada com sucesso!');
+      setAutogestaoCpf('');
+      setAutogestaoAttempts(0);
+      setError('');
+      setStep('select');
+      await fetchRoster();
+    } catch (err) {
+      console.error('Erro ao atualizar biometria facial:', err);
+      toast.error('Erro ao salvar biometria: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setAutogestaoSaving(false);
+    }
+  };
 
   const resetForm = () => {
     stopCamera();
@@ -150,14 +203,14 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
       const referenceDescriptor = selectedEmployee.face_descriptor
         || (selectedEmployee.photo ? await getFaceDescriptor(selectedEmployee.photo) : null);
       if (!referenceDescriptor) {
-        setError('Este cadastro não possui biometria facial de referência. Procure o RH.');
+        setError('Este cadastro não possui biometria facial de referência. Utilize o botão de Autogestão de Biometria para cadastrar.');
         setStep('select');
         return;
       }
 
       const { isMatch, distance } = compareFaces(referenceDescriptor, descriptor, 0.45);
       if (!isMatch) {
-        setError('Rosto não reconhecido. Tente novamente com boa iluminação, olhando para a câmera.');
+        setError('Rosto não reconhecido. Tente novamente com boa iluminação ou recadastre sua biometria.');
         setStep('select');
         return;
       }
@@ -254,6 +307,105 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
                 <Camera size={13} /> {step === 'camera' ? 'Centralize seu rosto e aguarde...' : 'Validando biometria e localização...'}
               </p>
             </div>
+          ) : step === 'autogestao' ? (
+            <div className="py-2 space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ScanFace size={16} className="text-indigo-600" /> Autogestão de Biometria Facial
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('select');
+                    setAutogestaoCpf('');
+                    setError('');
+                  }}
+                  className="text-xs text-slate-500 hover:text-slate-800 font-semibold flex items-center gap-1"
+                >
+                  <ArrowLeft size={13} /> Voltar
+                </button>
+              </div>
+
+              {!selectedId ? (
+                <div className="space-y-3">
+                  <label className="block text-xs font-semibold text-gray-700">
+                    Selecione seu nome para cadastrar ou atualizar biometria:
+                  </label>
+                  <select
+                    value={selectedId}
+                    onChange={(e) => { setSelectedId(e.target.value); setAutogestaoCpf(''); setError(''); }}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-xs"
+                  >
+                    <option value="">Selecione seu nome...</option>
+                    {roster.map((e) => (
+                      <option key={e.id} value={e.id}>{e.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : isAutogestaoLocked ? (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-center text-red-800 text-xs font-semibold">
+                  ⛔ Muitas tentativas incorretas. Aguarde 1 minuto antes de tentar novamente.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100">
+                    <p className="text-xs font-bold text-indigo-900">{selectedEmployee.name}</p>
+                    <p className="text-[11px] text-indigo-700 mt-0.5">
+                      {selectedEmployee.face_descriptor && selectedEmployee.face_descriptor !== '[]'
+                        ? '✅ Biometria facial já cadastrada (confirme seu CPF para recadastrar)'
+                        : '⚠️ Biometria facial pendente'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Confirme seu CPF para validação de identidade:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Apenas números (ex: 12345678900)"
+                      value={autogestaoCpf}
+                      onChange={(e) => setAutogestaoCpf(e.target.value)}
+                      onBlur={handleAutogestaoCpfBlur}
+                      className="w-full p-2.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    {autogestaoCpf && !isAutogestaoCpfValid && (
+                      <p className="text-red-500 text-[11px] font-semibold mt-1">
+                        ❌ O CPF informado não coincide com o do funcionário selecionado.
+                      </p>
+                    )}
+                  </div>
+
+                  {isAutogestaoCpfValid && (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden p-3 bg-slate-50 space-y-3">
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-amber-800 text-[11px] leading-relaxed">
+                        <ShieldAlert size={15} className="shrink-0 text-amber-600 mt-0.5" />
+                        <span>
+                          <strong>Instruções:</strong> Posicione seu rosto na câmera e aguarde a verificação Liveness.
+                        </span>
+                      </div>
+
+                      {autogestaoSaving ? (
+                        <div className="flex flex-col items-center justify-center py-6 gap-2">
+                          <Loader2 size={28} className="animate-spin text-indigo-600" />
+                          <p className="text-xs text-gray-600 font-medium">Atualizando assinatura biométrica...</p>
+                        </div>
+                      ) : (
+                        <BiometricEnrollment
+                          internName={selectedEmployee.name}
+                          internCpf={selectedEmployee.cpf}
+                          onEnrollmentComplete={handleAutogestaoComplete}
+                          onCancel={() => {
+                            setStep('select');
+                            setAutogestaoCpf('');
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           ) : loading ? (
             <div className="flex justify-center py-10">
               <Loader2 className="animate-spin text-indigo-600" size={28} />
@@ -306,7 +458,39 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
                 </div>
               )}
 
-              {error && <p className="text-red-500 text-xs text-center font-semibold animate-fade-in">{error}</p>}
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('autogestao');
+                  setError('');
+                }}
+                className="w-full py-2 px-3 border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-2xs mt-1"
+              >
+                <ScanFace size={14} className="text-indigo-600" />
+                <span>
+                  {selectedEmployee?.face_descriptor && selectedEmployee.face_descriptor !== '[]'
+                    ? 'Recadastrar Biometria Facial'
+                    : 'Autogestão de Biometria Facial'}
+                </span>
+              </button>
+
+              {error && (
+                <div className="space-y-1.5 text-center">
+                  <p className="text-red-500 text-xs font-semibold animate-fade-in">{error}</p>
+                  {(error.includes('biometria') || error.includes('reconhecido')) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('autogestao');
+                        setError('');
+                      }}
+                      className="text-[11px] text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center justify-center gap-1 mx-auto"
+                    >
+                      <ScanFace size={12} /> Recadastrar / Atualizar biometria agora &rarr;
+                    </button>
+                  )}
+                </div>
+              )}
 
               {!selectedId && (
                 <p className="text-[10px] text-gray-400 text-center flex items-center justify-center gap-1">
@@ -330,3 +514,4 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
     </div>
   );
 }
+

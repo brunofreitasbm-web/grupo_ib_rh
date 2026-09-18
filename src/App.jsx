@@ -3099,8 +3099,8 @@ export default function App() {
                     })}
                   </div>
 
-                  {BRANDING.showEmployeeSelfRegistration && (
-                    <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
+                  <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
+                    {BRANDING.showEmployeeSelfRegistration && (
                       <button
                         type="button"
                         onClick={() => setCurrentView('clt_autocadastro')}
@@ -3117,32 +3117,32 @@ export default function App() {
                         </div>
                         <span className="text-indigo-500 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Iniciar &rarr;</span>
                       </button>
+                    )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          loadPublicEmployees();
-                          setCltAutogestaoUnitId('');
-                          setCltAutogestaoEmployeeId('');
-                          setCltAutogestaoCpf('');
-                          setCltAutogestaoSuccess(false);
-                          setCurrentView('clt_biometria_autogestao');
-                        }}
-                        className="w-full p-4 border-2 border-indigo-200 rounded-xl bg-indigo-50/50 hover:bg-indigo-100/70 hover:border-indigo-400 transition-all flex items-center justify-between text-left group shadow-sm"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="p-2.5 bg-indigo-600 text-white rounded-lg group-hover:bg-indigo-700 transition-colors shadow-sm">
-                            <ScanFace size={20} className="text-white" />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-indigo-900 text-sm">📸 Cadastro de Biometria Facial</h4>
-                            <p className="text-[10px] text-indigo-700/80">Cadastre ou atualize sua biometria facial para o registro de ponto</p>
-                          </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        loadPublicEmployees();
+                        setCltAutogestaoUnitId('');
+                        setCltAutogestaoEmployeeId('');
+                        setCltAutogestaoCpf('');
+                        setCltAutogestaoSuccess(false);
+                        setCurrentView('clt_biometria_autogestao');
+                      }}
+                      className="w-full p-4 border-2 border-indigo-200 rounded-xl bg-indigo-50/50 hover:bg-indigo-100/70 hover:border-indigo-400 transition-all flex items-center justify-between text-left group shadow-sm"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-indigo-600 text-white rounded-lg group-hover:bg-indigo-700 transition-colors shadow-sm">
+                          <ScanFace size={20} className="text-white" />
                         </div>
-                        <span className="text-indigo-700 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Cadastrar &rarr;</span>
-                      </button>
-                    </div>
-                  )}
+                        <div>
+                          <h4 className="font-bold text-indigo-900 text-sm">📸 Autogestão de Biometria Facial</h4>
+                          <p className="text-[10px] text-indigo-700/80">Cadastre ou recadastre/atualize sua biometria facial para o registro de ponto</p>
+                        </div>
+                      </div>
+                      <span className="text-indigo-700 font-bold text-xs bg-white border border-indigo-200 py-1 px-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">Configurar &rarr;</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
