@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, Pencil, Trash2, Save, X, Loader2, ShieldCheck, Upload, UserPlus, Trash } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Users, Plus, Pencil, Trash2, Save, X, Loader2, ShieldCheck, Upload, UserPlus, Trash, ScanFace, Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
   mapEmployeeFromDb, mapEmployeeToDb, EMPLOYEE_SELECT_FIELDS,
@@ -47,6 +47,160 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
   const [dependents, setDependents] = useState([]);
   const [newDependent, setNewDependent] = useState({ name: '', cpf: '', birthdate: '', relationship: '', forIr: true, forSalarioFamilia: false });
   const [processingPhoto, setProcessingPhoto] = useState(false);
+
+  // Modal de Biometria e Reset Biométrico para CLT
+  const [bioModalEmployee, setBioModalEmployee] = useState(null);
+  const [bioPhoto, setBioPhoto] = useState('');
+  const [bioDescriptor, setBioDescriptor] = useState('');
+  const [bioStatusMsg, setBioStatusMsg] = useState('');
+  const [isBioCameraActive, setIsBioCameraActive] = useState(false);
+  const [isProcessingBio, setIsProcessingBio] = useState(false);
+  const bioStreamRef = useRef(null);
+  const bioVideoRef = useRef(null);
+
+  const startBioCamera = async () => {
+    try {
+      setBioStatusMsg('');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+      });
+      bioStreamRef.current = stream;
+      setIsBioCameraActive(true);
+    } catch (err) {
+      console.error("Erro ao acessar câmera:", err);
+      toast.error("Não foi possível acessar a câmera. Verifique as permissões do seu navegador.");
+    }
+  };
+
+  const stopBioCamera = () => {
+    if (bioStreamRef.current) {
+      bioStreamRef.current.getTracks().forEach(t => t.stop());
+      bioStreamRef.current = null;
+    }
+    setIsBioCameraActive(false);
+  };
+
+  const handleOpenBiometricsModal = (emp) => {
+    setBioModalEmployee(emp);
+    setBioPhoto(emp.photo || '');
+    setBioDescriptor(emp.faceDescriptor || '');
+    setBioStatusMsg('');
+    setIsBioCameraActive(false);
+  };
+
+  const handleCloseBiometricsModal = () => {
+    stopBioCamera();
+    setBioModalEmployee(null);
+    setBioPhoto('');
+    setBioDescriptor('');
+    setBioStatusMsg('');
+  };
+
+  const captureBioPhoto = async () => {
+    if (!bioVideoRef.current || !bioModalEmployee) return;
+    try {
+      setIsProcessingBio(true);
+      setBioStatusMsg('Processando imagem e extraindo assinatura biométrica...');
+      const video = bioVideoRef.current;
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 480;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = vWidth;
+      canvas.height = vHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, vWidth, vHeight);
+      const base64 = canvas.toDataURL('image/jpeg', 0.85);
+      setBioPhoto(base64);
+
+      const descriptor = await getFaceDescriptor(base64);
+      if (descriptor && descriptor.length === 128) {
+        const descriptorStr = JSON.stringify(Array.from(descriptor));
+        setBioDescriptor(descriptorStr);
+        stopBioCamera();
+
+        const { error } = await supabase
+          .from('employees')
+          .update({
+            photo: base64,
+            face_descriptor: descriptorStr,
+          })
+          .eq('id', bioModalEmployee.id);
+        if (error) throw error;
+        toast.success('Biometria facial atualizada com sucesso!');
+        setBioStatusMsg('✅ Biometria facial capturada e salva com sucesso!');
+        fetchData();
+      } else {
+        setBioStatusMsg('⚠️ Nenhum rosto detectado com clareza. Tente novamente em local bem iluminado.');
+        toast.error('Nenhum rosto detectado com clareza.');
+      }
+    } catch (err) {
+      console.error('Erro ao capturar biometria:', err);
+      toast.error('Erro ao salvar biometria: ' + err.message);
+      setBioStatusMsg('❌ Erro ao salvar biometria.');
+    } finally {
+      setIsProcessingBio(false);
+    }
+  };
+
+  const handleBioFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !bioModalEmployee) return;
+    try {
+      setIsProcessingBio(true);
+      setBioStatusMsg('Comprimindo foto e extraindo assinatura biométrica...');
+      const compressed = await compressImage(file, 400, 500, 0.8);
+      setBioPhoto(compressed);
+      const descriptor = await getFaceDescriptor(compressed);
+      if (descriptor && descriptor.length === 128) {
+        const descriptorStr = JSON.stringify(Array.from(descriptor));
+        setBioDescriptor(descriptorStr);
+        const { error } = await supabase
+          .from('employees')
+          .update({
+            photo: compressed,
+            face_descriptor: descriptorStr,
+          })
+          .eq('id', bioModalEmployee.id);
+        if (error) throw error;
+        toast.success('Biometria facial atualizada com sucesso!');
+        setBioStatusMsg('✅ Foto e biometria atualizadas!');
+        fetchData();
+      } else {
+        setBioStatusMsg('⚠️ Foto salva, mas não foi possível identificar um rosto para extrair a biometria.');
+        toast.error('Não foi possível identificar um rosto nesta foto.');
+      }
+    } catch (err) {
+      console.error('Erro ao enviar foto para biometria:', err);
+      toast.error('Erro ao processar foto: ' + err.message);
+    } finally {
+      setIsProcessingBio(false);
+    }
+  };
+
+  const handleClearBiometrics = async () => {
+    if (!bioModalEmployee) return;
+    const ok = window.confirm("Deseja realmente remover/resetar a biometria facial deste funcionário?");
+    if (!ok) return;
+    try {
+      setIsProcessingBio(true);
+      const { error } = await supabase
+        .from('employees')
+        .update({ face_descriptor: null })
+        .eq('id', bioModalEmployee.id);
+      if (error) throw error;
+      toast.success('Biometria facial resetada com sucesso.');
+      setBioDescriptor('');
+      setBioStatusMsg('Biometria facial removida com sucesso.');
+      fetchData();
+    } catch (err) {
+      toast.error('Erro ao remover biometria: ' + err.message);
+    } finally {
+      setIsProcessingBio(false);
+    }
+  };
 
   const labels = BRANDING.employeeLabels || { singular: 'Funcionário(a)', plural: 'Funcionários CLT' };
   const defaultUnitId = filterUnit !== 'all' ? filterUnit : (units?.[0]?.id || '');
@@ -357,6 +511,18 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                           candidateMatch={candidateDiscByEmail[(emp.email || '').toLowerCase()]}
                           onSent={reloadDisc}
                         />
+                        <button
+                          onClick={() => handleOpenBiometricsModal(emp)}
+                          className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 border shadow-2xs ${
+                            emp.faceDescriptor && emp.faceDescriptor !== '[]'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100'
+                          }`}
+                          title="Cadastrar / Resetar Biometria Facial"
+                        >
+                          <ScanFace size={13} />
+                          <span>{emp.faceDescriptor && emp.faceDescriptor !== '[]' ? 'Biometria Ok' : 'Biometria'}</span>
+                        </button>
                         <button onClick={() => openEdit(emp)} className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Editar">
                           <Pencil size={13} />
                         </button>
@@ -582,6 +748,162 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL POP-UP DE BIOMETRIA E RESET BIOMÉTRICO PARA CLT */}
+      {bioModalEmployee && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 flex flex-col">
+            {/* Header */}
+            <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <ScanFace className="text-blue-400" size={20} />
+                <div>
+                  <h3 className="text-sm font-bold leading-tight">Gestão de Biometria Facial</h3>
+                  <p className="text-[11px] text-slate-300 font-medium">{bioModalEmployee.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseBiometricsModal}
+                className="text-slate-400 hover:text-white transition-colors p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              {/* Status Badge */}
+              <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+                <span className="font-semibold text-slate-700">Status Biométrico:</span>
+                {bioDescriptor && bioDescriptor !== '[]' ? (
+                  <span className="bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[10px]">
+                    <CheckCircle2 size={12} /> Assinatura Ativa (128-d)
+                  </span>
+                ) : (
+                  <span className="bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[10px]">
+                    <AlertCircle size={12} /> Sem Biometria Cadastrada
+                  </span>
+                )}
+              </div>
+
+              {/* View Area: Camera or Captured Photo */}
+              <div className="relative w-full aspect-square bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner group">
+                {isBioCameraActive ? (
+                  <>
+                    <video
+                      ref={(node) => {
+                        bioVideoRef.current = node;
+                        if (node && bioStreamRef.current && node.srcObject !== bioStreamRef.current) {
+                          node.srcObject = bioStreamRef.current;
+                          node.play().catch(() => {});
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover transform -scale-x-100"
+                    />
+                    {/* Moldura do Scanner de Rosto */}
+                    <div className="absolute inset-8 border-2 border-blue-400/70 border-dashed rounded-full pointer-events-none flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-blue-500/50 animate-pulse"></div>
+                    </div>
+                    <span className="absolute top-2 left-2 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" /> Ao Vivo
+                    </span>
+                  </>
+                ) : bioPhoto ? (
+                  <img src={bioPhoto} alt="Biometria Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center p-6 text-slate-400 space-y-2">
+                    <ScanFace size={48} className="mx-auto text-slate-500 opacity-60" />
+                    <p className="text-xs font-semibold text-slate-300">Nenhuma foto capturada.</p>
+                    <p className="text-[10px] text-slate-400">Ative a câmera ou envie um arquivo para extrair a biometria.</p>
+                  </div>
+                )}
+
+                {isProcessingBio && (
+                  <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xs flex flex-col items-center justify-center text-white gap-2 p-4 text-center">
+                    <RefreshCw size={28} className="animate-spin text-blue-400" />
+                    <span className="text-xs font-semibold">Processando biometria facial...</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Feedback Message */}
+              {bioStatusMsg && (
+                <div className={`p-2.5 rounded-lg text-[11px] font-semibold border ${
+                  bioStatusMsg.includes('✅') 
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                    : bioStatusMsg.includes('⚠️')
+                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                      : 'bg-blue-50 text-blue-800 border-blue-200'
+                }`}>
+                  {bioStatusMsg}
+                </div>
+              )}
+
+              {/* Controls */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {isBioCameraActive ? (
+                  <button
+                    type="button"
+                    onClick={captureBioPhoto}
+                    disabled={isProcessingBio}
+                    className="col-span-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                  >
+                    <Camera size={16} /> Capturar Foto & Extrair Biometria
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={startBioCamera}
+                      disabled={isProcessingBio}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                    >
+                      <Camera size={15} /> Ativar Câmera
+                    </button>
+
+                    <label className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-colors border border-slate-200">
+                      <Upload size={15} /> Upload Foto 3x4
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleBioFileUpload}
+                        disabled={isProcessingBio}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+
+              {/* Reset Biometrics Button */}
+              {bioDescriptor && bioDescriptor !== '[]' && !isBioCameraActive && (
+                <button
+                  type="button"
+                  onClick={handleClearBiometrics}
+                  disabled={isProcessingBio}
+                  className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors border border-red-200 cursor-pointer shadow-xs"
+                >
+                  <Trash2 size={14} /> Resetar / Remover Biometria Facial
+                </button>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 border-t p-3.5 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={handleCloseBiometricsModal}
+                className="px-4 py-2 border rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
