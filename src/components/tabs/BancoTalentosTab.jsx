@@ -58,6 +58,7 @@ export default function BancoTalentosTab() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('NOVO');
+  const [discFilter, setDiscFilter] = useState('todos');
   const [activeSubTab, setActiveSubTab] = useState('candidatos');
 
   // Overlay local, indexado por candidate_id.
@@ -71,6 +72,7 @@ export default function BancoTalentosTab() {
   const [notesTarget, setNotesTarget] = useState(null);
   const [resultTarget, setResultTarget] = useState(null);
   const [fitTarget, setFitTarget] = useState(null); // { candidate, role, unit }
+  const [resendConfirmTarget, setResendConfirmTarget] = useState(null);
 
   const loadOverlay = useCallback(async (ids) => {
     if (ids.length === 0) {
@@ -189,12 +191,20 @@ export default function BancoTalentosTab() {
     const q = search.trim().toLowerCase();
     return enriched.filter((c) => {
       if (statusFilter !== 'todos' && c.effectiveStatus !== statusFilter) return false;
+
+      // Filtro por Levantamento de Perfil
+      const hasToken = Boolean(c.discToken);
+      const hasAssessment = Boolean(c.discAssessment);
+      if (discFilter === 'enviados' && (!hasToken || hasAssessment)) return false;
+      if (discFilter === 'respondidos' && !hasAssessment) return false;
+      if (discFilter === 'sem_envio' && (hasToken || hasAssessment)) return false;
+
       if (!q) return true;
       return [c.full_name, c.email, c.course, c.desired_area]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [enriched, search, statusFilter]);
+  }, [enriched, search, statusFilter, discFilter]);
 
   const changeStatus = async (candidate, newStatus) => {
     setBusyId(candidate.id);
@@ -216,6 +226,19 @@ export default function BancoTalentosTab() {
       toast.error('Não foi possível atualizar o status.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleInitiateSendDisc = (candidate) => {
+    if (!candidate.email) {
+      toast.warning('Candidato sem e-mail cadastrado.');
+      return;
+    }
+    // Se o candidato JÁ possui token enviado ou resposta concluída, solicita confirmação ao gestor!
+    if (candidate.discToken || candidate.discAssessment) {
+      setResendConfirmTarget(candidate);
+    } else {
+      sendDiscAssessment(candidate);
     }
   };
 
@@ -385,30 +408,56 @@ export default function BancoTalentosTab() {
 
       <div style={{ display: activeSubTab === 'candidatos' ? 'block' : 'none' }} className="space-y-6">
       {/* Filtros */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, e-mail, curso ou área..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, e-mail, curso ou área..."
+              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_OPTIONS.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setStatusFilter(s.value)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                  statusFilter === s.value
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {STATUS_OPTIONS.map((s) => (
+
+        {/* Filtro rápido por Levantamento de Perfil */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 text-xs">
+          <span className="font-semibold text-slate-500 mr-1">Levantamento de Perfil:</span>
+          {[
+            { value: 'todos', label: 'Todos' },
+            { value: 'enviados', label: '📩 Enviados (Pendentes)' },
+            { value: 'respondidos', label: '✅ Respondidos' },
+            { value: 'sem_envio', label: '⏳ Não enviados' },
+          ].map((df) => (
             <button
-              key={s.value}
+              key={df.value}
               type="button"
-              onClick={() => setStatusFilter(s.value)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
-                statusFilter === s.value
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+              onClick={() => setDiscFilter(df.value)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${
+                discFilter === df.value
+                  ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              {s.label}
+              {df.label}
             </button>
           ))}
         </div>
@@ -438,7 +487,7 @@ export default function BancoTalentosTab() {
                   <th className="p-3">Área desejada</th>
                   <th className="p-3">Oportunidade</th>
                   <th className="p-3">Status</th>
-                  <th className="p-3">Perfil</th>
+                  <th className="p-3">Perfil (DISC)</th>
                   <th className="p-3">Data</th>
                   <th className="p-3 text-right">Currículo</th>
                   <th className="p-3 text-right">Ações</th>
@@ -448,25 +497,40 @@ export default function BancoTalentosTab() {
                 {filtered.map((c) => {
                   const profileInfo = c.discAssessment ? DISC_PROFILE_INFO[c.discAssessment.primary_profile] : null;
                   const pendingToken = !c.discAssessment && c.discToken && !c.discToken.consumed_at;
-                  const sentLabel = pendingToken ? formatShortDate(c.discToken.sent_at) : null;
+                  const sentAtIso = c.discToken?.sent_at;
                   const openedAt = pendingToken ? c.discToken.first_opened_at : null;
                   const isLate = Boolean(openedAt) && (Date.now() - new Date(openedAt).getTime()) > DISC_SLA_MS;
 
                   return (
                     <tr key={c.id} className="hover:bg-slate-50">
                       <td className="p-3">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-semibold text-slate-800">{c.full_name || '—'}</span>
-                          {isLate && (
-                            <span
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-red-200 bg-red-50 text-red-600"
-                              title={`Atraso no preenchimento do perfil — link aberto em ${formatDateTime(openedAt)}, prazo de 48h expirado`}
-                            >
-                              <AlertTriangle className="w-3 h-3" /> Atraso no preenchimento
+
+                          {/* Tag visual direta no candidato sobre o Levantamento de Perfil */}
+                          {c.discAssessment ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-700" title={`Levantamento respondido em ${formatDateTime(c.discAssessment.created_at || c.discToken?.consumed_at)}`}>
+                              ✅ Respondido
+                            </span>
+                          ) : pendingToken ? (
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border ${
+                              isLate
+                                ? 'border-red-200 bg-red-50 text-red-700'
+                                : openedAt
+                                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                : 'border-amber-200 bg-amber-50 text-amber-700'
+                            }`} title={sentAtIso ? `Levantamento enviado em ${formatDateTime(sentAtIso)}` : undefined}>
+                              {isLate ? <AlertTriangle className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                              {isLate ? 'Atraso no preenchimento' : openedAt ? `Aberto ${formatShortDate(openedAt)}` : `Enviado ${formatShortDate(sentAtIso)}`}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded border border-slate-200 bg-slate-50 text-slate-400">
+                              ⏳ Não enviado
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
                           {c.email && (
                             <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>
                           )}
@@ -500,6 +564,9 @@ export default function BancoTalentosTab() {
                               {c.discAssessment.primary_profile}
                               {c.discAssessment.secondary_profile ? `/${c.discAssessment.secondary_profile}` : ''}
                             </button>
+                            <span className="text-[10px] text-emerald-700 font-semibold" title={`Respondido em ${formatDateTime(c.discAssessment.created_at || c.discToken?.consumed_at)}`}>
+                              ✅ Respondido {formatShortDate(c.discAssessment.created_at || c.discToken?.consumed_at)}
+                            </span>
                             {c.bestFit && (
                               <span className="text-[10px] text-slate-500 whitespace-nowrap" title="Função com maior compatibilidade (ver Simulação por Unidade)">
                                 Sugestão: <span className="font-semibold">{c.bestFit.role.short}</span> {c.bestFit.fit.score}
@@ -507,12 +574,25 @@ export default function BancoTalentosTab() {
                             )}
                           </div>
                         ) : pendingToken ? (
-                          <span className={`text-[11px] flex items-center gap-1 ${isLate ? 'text-red-500 font-semibold' : 'text-slate-400'}`}>
-                            <Sparkles className="w-3 h-3" />
-                            {openedAt ? `Aberto ${formatShortDate(openedAt)}` : `Enviado ${sentLabel}`}
-                          </span>
+                          <div className="flex flex-col items-start gap-1">
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-md border flex items-center gap-1.5 ${
+                              isLate
+                                ? 'bg-red-50 text-red-700 border-red-200'
+                                : openedAt
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`} title={sentAtIso ? `Enviado em ${formatDateTime(sentAtIso)}` : undefined}>
+                              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                              {openedAt ? `Aberto ${formatShortDate(openedAt)}` : `Enviado ${formatShortDate(sentAtIso)}`}
+                            </span>
+                            <span className="text-[10px] text-slate-400" title={sentAtIso ? `Data de envio: ${formatDateTime(sentAtIso)}` : undefined}>
+                              {sentAtIso ? `Enviado em ${formatDateTime(sentAtIso)}` : 'Pendente de resposta'}
+                            </span>
+                          </div>
                         ) : (
-                          <span className="text-xs text-slate-300">—</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-md">
+                            — Não enviado
+                          </span>
                         )}
                       </td>
                       <td className="p-3 text-xs text-slate-500">{formatDate(c)}</td>
@@ -537,7 +617,7 @@ export default function BancoTalentosTab() {
                           effectiveStatus={c.effectiveStatus}
                           busy={busyId === c.id}
                           onChangeStatus={(newStatus) => changeStatus(c, newStatus)}
-                          onSendDisc={() => sendDiscAssessment(c)}
+                          onSendDisc={() => handleInitiateSendDisc(c)}
                           onOpenNotes={() => setNotesTarget(c)}
                         />
                       </td>
@@ -550,6 +630,79 @@ export default function BancoTalentosTab() {
         )}
       </div>
       </div>
+
+      {resendConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3 text-amber-600">
+              <div className="p-2.5 bg-amber-100 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Levantamento de Perfil já enviado
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Atenção ao reenviar a avaliação para o mesmo candidato.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-700 space-y-1.5">
+              <p>
+                <strong>Candidato:</strong> {resendConfirmTarget.full_name}
+              </p>
+              <p>
+                <strong>E-mail:</strong> {resendConfirmTarget.email}
+              </p>
+              {resendConfirmTarget.discToken?.sent_at && (
+                <p>
+                  <strong>Envio anterior:</strong> {formatDateTime(resendConfirmTarget.discToken.sent_at)}
+                </p>
+              )}
+              <p>
+                <strong>Situação atual:</strong>{' '}
+                {resendConfirmTarget.discAssessment ? (
+                  <span className="font-semibold text-emerald-700">✅ Já respondido ({resendConfirmTarget.discAssessment.primary_profile})</span>
+                ) : resendConfirmTarget.discToken?.first_opened_at ? (
+                  <span className="font-semibold text-blue-700">👀 Link aberto pelo candidato em {formatDateTime(resendConfirmTarget.discToken.first_opened_at)}</span>
+                ) : (
+                  <span className="font-semibold text-amber-700">📩 Link enviado por e-mail (Aguardando resposta)</span>
+                )}
+              </p>
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+              <p className="font-semibold">⚠️ O que acontece se reenviar?</p>
+              <p>
+                Um novo e-mail será disparado com um novo link. Caso o link anterior ainda não tenha sido respondido, ele será invalidado.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setResendConfirmTarget(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = resendConfirmTarget;
+                  setResendConfirmTarget(null);
+                  sendDiscAssessment(target);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 rounded-xl hover:bg-amber-700 flex items-center gap-1.5 shadow-sm"
+              >
+                <Sparkles className="w-4 h-4" />
+                Sim, Reenviar Avaliação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {fitTarget && fitTarget.candidate.discAssessment && (
         <RoleFitModal

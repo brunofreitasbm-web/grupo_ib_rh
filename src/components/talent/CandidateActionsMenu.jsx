@@ -84,11 +84,20 @@ export default function CandidateActionsMenu({
             type="button"
             onClick={act(onSendDisc)}
             disabled={!candidate.email}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-blue-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:text-slate-400"
+            className="w-full flex items-start gap-2 px-3 py-1.5 text-left text-blue-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:text-slate-400"
             title={!candidate.email ? 'Candidato sem e-mail' : undefined}
           >
-            <Send className="w-3.5 h-3.5" />
-            {candidate.hasDiscToken ? 'Reenviar Levantamento de Perfil' : 'Enviar Levantamento de Perfil'}
+            <Send className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium">
+                {candidate.hasDiscToken ? 'Reenviar Levantamento' : 'Enviar Levantamento de Perfil'}
+              </div>
+              {candidate.hasDiscToken && (
+                <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                  ⚠️ Já enviado anteriormente
+                </div>
+              )}
+            </div>
           </button>
 
           <button
