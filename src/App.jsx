@@ -904,24 +904,6 @@ export default function App() {
     } else if (data && data.length) {
       const mapped = data.map(mapUnitFromDb);
       setUnits(mapped);
-      
-      // Auto-update units in database to 5km if they are still 0.1km or less than 5km
-      const needsUpdate = mapped.some(u => u.radiusKm < 5);
-      if (needsUpdate) {
-        const updated = mapped.map(u => ({
-          ...u,
-          radiusKm: 5,
-          radiusM: 5000
-        }));
-        const dbUnits = updated.map(mapUnitToDb);
-        supabase.from('units').upsert(dbUnits).then(({ error: upsertError }) => {
-          if (upsertError) {
-            console.error('Erro ao auto-atualizar unidades para 5km:', upsertError);
-          } else {
-            setUnits(updated);
-          }
-        });
-      }
     }
   }, [user]);
 
@@ -1907,30 +1889,56 @@ export default function App() {
       }
     }
 
-    let pos;
-    try {
-      pos = await getCurrentPosition();
-    } catch (err) {
-      setGeoError(geoErrorMessage(err));
-      setIsLocating(false);
-      return;
-    }
+    // Unidades operadas por terminal fixo (desktop) sem GPS costumam depender
+    // de geolocalização por IP, que pode ficar milhares de km fora do lugar.
+    // Unidades com biometric_required=true mantêm a exigência de geo sempre
+    // (ver isRestrictedUnit acima); as demais podem desativar via
+    // unit.geofenceRequired (Configurações > Unidades).
+    const geofenceRequired = isRestrictedUnit || unit.geofenceRequired !== false;
 
-    const { latitude, longitude, accuracy } = pos.coords;
-    const distanceKm = haversineKm(latitude, longitude, unit.lat, unit.lng);
-    const distanceM = distanceKm * 1000;
-    
-    // Raio da Cerca Virtual permitido em metros
-    const allowedRadiusM = Number(unit.radiusM) || (Number(unit.radiusKm) * 1000) || 1000;
+    let latitude = null;
+    let longitude = null;
+    let accuracy = null;
+    let distanceKm = null;
+    let distanceM = null;
 
-    if (distanceM > allowedRadiusM) {
-      setGeoError(
-        `Você está a ${distanceM < 1000 ? `${Math.round(distanceM)} m` : `${(distanceM/1000).toFixed(2)} km`} da cerca da ${unit.name}. ` +
-        `O registro só é permitido dentro de ${allowedRadiusM} metros. ` +
-        `Aproxime-se do local e tente novamente.`
-      );
-      setIsLocating(false);
-      return;
+    if (geofenceRequired) {
+      let pos;
+      try {
+        pos = await getCurrentPosition();
+      } catch (err) {
+        setGeoError(geoErrorMessage(err));
+        setIsLocating(false);
+        return;
+      }
+
+      ({ latitude, longitude, accuracy } = pos.coords);
+      distanceKm = haversineKm(latitude, longitude, unit.lat, unit.lng);
+      distanceM = distanceKm * 1000;
+
+      // Raio da Cerca Virtual permitido em metros
+      const allowedRadiusM = Number(unit.radiusM) || (Number(unit.radiusKm) * 1000) || 1000;
+
+      if (distanceM > allowedRadiusM) {
+        setGeoError(
+          `Você está a ${distanceM < 1000 ? `${Math.round(distanceM)} m` : `${(distanceM/1000).toFixed(2)} km`} da cerca da ${unit.name}. ` +
+          `O registro só é permitido dentro de ${allowedRadiusM} metros. ` +
+          `Aproxime-se do local e tente novamente.`
+        );
+        setIsLocating(false);
+        return;
+      }
+    } else {
+      // Geofence desativada para esta unidade: tenta capturar a localização
+      // apenas para fins de auditoria, sem bloquear o registro caso falhe.
+      try {
+        const pos = await getCurrentPosition();
+        ({ latitude, longitude, accuracy } = pos.coords);
+        distanceKm = haversineKm(latitude, longitude, unit.lat, unit.lng);
+        distanceM = distanceKm * 1000;
+      } catch (err) {
+        console.warn('Geolocalização não disponível (geofence desativada nesta unidade):', err);
+      }
     }
 
     const newRecord = {
@@ -1947,8 +1955,8 @@ export default function App() {
         lat: latitude,
         lng: longitude,
         accuracy: Math.round(accuracy || 0),
-        distanceKm: Number(distanceKm.toFixed(3)),
-        distanceM: Number(distanceM.toFixed(1)),
+        distanceKm: distanceKm != null ? Number(distanceKm.toFixed(3)) : null,
+        distanceM: distanceM != null ? Number(distanceM.toFixed(1)) : null,
         unitId: unit.id,
         unitName: unit.name,
       },
@@ -8234,12 +8242,10 @@ export default function App() {
       { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
     ];
 
-    // Aniversariantes e Configurações são comuns aos 3 módulos (Estagiários/PJ/
-    // CLT) — ficam fixos numa seção própria da sidebar, sempre visíveis, em vez
-    // de duplicados dentro de cada lista de módulo.
+    const showTalentBank = WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule;
     const commonNavItems = [
       { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
-      ...(BRANDING.showTalentBankModule ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: '🧑‍💼' }] : []),
+      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: '🧑‍💼' }] : []),
       { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
     ];
 
@@ -8514,7 +8520,7 @@ export default function App() {
                   <div style={{ display: activeAdminTab === 'aniversariantes' ? 'block' : 'none' }}>
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
-                  {BRANDING.showTalentBankModule && (
+                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (
                     <div style={{ display: activeAdminTab === 'banco_talentos' ? 'block' : 'none' }}>
                       <BancoTalentosTab />
                     </div>

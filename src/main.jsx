@@ -13,8 +13,21 @@ import { lazyWithRetry } from './utils/lazyWithRetry';
 // src/components/tabs/BancoTalentosTab.jsx e src/components/DiscAssessmentPage.jsx.
 const DiscAssessmentPage = lazyWithRetry(() => import('./components/DiscAssessmentPage.jsx'));
 
+import { registerSW } from 'virtual:pwa-register';
+
 document.title = BRANDING.appTitle;
 document.querySelector('meta[name="theme-color"]')?.setAttribute('content', BRANDING.themeColor);
+
+// Atualização automática e transparente do PWA Service Worker sem requerer Ctrl+Shift+R manual
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      console.info('Nova versão da aplicação detectada. Recarregando com o novo bundle...');
+      window.location.reload();
+    },
+  });
+}
 
 // Tratamento global para erros de carregamento de módulos dinâmicos (ex: novos deploys no Netlify)
 window.addEventListener('vite:preloadError', (event) => {

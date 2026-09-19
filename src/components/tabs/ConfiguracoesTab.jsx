@@ -50,7 +50,8 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     paeCustomText: '',
     declaracaoCustomText: '',
     fichaCustomText: '',
-    radiusM: 5000
+    radiusM: 5000,
+    geofenceRequired: true
   }));
 
   const availableUnits = rawAvailableUnits.filter((u) => {
@@ -81,6 +82,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         fichaCustomText: u.fichaCustomText || u.ficha_custom_text || '',
         radiusM: u.radiusM || u.radius_m || 5000,
         radiusKm: u.radiusKm || u.radius_km || 5,
+        geofenceRequired: u.geofenceRequired !== undefined ? u.geofenceRequired : (u.geofence_required !== false),
         lat: u.lat !== undefined ? u.lat : (u.latitude || 0),
         lng: u.lng !== undefined ? u.lng : (u.longitude || 0),
         workspaceId: u.workspaceId || u.workspace_id || null,
@@ -171,6 +173,35 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
       localStorage.setItem(`unit_config_${BRANDING.id}_${unitId}`, JSON.stringify(unitData));
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
+    }
+  };
+
+  const handleApplyRadiusToAllUnits = async (radiusM) => {
+    const targetRadius = Number(radiusM) > 0 ? Number(radiusM) : 5000;
+    const targetRadiusKm = targetRadius / 1000;
+    const updatedMap = { ...editingUnits };
+    const allUnitIds = Object.keys(updatedMap);
+
+    for (const id of allUnitIds) {
+      updatedMap[id] = {
+        ...updatedMap[id],
+        radiusM: targetRadius,
+        radiusKm: targetRadiusKm,
+      };
+    }
+    setEditingUnits(updatedMap);
+
+    try {
+      toast.info(`Aplicando cerca virtual de ${targetRadius}m em TODAS as unidades...`);
+      for (const id of allUnitIds) {
+        if (onSaveUnit) {
+          await onSaveUnit(updatedMap[id]);
+        }
+      }
+      toast.success(`Cerca virtual de ${targetRadius}m aplicada e salva em TODAS as unidades com sucesso!`);
+    } catch (err) {
+      console.error('Erro ao aplicar raio a todas as unidades:', err);
+      toast.error('Erro ao salvar algumas unidades.');
     }
   };
 
@@ -451,6 +482,41 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                                     placeholder="Rua, Número, Bairro, Cidade - UF, CEP"
                                   />
                                 </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Raio da Cerca Virtual (metros)</label>
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                    <input
+                                      type="number" min={0}
+                                      value={uData.radiusM}
+                                      onChange={(e) => handleUnitFieldChange(uData.id, 'radiusM', Number(e.target.value))}
+                                      className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyRadiusToAllUnits(uData.radiusM)}
+                                      className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-xs whitespace-nowrap"
+                                      title="Aplicar este mesmo raio a TODAS as unidades e salvar no banco"
+                                    >
+                                      <Check className="w-3.5 h-3.5 text-indigo-600" />
+                                      Aplicar a TODAS as unidades
+                                    </button>
+                                  </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 self-end pb-1.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={uData.geofenceRequired !== false}
+                                    onChange={(e) => handleUnitFieldChange(uData.id, 'geofenceRequired', e.target.checked)}
+                                    disabled={!!uData.biometricRequired}
+                                  />
+                                  Exigir geolocalização dentro do raio da unidade (estagiários)
+                                </label>
+                                {uData.biometricRequired && (
+                                  <p className="md:col-span-2 text-[10px] text-slate-400 -mt-2">Geolocalização obrigatória: esta unidade exige biometria facial, que sempre acompanha geolocalização.</p>
+                                )}
+                                {!uData.biometricRequired && (
+                                  <p className="md:col-span-2 text-[10px] text-slate-400 -mt-2">Desative apenas se o registro nesta unidade acontecer em terminal fixo (desktop) sem GPS confiável — a localização por IP pode ficar muito imprecisa e bloquear registros legítimos.</p>
+                                )}
                               </div>
                             </div>
 

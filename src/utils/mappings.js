@@ -204,14 +204,17 @@ const safeNum = (val, fallback = 0) => {
 
 export const mapUnitFromDb = (u) => {
   if (!u) return {};
+  const radiusM = safeNum(u.radius_m, safeNum(u.radius_km, 5) * 1000);
+  const radiusKm = safeNum(u.radius_km, radiusM / 1000);
   return {
     id: u.id,
     name: u.name || '',
     address: u.address || '',
     lat: safeNum(u.lat, 0),
     lng: safeNum(u.lng, 0),
-    radiusKm: safeNum(u.radius_km, 5),
-    radiusM: safeNum(u.radius_m, 5000),
+    radiusKm,
+    radiusM,
+    geofenceRequired: u.geofence_required !== false,
     workspaceId: u.workspace_id || null,
     kioskEmail: u.kiosk_email || '',
     biometricRequired: u.biometric_required || false,
@@ -238,14 +241,17 @@ export const mapUnitFromDb = (u) => {
 
 export const mapUnitToDb = (u) => {
   if (!u) return {};
+  const radiusM = safeNum(u.radiusM ?? u.radius_m, safeNum(u.radiusKm ?? u.radius_km, 5) * 1000);
+  const radiusKm = safeNum(u.radiusKm ?? u.radius_km, radiusM / 1000);
   return {
     id: u.id,
     name: u.name || u.nome || '',
     address: u.address || u.endereco || '',
     lat: safeNum(u.lat ?? u.latitude, 0),
     lng: safeNum(u.lng ?? u.longitude, 0),
-    radius_km: safeNum(u.radiusKm ?? u.radius_km, 5),
-    radius_m: safeNum(u.radiusM ?? u.radius_m, 5000),
+    radius_km: radiusKm,
+    radius_m: radiusM,
+    geofence_required: (u.geofenceRequired ?? u.geofence_required) !== false,
     workspace_id: u.workspaceId || u.workspace_id || null,
     kiosk_email: u.kioskEmail || u.kiosk_email || null,
     biometric_required: u.biometricRequired !== undefined ? Boolean(u.biometricRequired) : (u.biometric_required !== undefined ? Boolean(u.biometric_required) : false),
