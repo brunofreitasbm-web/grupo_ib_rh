@@ -251,7 +251,6 @@ export const mapUnitToDb = (u) => {
     lng: safeNum(u.lng ?? u.longitude, 0),
     radius_km: radiusKm,
     radius_m: radiusM,
-    geofence_required: (u.geofenceRequired ?? u.geofence_required) !== false,
     workspace_id: u.workspaceId || u.workspace_id || null,
     kiosk_email: u.kioskEmail || u.kiosk_email || null,
     biometric_required: u.biometricRequired !== undefined ? Boolean(u.biometricRequired) : (u.biometric_required !== undefined ? Boolean(u.biometric_required) : false),
