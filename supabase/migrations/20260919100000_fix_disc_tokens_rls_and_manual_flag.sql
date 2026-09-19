@@ -4,25 +4,34 @@
 -- 1. talent_disc_tokens
 DROP POLICY IF EXISTS talent_disc_tokens_select ON public.talent_disc_tokens;
 CREATE POLICY talent_disc_tokens_select ON public.talent_disc_tokens
-  FOR SELECT TO authenticated USING (true);
+  FOR SELECT TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS talent_disc_tokens_insert ON public.talent_disc_tokens;
 CREATE POLICY talent_disc_tokens_insert ON public.talent_disc_tokens
-  FOR INSERT TO authenticated WITH CHECK (true);
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 DROP POLICY IF EXISTS talent_disc_tokens_update ON public.talent_disc_tokens;
 CREATE POLICY talent_disc_tokens_update ON public.talent_disc_tokens
-  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+  FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS talent_disc_tokens_delete ON public.talent_disc_tokens;
+CREATE POLICY talent_disc_tokens_delete ON public.talent_disc_tokens
+  FOR DELETE TO anon, authenticated USING (true);
 
 -- 2. staff_disc_tokens
 DROP POLICY IF EXISTS staff_disc_tokens_select ON public.staff_disc_tokens;
 CREATE POLICY staff_disc_tokens_select ON public.staff_disc_tokens
-  FOR SELECT TO authenticated USING (true);
+  FOR SELECT TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS staff_disc_tokens_insert ON public.staff_disc_tokens;
 CREATE POLICY staff_disc_tokens_insert ON public.staff_disc_tokens
-  FOR INSERT TO authenticated WITH CHECK (true);
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 DROP POLICY IF EXISTS staff_disc_tokens_update ON public.staff_disc_tokens;
 CREATE POLICY staff_disc_tokens_update ON public.staff_disc_tokens
-  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+  FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS staff_disc_tokens_delete ON public.staff_disc_tokens;
+CREATE POLICY staff_disc_tokens_delete ON public.staff_disc_tokens
+  FOR DELETE TO anon, authenticated USING (true);
+
