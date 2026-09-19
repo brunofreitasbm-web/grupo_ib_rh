@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, ArrowRightLeft, Archive, ArchiveRestore, Send, MessageCircle, Mail, StickyNote } from 'lucide-react';
+import { MoreVertical, ArrowRightLeft, Archive, ArchiveRestore, Send, CheckCircle, MessageCircle, Mail, StickyNote } from 'lucide-react';
 import { CANDIDATE_STATUSES, statusLabel } from '../../constants/talentBank';
 
 // Menu de ações rápidas por candidato, na linha da tabela. O repo não usa
@@ -11,6 +11,7 @@ export default function CandidateActionsMenu({
   busy,
   onChangeStatus,
   onSendDisc,
+  onMarkSentManual,
   onOpenNotes,
 }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +91,7 @@ export default function CandidateActionsMenu({
             <Send className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <div>
               <div className="font-medium">
-                {candidate.hasDiscToken ? 'Reenviar Levantamento' : 'Enviar Levantamento de Perfil'}
+                {candidate.hasDiscToken ? 'Reenviar Levantamento' : 'Enviar Levantamento por E-mail'}
               </div>
               {candidate.hasDiscToken && (
                 <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
@@ -99,6 +100,17 @@ export default function CandidateActionsMenu({
               )}
             </div>
           </button>
+
+          {onMarkSentManual && (
+            <button
+              type="button"
+              onClick={act(onMarkSentManual)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-emerald-700 hover:bg-emerald-50 font-medium"
+            >
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              {candidate.hasDiscToken ? 'Atualizar p/ Enviado (Manual)' : 'Marcar como Enviado (Manual)'}
+            </button>
+          )}
 
           <button
             type="button"

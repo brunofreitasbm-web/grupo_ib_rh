@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users } from 'lucide-react';
+import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { toast } from 'sonner';
 import { STATUS_OPTIONS, STATUS_BADGE, OPPORTUNITY_LABEL, statusLabel } from '../../constants/talentBank';
@@ -275,6 +275,91 @@ export default function BancoTalentosTab() {
     }
   };
 
+  const markSentManual = async (candidate) => {
+    setBusyId(candidate.id);
+    try {
+      const { error: metaErr } = await supabase.from('talent_candidates_meta').upsert(
+        {
+          candidate_id: candidate.id,
+          snapshot: { full_name: candidate.full_name, email: candidate.email, phone: candidate.phone },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'candidate_id', ignoreDuplicates: true }
+      );
+      if (metaErr) throw metaErr;
+
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const nowIso = new Date().toISOString();
+      const tokenHash = `manual_${candidate.id.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
+
+      const tokenObj = {
+        candidate_id: candidate.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+        sent_at: nowIso,
+        sent_to: candidate.email || 'Manual',
+        attempts: 0,
+        consumed_at: null,
+      };
+
+      const { error: tokenErr } = await supabase.from('talent_disc_tokens').upsert(tokenObj, { onConflict: 'candidate_id' });
+      if (tokenErr) throw tokenErr;
+
+      setTokensById((prev) => ({ ...prev, [candidate.id]: tokenObj }));
+      toast.success(`Levantamento marcado como enviado para ${candidate.full_name || 'candidato'}.`);
+    } catch (err) {
+      console.error('Erro ao marcar como enviado manualmente:', err);
+      toast.error('Não foi possível registrar o envio manual.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const markAllUnsentAsSentManual = async () => {
+    const unsentList = filtered.filter((c) => !c.discToken && !c.discAssessment);
+    if (unsentList.length === 0) {
+      toast.info('Não há candidatos sem envio na listagem atual.');
+      return;
+    }
+
+    if (!window.confirm(`Deseja marcar ${unsentList.length} candidato(s) como "Levantamento Enviado (Manual)"?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const metaRows = unsentList.map((c) => ({
+        candidate_id: c.id,
+        snapshot: { full_name: c.full_name, email: c.email, phone: c.phone },
+        updated_at: nowIso,
+      }));
+      await supabase.from('talent_candidates_meta').upsert(metaRows, { onConflict: 'candidate_id', ignoreDuplicates: true });
+
+      const tokenRows = unsentList.map((c) => ({
+        candidate_id: c.id,
+        token_hash: `manual_${c.id.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`,
+        expires_at: expiresAt,
+        sent_at: nowIso,
+        sent_to: c.email || 'Manual',
+        attempts: 0,
+        consumed_at: null,
+      }));
+      const { error: tokenErr } = await supabase.from('talent_disc_tokens').upsert(tokenRows, { onConflict: 'candidate_id' });
+      if (tokenErr) throw tokenErr;
+
+      toast.success(`${unsentList.length} candidato(s) marcados como enviado(s)!`);
+      await loadOverlay(candidates.map((c) => c.id).filter(Boolean));
+    } catch (err) {
+      console.error('Erro ao marcar envios em massa:', err);
+      toast.error('Não foi possível concluir a marcação em massa.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const assignToBasket = async (candidate, unitId, roleId) => {
     const role = ROLE_BY_ID[roleId];
     const fit = computeRoleFit(candidate.discAssessment, role);
@@ -460,6 +545,19 @@ export default function BancoTalentosTab() {
               {df.label}
             </button>
           ))}
+
+          {filtered.filter((c) => !c.discToken && !c.discAssessment).length > 0 && (
+            <button
+              type="button"
+              onClick={markAllUnsentAsSentManual}
+              disabled={loading}
+              className="ml-auto px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
+              title="Registra manualmente o envio do Levantamento para os candidatos atualmente visíveis que não possuem envio registrado"
+            >
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              Marcar {filtered.filter((c) => !c.discToken && !c.discAssessment).length} sem envio como Enviados
+            </button>
+          )}
         </div>
       </div>
 
@@ -618,6 +716,7 @@ export default function BancoTalentosTab() {
                           busy={busyId === c.id}
                           onChangeStatus={(newStatus) => changeStatus(c, newStatus)}
                           onSendDisc={() => handleInitiateSendDisc(c)}
+                          onMarkSentManual={() => markSentManual(c)}
                           onOpenNotes={() => setNotesTarget(c)}
                         />
                       </td>
