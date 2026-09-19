@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createAuthAwareFetch } from './utils/authFetch';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -23,12 +24,25 @@ const fetchWithRetry = async (url, options = {}, retries = 3, backoff = 300) => 
   }
 };
 
+const resolvedUrl = supabaseUrl || 'https://placeholder.supabase.co';
+
+// `supabase` é referenciado só em tempo de chamada, depois de criado.
+const authAwareFetch = createAuthAwareFetch({
+  baseFetch: fetchWithRetry,
+  supabaseUrl: resolvedUrl,
+  refreshSession: async () => {
+    const { data, error } = await supabase.auth.refreshSession();
+    return error ? null : data?.session ?? null;
+  },
+  onSessionDead: () => supabase.auth.signOut({ scope: 'local' }),
+});
+
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
+  resolvedUrl,
   supabaseAnonKey || 'placeholder',
   {
     global: {
-      fetch: fetchWithRetry,
+      fetch: authAwareFetch,
     },
     auth: {
       persistSession: true,

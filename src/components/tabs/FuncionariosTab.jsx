@@ -214,7 +214,7 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
       if (error) throw error;
       setEmployees((data || []).map(mapEmployeeFromDb).filter((e) => !restrictedUnitIds.includes(e.unitId)));
     } catch (err) {
-      console.error('Erro ao buscar funcionários CLT:', err);
+      console.error('Erro ao buscar funcionários CLT:', err?.code, err?.message || err);
       toast.error('Erro ao carregar funcionários.');
     } finally {
       setLoading(false);

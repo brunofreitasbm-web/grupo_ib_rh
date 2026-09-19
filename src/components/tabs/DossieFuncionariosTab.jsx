@@ -24,7 +24,7 @@ export default function DossieFuncionariosTab({ filterUnit, restrictedUnitIds = 
       if (error) throw error;
       setEmployees((data || []).map(mapEmployeeFromDb).filter((e) => !restrictedUnitIds.includes(e.unitId)));
     } catch (err) {
-      console.error('Erro ao carregar funcionários:', err);
+      console.error('Erro ao carregar funcionários:', err?.code, err?.message || err);
     } finally {
       setLoading(false);
     }

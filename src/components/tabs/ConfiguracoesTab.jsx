@@ -1195,7 +1195,7 @@ function FeriadosPanel() {
       if (error) throw error;
       setHolidays((data || []).map(mapHolidayFromDb));
     } catch (err) {
-      console.error('Erro ao carregar feriados:', err);
+      console.error('Erro ao carregar feriados:', err?.code, err?.message || err);
       toast.error('Erro ao carregar feriados.');
     } finally {
       setLoading(false);

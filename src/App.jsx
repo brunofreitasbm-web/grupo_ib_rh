@@ -720,7 +720,7 @@ export default function App() {
     // Limitar para os últimos 200 registros para evitar sobrecarga
     const { data, error } = await query.order('timestamp', { ascending: false }).limit(200);
     if (error) {
-      console.error('Erro ao buscar registros:', error);
+      console.error('Erro ao buscar registros:', error?.code, error?.message || error);
     } else {
       setRecords((data || []).map(mapRecordFromDb));
     }
@@ -834,7 +834,7 @@ export default function App() {
         .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
       if (error) {
-        console.error('Erro ao buscar estagiários:', error);
+        console.error('Erro ao buscar estagiários:', error?.code, error?.message || error);
         toast.error('Erro de conexão ao carregar estagiários. Tentando novamente...');
       } else {
         setInterns((data || []).map(mapInternFromDb));
@@ -900,7 +900,7 @@ export default function App() {
       .select('*')
       .order('name', { ascending: true });
     if (error) {
-      console.error('Erro ao buscar unidades:', error);
+      console.error('Erro ao buscar unidades:', error?.code, error?.message || error);
     } else if (data && data.length) {
       const mapped = data.map(mapUnitFromDb);
       setUnits(mapped);
@@ -1345,7 +1345,7 @@ export default function App() {
       .gte('timestamp', `${thirtyDaysAgoStr}T00:00:00Z`);
 
     if (recordsError || !recentRecords) {
-      console.error("Erro ao carregar registros para auditoria:", recordsError);
+      console.error("Erro ao carregar registros para auditoria:", recordsError?.code, recordsError?.message || "sem dados");
       return;
     }
 

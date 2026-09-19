@@ -33,9 +33,9 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [], isAct
         .gte('timestamp', `${currentMonthPrefix}-01T00:00:00`)
         .order('timestamp', { ascending: false });
 
-      if (internsError) console.error('Erro ao buscar estagiários:', internsError);
-      if (unitsError) console.error('Erro ao buscar unidades:', unitsError);
-      if (recordsError) console.error('Erro ao buscar registros:', recordsError);
+      if (internsError) console.error('Erro ao buscar estagiários:', internsError?.code, internsError?.message || internsError);
+      if (unitsError) console.error('Erro ao buscar unidades:', unitsError?.code, unitsError?.message || unitsError);
+      if (recordsError) console.error('Erro ao buscar registros:', recordsError?.code, recordsError?.message || recordsError);
 
       if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
       if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
