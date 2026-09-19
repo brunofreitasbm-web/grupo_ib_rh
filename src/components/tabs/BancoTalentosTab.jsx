@@ -276,12 +276,21 @@ export default function BancoTalentosTab() {
   };
 
   const markSentManual = async (candidate) => {
+    if (!candidate || !candidate.id) {
+      toast.warning('Candidato inválido.');
+      return;
+    }
+    const candidateIdStr = String(candidate.id);
     setBusyId(candidate.id);
     try {
       const { error: metaErr } = await supabase.from('talent_candidates_meta').upsert(
         {
-          candidate_id: candidate.id,
-          snapshot: { full_name: candidate.full_name, email: candidate.email, phone: candidate.phone },
+          candidate_id: candidateIdStr,
+          snapshot: {
+            full_name: candidate.full_name || '',
+            email: candidate.email || '',
+            phone: candidate.phone || '',
+          },
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'candidate_id', ignoreDuplicates: true }
@@ -290,10 +299,10 @@ export default function BancoTalentosTab() {
 
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const nowIso = new Date().toISOString();
-      const tokenHash = `manual_${candidate.id.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
+      const tokenHash = `manual_${candidateIdStr.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
 
       const tokenObj = {
-        candidate_id: candidate.id,
+        candidate_id: candidateIdStr,
         token_hash: tokenHash,
         expires_at: expiresAt,
         sent_at: nowIso,
@@ -308,8 +317,9 @@ export default function BancoTalentosTab() {
       setTokensById((prev) => ({ ...prev, [candidate.id]: tokenObj }));
       toast.success(`Levantamento marcado como enviado para ${candidate.full_name || 'candidato'}.`);
     } catch (err) {
-      console.error('Erro ao marcar como enviado manualmente:', err);
-      toast.error('Não foi possível registrar o envio manual.');
+      const detail = err?.message || err?.details || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      console.error('Erro ao marcar como enviado manualmente:', detail, err);
+      toast.error(err?.message ? `Não foi possível registrar o envio manual: ${err.message}` : 'Não foi possível registrar o envio manual.');
     } finally {
       setBusyId(null);
     }
@@ -332,15 +342,20 @@ export default function BancoTalentosTab() {
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
       const metaRows = unsentList.map((c) => ({
-        candidate_id: c.id,
-        snapshot: { full_name: c.full_name, email: c.email, phone: c.phone },
+        candidate_id: String(c.id),
+        snapshot: {
+          full_name: c.full_name || '',
+          email: c.email || '',
+          phone: c.phone || '',
+        },
         updated_at: nowIso,
       }));
-      await supabase.from('talent_candidates_meta').upsert(metaRows, { onConflict: 'candidate_id', ignoreDuplicates: true });
+      const { error: metaErr } = await supabase.from('talent_candidates_meta').upsert(metaRows, { onConflict: 'candidate_id', ignoreDuplicates: true });
+      if (metaErr) throw metaErr;
 
       const tokenRows = unsentList.map((c) => ({
-        candidate_id: c.id,
-        token_hash: `manual_${c.id.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`,
+        candidate_id: String(c.id),
+        token_hash: `manual_${String(c.id).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`,
         expires_at: expiresAt,
         sent_at: nowIso,
         sent_to: c.email || 'Manual',
@@ -353,8 +368,9 @@ export default function BancoTalentosTab() {
       toast.success(`${unsentList.length} candidato(s) marcados como enviado(s)!`);
       await loadOverlay(candidates.map((c) => c.id).filter(Boolean));
     } catch (err) {
-      console.error('Erro ao marcar envios em massa:', err);
-      toast.error('Não foi possível concluir a marcação em massa.');
+      const detail = err?.message || err?.details || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      console.error('Erro ao marcar envios em massa:', detail, err);
+      toast.error(err?.message ? `Não foi possível concluir a marcação em massa: ${err.message}` : 'Não foi possível concluir a marcação em massa.');
     } finally {
       setLoading(false);
     }
