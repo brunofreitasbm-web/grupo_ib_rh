@@ -1411,6 +1411,10 @@ CREATE TABLE IF NOT EXISTS public.professional_pins (
   pin_hash text NOT NULL,
   failed_attempts integer NOT NULL DEFAULT 0,
   locked_until timestamp with time zone,
+  -- true enquanto o PIN em vigor for o padrão '000000' (ou um reset feito
+  -- pelo supervisor): bloqueia register_professional_presence até a troca
+  -- (ver 16.5/18.9 e o trigger professional_assign_default_pin).
+  must_change_pin boolean NOT NULL DEFAULT false,
   updated_at timestamp with time zone DEFAULT now()
 );
 
@@ -1523,10 +1527,10 @@ BEGIN
     RAISE EXCEPTION 'pin_invalid_format';
   END IF;
 
-  INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, updated_at)
-  VALUES (p_professional_id, crypt(p_pin, gen_salt('bf')), 0, NULL, now())
+  INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, must_change_pin, updated_at)
+  VALUES (p_professional_id, crypt(p_pin, gen_salt('bf')), 0, NULL, true, now())
   ON CONFLICT (professional_id) DO UPDATE
-    SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL, updated_at = now();
+    SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL, must_change_pin = true, updated_at = now();
 END;
 $$;
 REVOKE ALL ON FUNCTION public.set_professional_pin(uuid, text) FROM PUBLIC, anon;
@@ -1575,7 +1579,7 @@ BEGIN
   END IF;
   PERFORM public.verify_professional_pin_internal(p_professional_id, p_current_pin);
   UPDATE public.professional_pins
-     SET pin_hash = crypt(p_new_pin, gen_salt('bf')), failed_attempts = 0, locked_until = NULL, updated_at = now()
+     SET pin_hash = crypt(p_new_pin, gen_salt('bf')), failed_attempts = 0, locked_until = NULL, must_change_pin = false, updated_at = now()
    WHERE professional_id = p_professional_id;
 END;
 $$;
@@ -1614,6 +1618,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_prof public.professionals%ROWTYPE;
   v_pj_enabled boolean;
+  v_must_change_pin boolean;
   v_last_action text;
   v_new_id uuid;
   v_ts timestamp with time zone := now();
@@ -1635,6 +1640,11 @@ BEGIN
   END IF;
 
   PERFORM public.verify_professional_pin_internal(p_professional_id, p_pin);
+
+  SELECT must_change_pin INTO v_must_change_pin FROM public.professional_pins WHERE professional_id = p_professional_id;
+  IF COALESCE(v_must_change_pin, false) THEN
+    RAISE EXCEPTION 'pin_must_be_changed';
+  END IF;
 
   IF v_prof.terms_accepted_at IS NULL THEN
     RAISE EXCEPTION 'terms_not_accepted';
@@ -1679,6 +1689,23 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.professional_has_pin(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.professional_has_pin(uuid) TO authenticated;
+
+-- Indica ao quiosque, antes de tentar bater o ponto, que a troca do PIN é
+-- obrigatória (sem expor o hash) — ver 16.7/16.8.
+CREATE OR REPLACE FUNCTION public.professional_must_change_pin(p_professional_id uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_unit text;
+BEGIN
+  SELECT unit_id INTO v_unit FROM public.professionals WHERE id = p_professional_id;
+  IF v_unit IS NULL OR NOT (public.jwt_is_supervisor_for_unit(v_unit) OR public.jwt_is_professional_kiosk_for_unit(v_unit)) THEN
+    RETURN false;
+  END IF;
+  RETURN COALESCE((SELECT must_change_pin FROM public.professional_pins WHERE professional_id = p_professional_id), false);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.professional_must_change_pin(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.professional_must_change_pin(uuid) TO authenticated;
 
 -- 16.6 Logins de quiosque PJ (um por unidade do Grupo IB), papel 'professional_unit'.
 DO $$
@@ -2725,10 +2752,10 @@ BEGIN
     RAISE EXCEPTION 'pin_invalid_format';
   END IF;
 
-  INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, updated_at)
-  VALUES (p_professional_id, crypt(p_pin, gen_salt('bf')), 0, NULL, now())
+  INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, must_change_pin, updated_at)
+  VALUES (p_professional_id, crypt(p_pin, gen_salt('bf')), 0, NULL, true, now())
   ON CONFLICT (professional_id) DO UPDATE
-    SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL, updated_at = now();
+    SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL, must_change_pin = true, updated_at = now();
 END;
 $$;
 REVOKE ALL ON FUNCTION public.set_professional_pin(uuid, text) FROM PUBLIC, anon;
@@ -2745,6 +2772,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_prof public.professionals%ROWTYPE;
   v_pj_enabled boolean;
+  v_must_change_pin boolean;
   v_last_action text;
   v_new_id uuid;
   v_ts timestamp with time zone := now();
@@ -2769,6 +2797,11 @@ BEGIN
   END IF;
 
   PERFORM public.verify_professional_pin_internal(p_professional_id, p_pin);
+
+  SELECT must_change_pin INTO v_must_change_pin FROM public.professional_pins WHERE professional_id = p_professional_id;
+  IF COALESCE(v_must_change_pin, false) THEN
+    RAISE EXCEPTION 'pin_must_be_changed';
+  END IF;
 
   IF v_prof.terms_accepted_at IS NULL THEN
     RAISE EXCEPTION 'terms_not_accepted';
@@ -2809,6 +2842,36 @@ CREATE POLICY "pj: leitura de profissionais" ON public.professionals FOR SELECT
 -- 18.8 Habilita autocadastro nas unidades do Grupo IB que já têm o módulo PJ ligado.
 UPDATE public.units SET pj_self_registration_enabled = true
  WHERE workspace_id = 'grupoib' AND pj_enabled = true AND pj_self_registration_enabled = false;
+
+-- 18.9 Todo prestador validado nasce com o PIN padrão '000000' e obrigação
+-- de troca (must_change_pin em professional_pins, ver 16.2), seja na criação
+-- direta pelo supervisor (registration_status já 'validated' no INSERT) ou
+-- na validação de um autocadastro pendente (UPDATE de registration_status
+-- para 'validated'). Precisa vir depois de 18.1, que cria a coluna.
+CREATE OR REPLACE FUNCTION public.professional_assign_default_pin() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.registration_status = 'validated' THEN
+    INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, must_change_pin, updated_at)
+    VALUES (NEW.id, crypt('000000', gen_salt('bf')), 0, NULL, true, now())
+    ON CONFLICT (professional_id) DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_professional_assign_default_pin ON public.professionals;
+CREATE TRIGGER trg_professional_assign_default_pin
+  AFTER INSERT OR UPDATE OF registration_status ON public.professionals
+  FOR EACH ROW EXECUTE FUNCTION public.professional_assign_default_pin();
+
+-- Backfill: profissionais já validados sem nenhum PIN também nascem com
+-- '000000' e obrigação de troca (nunca sobrescreve quem já tem PIN).
+INSERT INTO public.professional_pins (professional_id, pin_hash, failed_attempts, locked_until, must_change_pin, updated_at)
+SELECT p.id, crypt('000000', gen_salt('bf')), 0, NULL, true, now()
+  FROM public.professionals p
+ WHERE p.registration_status = 'validated'
+   AND NOT EXISTS (SELECT 1 FROM public.professional_pins pp WHERE pp.professional_id = p.id);
 
 -- =========================================================================
 -- 19. AUTOCADASTRO DE FUNCIONÁRIOS CLT (Grupo IB)

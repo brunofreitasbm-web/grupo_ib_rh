@@ -497,6 +497,7 @@ function SetPinModal({ professionalId, professionalName, onClose }) {
           <div className="space-y-3">
             <p className="text-xs text-gray-600">
               Informe este PIN pessoalmente ao prestador. Ele não será exibido novamente por aqui.
+              No próximo registro de presença, o prestador será obrigado a trocá-lo por um PIN de sua escolha.
             </p>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-3">
               <span className="flex-1 text-center text-xl font-bold tracking-[0.4em] text-slate-800">{savedPin}</span>
