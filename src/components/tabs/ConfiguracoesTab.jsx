@@ -51,7 +51,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     declaracaoCustomText: '',
     fichaCustomText: '',
     radiusM: 5000,
-    geofenceRequired: true
+    geofenceRequired: false
   }));
 
   const availableUnits = rawAvailableUnits.filter((u) => {
@@ -82,7 +82,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         fichaCustomText: u.fichaCustomText || u.ficha_custom_text || '',
         radiusM: u.radiusM || u.radius_m || 5000,
         radiusKm: u.radiusKm || u.radius_km || 5,
-        geofenceRequired: u.geofenceRequired !== undefined ? u.geofenceRequired : (u.geofence_required !== false),
+        geofenceRequired: u.geofenceRequired !== undefined ? u.geofenceRequired : (u.geofence_required === true),
         lat: u.lat !== undefined ? u.lat : (u.latitude || 0),
         lng: u.lng !== undefined ? u.lng : (u.longitude || 0),
         workspaceId: u.workspaceId || u.workspace_id || null,
@@ -502,21 +502,17 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
                                     </button>
                                   </div>
                                 </div>
-                                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 self-end pb-1.5">
+                                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 self-end pb-1.5 cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={uData.geofenceRequired !== false}
+                                    checked={!!uData.geofenceRequired}
                                     onChange={(e) => handleUnitFieldChange(uData.id, 'geofenceRequired', e.target.checked)}
-                                    disabled={!!uData.biometricRequired}
                                   />
                                   Exigir geolocalização dentro do raio da unidade (estagiários)
                                 </label>
-                                {uData.biometricRequired && (
-                                  <p className="md:col-span-2 text-[10px] text-slate-400 -mt-2">Geolocalização obrigatória: esta unidade exige biometria facial, que sempre acompanha geolocalização.</p>
-                                )}
-                                {!uData.biometricRequired && (
-                                  <p className="md:col-span-2 text-[10px] text-slate-400 -mt-2">Desative apenas se o registro nesta unidade acontecer em terminal fixo (desktop) sem GPS confiável — a localização por IP pode ficar muito imprecisa e bloquear registros legítimos.</p>
-                                )}
+                                <p className="md:col-span-2 text-[10px] text-slate-400 -mt-2">
+                                  Quando desativado, o GPS é registrado apenas para auditoria sem bloquear marcações caso o sinal esteja indisponível ou o estagiário esteja em terminal fixo.
+                                </p>
                               </div>
                             </div>
 

@@ -1890,11 +1890,10 @@ export default function App() {
     }
 
     // Unidades operadas por terminal fixo (desktop) sem GPS costumam depender
-    // de geolocalização por IP, que pode ficar milhares de km fora do lugar.
-    // Unidades com biometric_required=true mantêm a exigência de geo sempre
-    // (ver isRestrictedUnit acima); as demais podem desativar via
-    // unit.geofenceRequired (Configurações > Unidades).
-    const geofenceRequired = isRestrictedUnit || unit.geofenceRequired !== false;
+    // de geolocalização por IP, que pode ficar imprecisa e bloquear registros.
+    // A exigência da cerca virtual para estagiários é configurável via
+    // unit.geofenceRequired (Configurações > Unidades), desativada por padrão.
+    const geofenceRequired = unit.geofenceRequired === true;
 
     let latitude = null;
     let longitude = null;
