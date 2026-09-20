@@ -100,7 +100,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
   const handleRegister = async (action) => {
     setError('');
     if (!selectedId) { setError(`Selecione seu nome na lista.`); return; }
-    if (!isValidProfessionalPin(pin)) { setError('Digite seu PIN de 6 dígitos.'); return; }
+    if (!/^[0-9]{6}$/.test(pin)) { setError('Digite seu PIN de 6 dígitos.'); return; }
 
     setSubmitting(true);
     try {
@@ -130,7 +130,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
 
   const handleAcceptTerms = async () => {
     setError('');
-    if (!isValidProfessionalPin(pin)) { setError('Digite seu PIN de 6 dígitos para confirmar a ciência.'); return; }
+    if (!/^[0-9]{6}$/.test(pin)) { setError('Digite seu PIN de 6 dígitos para confirmar a ciência.'); return; }
     setSubmitting(true);
     try {
       const { error: rpcError } = await supabase.rpc('accept_professional_terms', {
