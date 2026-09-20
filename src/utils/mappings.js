@@ -276,6 +276,49 @@ export const mapUnitToDb = (u) => {
   };
 };
 
+export const safeUpsertUnits = async (supabaseClient, dbUnits) => {
+  if (!supabaseClient) return { error: new Error('Cliente Supabase não fornecido') };
+  const payload = Array.isArray(dbUnits)
+    ? dbUnits.map(u => ({ ...u }))
+    : [{ ...dbUnits }];
+
+  let { error } = await supabaseClient.from('units').upsert(payload);
+
+  let maxRetries = 10;
+  const removedColumns = [];
+  while (error && maxRetries > 0) {
+    const errorStr = error.message || error.details || error.hint || JSON.stringify(error);
+    const match =
+      errorStr.match(/Could not find the '([^']+)' column/i) ||
+      errorStr.match(/column "([^"]+)" of relation/i) ||
+      errorStr.match(/column '([^']+)' does not exist/i);
+
+    if (match && match[1]) {
+      const missingCol = match[1];
+      if (removedColumns.includes(missingCol)) {
+        break;
+      }
+      removedColumns.push(missingCol);
+      console.warn(`[safeUpsertUnits] Coluna '${missingCol}' ausente na tabela 'units' no Supabase. Removendo do payload e tentando novamente...`);
+      payload.forEach(item => {
+        delete item[missingCol];
+      });
+      const retryResult = await supabaseClient.from('units').upsert(payload);
+      error = retryResult.error;
+      maxRetries--;
+    } else {
+      break;
+    }
+  }
+
+  if (removedColumns.length > 0 && !error) {
+    console.info(`[safeUpsertUnits] Unidade(s) salva(s) com sucesso com fallback (colunas ausentes no schema do banco: ${removedColumns.join(', ')}).`);
+  }
+
+  return { error, payload, removedColumns };
+};
+
+
 // =========================================================================
 // MÓDULO PROFISSIONAIS PJ (prestadores de serviço) — tabelas professionals,
 // professional_presence e professional_documents. Mantidas separadas dos

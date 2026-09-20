@@ -975,7 +975,8 @@ ALTER TABLE public.units
   ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'porto-terapia'
     REFERENCES public.workspaces(id),
   ADD COLUMN IF NOT EXISTS kiosk_email text,
-  ADD COLUMN IF NOT EXISTS biometric_required boolean NOT NULL DEFAULT true;
+  ADD COLUMN IF NOT EXISTS biometric_required boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS geofence_required boolean NOT NULL DEFAULT true;
 
 UPDATE public.units SET kiosk_email = 'antoniobarreto@portoterapia.com' WHERE id = 'antonio-barreto' AND kiosk_email IS NULL;
 UPDATE public.units SET kiosk_email = 'generalissimo@portoterapia.com' WHERE id = 'generalissimo' AND kiosk_email IS NULL;

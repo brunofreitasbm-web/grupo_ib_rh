@@ -21,6 +21,7 @@ import {
   mapRecordToDb,
   mapUnitFromDb,
   mapUnitToDb,
+  safeUpsertUnits,
 } from './utils/mappings';
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { sanitizeHtml } from './utils/sanitizeHtml';
@@ -2279,7 +2280,7 @@ export default function App() {
   const persistUnits = useCallback(async (data) => {
     try {
       const dbUnits = data.map(mapUnitToDb);
-      const { error } = await supabase.from('units').upsert(dbUnits);
+      const { error } = await safeUpsertUnits(supabase, dbUnits);
       if (error) {
         const msg = error.message || error.details || error.hint || JSON.stringify(error);
         console.error('Erro ao salvar unidades no Supabase:', msg, error);
@@ -2292,7 +2293,7 @@ export default function App() {
   const handleSaveUnitFromConfig = useCallback(async (updatedUnit) => {
     try {
       const dbUnit = mapUnitToDb(updatedUnit);
-      const { error } = await supabase.from('units').upsert([dbUnit]);
+      const { error, removedColumns } = await safeUpsertUnits(supabase, [dbUnit]);
       if (error) {
         const errorMsg = error.message || error.details || error.hint || JSON.stringify(error);
         console.error('Erro ao salvar unidade no Supabase:', errorMsg, error);
@@ -2305,7 +2306,11 @@ export default function App() {
           }
           return [...prev, updatedUnit];
         });
-        toast.success(`Unidade "${updatedUnit.name || updatedUnit.nome}" salva com sucesso!`);
+        if (removedColumns && removedColumns.length > 0) {
+          toast.success(`Unidade "${updatedUnit.name || updatedUnit.nome}" salva com sucesso! (Nota: a coluna ${removedColumns.join(', ')} não existe no banco atual)`);
+        } else {
+          toast.success(`Unidade "${updatedUnit.name || updatedUnit.nome}" salva com sucesso!`);
+        }
       }
     } catch (err) {
       const errDetail = err?.message || 'Falha inesperada ao processar requisição';
