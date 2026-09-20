@@ -23,6 +23,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null); // { action, name }
   const [showChangePin, setShowChangePin] = useState(false);
+  const [mustChangePin, setMustChangePin] = useState(false);
   const [showNfseModal, setShowNfseModal] = useState(false);
   const successTimerRef = useRef(null);
 
@@ -66,7 +67,23 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
     setPin('');
     setError('');
     setShowChangePin(false);
+    setMustChangePin(false);
   };
+
+  // Ao selecionar o nome (e já ciente do termo), verifica se o PIN ainda é o
+  // padrão de primeiro acesso ('000000') ou foi resetado pelo supervisor —
+  // nesses casos a troca é obrigatória antes de qualquer entrada/saída.
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedId || needsTerms) { setMustChangePin(false); return; }
+    supabase.rpc('professional_must_change_pin', { p_professional_id: selectedId })
+      .then(({ data, error: rpcError }) => {
+        if (cancelled) return;
+        if (rpcError) { console.error('Erro ao verificar obrigatoriedade de troca de PIN:', rpcError); return; }
+        setMustChangePin(!!data);
+      });
+    return () => { cancelled = true; };
+  }, [selectedId, needsTerms]);
 
   // GPS é meramente informativo: qualquer falha (negado, indisponível, sem
   // suporte) é silenciosamente ignorada e o registro segue sem coordenadas.
@@ -104,6 +121,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
       }, 3000);
     } catch (err) {
       console.error('Erro ao registrar presença PJ:', err);
+      if (String(err?.message || '').includes('pin_must_be_changed')) setMustChangePin(true);
       setError(professionalRpcErrorMessage(err));
     } finally {
       setSubmitting(false);
@@ -239,7 +257,15 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
                 </div>
               )}
 
-              {selectedId && !needsTerms && !showChangePin && (
+              {selectedId && !needsTerms && mustChangePin && (
+                <ChangePinForm
+                  professionalId={selectedId}
+                  forced
+                  onDone={() => { setMustChangePin(false); setShowChangePin(false); setError(''); }}
+                />
+              )}
+
+              {selectedId && !needsTerms && !mustChangePin && !showChangePin && (
                 <>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
@@ -281,7 +307,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
                 </>
               )}
 
-              {selectedId && showChangePin && (
+              {selectedId && !needsTerms && !mustChangePin && showChangePin && (
                 <ChangePinForm
                   professionalId={selectedId}
                   onDone={() => { setShowChangePin(false); setError(''); }}
@@ -334,7 +360,7 @@ export default function ProfessionalKiosk({ unit, branding, onLogout }) {
   );
 }
 
-function ChangePinForm({ professionalId, onDone, onCancel }) {
+function ChangePinForm({ professionalId, onDone, onCancel, forced = false }) {
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -345,7 +371,10 @@ function ChangePinForm({ professionalId, onDone, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!isValidProfessionalPin(currentPin)) { setError('Digite seu PIN atual (6 dígitos).'); return; }
+    // O PIN atual pode ser o padrão '000000' (primeiro acesso) ou um reset do
+    // supervisor — só valida o formato (6 dígitos), não a regra de "não trivial"
+    // usada apenas para o PIN novo escolhido pelo prestador.
+    if (!/^[0-9]{6}$/.test(currentPin)) { setError('Digite seu PIN atual (6 dígitos).'); return; }
     if (!isValidProfessionalPin(newPin)) { setError('O novo PIN deve ter 6 dígitos e não pode ser uma sequência óbvia.'); return; }
     if (newPin !== confirmPin) { setError('Os PINs digitados não coincidem.'); return; }
     if (newPin === currentPin) { setError('O novo PIN deve ser diferente do atual.'); return; }
@@ -378,7 +407,16 @@ function ChangePinForm({ professionalId, onDone, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-      <p className="text-[11px] font-bold text-slate-700">Alterar meu PIN</p>
+      {forced ? (
+        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+          <ShieldCheck size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-900 leading-relaxed">
+            Este é o seu primeiro registro (ou seu PIN foi redefinido). Por segurança, defina um novo PIN antes de continuar.
+          </p>
+        </div>
+      ) : (
+        <p className="text-[11px] font-bold text-slate-700">Alterar meu PIN</p>
+      )}
       <div>
         <label className="block text-[10px] text-gray-500 mb-1">PIN atual</label>
         <input
@@ -408,9 +446,11 @@ function ChangePinForm({ professionalId, onDone, onCancel }) {
       </div>
       {error && <p className="text-red-500 text-[10px] text-center font-semibold">{error}</p>}
       <div className="flex gap-2">
-        <button type="button" onClick={onCancel} className="flex-1 bg-white border border-gray-300 text-gray-600 font-semibold py-2 rounded-lg text-[11px]">
-          Cancelar
-        </button>
+        {!forced && (
+          <button type="button" onClick={onCancel} className="flex-1 bg-white border border-gray-300 text-gray-600 font-semibold py-2 rounded-lg text-[11px]">
+            Cancelar
+          </button>
+        )}
         <button type="submit" disabled={submitting} className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 rounded-lg text-[11px] disabled:opacity-50">
           {submitting ? 'Salvando...' : 'Salvar'}
         </button>

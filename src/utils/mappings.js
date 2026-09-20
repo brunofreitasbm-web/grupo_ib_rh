@@ -427,6 +427,7 @@ export const professionalRpcErrorMessage = (err) => {
   if (msg.includes('pin_not_set')) return 'Este prestador ainda não possui PIN. Solicite a definição do PIN à administração.';
   if (msg.includes('pin_locked')) return 'PIN bloqueado temporariamente por excesso de tentativas. Aguarde 15 minutos e tente novamente.';
   if (msg.includes('pin_invalid_format')) return 'O PIN deve ter exatamente 6 dígitos e não pode ser uma sequência óbvia (ex.: 123456, 000000).';
+  if (msg.includes('pin_must_be_changed')) return 'Por segurança, você precisa trocar o PIN padrão antes de registrar presença.';
   if (msg.includes('pin_invalid')) return 'PIN incorreto.';
   if (msg.includes('terms_not_accepted')) return 'É necessário aceitar o termo de ciência antes do primeiro registro.';
   if (msg.includes('sequence_open_entry')) return 'Já existe uma entrada em aberto hoje. Registre a saída primeiro.';
