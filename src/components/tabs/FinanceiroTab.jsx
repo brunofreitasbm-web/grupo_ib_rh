@@ -3,7 +3,8 @@ import { Timer, Printer, Download, FileText, Building2, Upload, Eye, Trash2, Che
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
-import { dailyPayRate, absenceDeduction, payAfterAbsences } from '../../utils/cltCalculations';
+import { dailyPayRate, absenceDeduction, payAfterAbsences, sundayBonus } from '../../utils/cltCalculations';
+import { pairPresenceRecords } from '../../utils/hoursCalculations';
 import PublicPayrollUploadModal from '../PublicPayrollUploadModal';
 import PayrollPdfViewerModal from '../PayrollPdfViewerModal';
 import { toast } from 'sonner';
@@ -188,7 +189,23 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       // justificada (dailyPayRate/absenceDeduction em cltCalculations).
       const dailyValue = dailyPayRate(allowance);
       const deductionValue = absenceDeduction(allowance, deductibleDays);
-      const finalPayment = payAfterAbsences(allowance, deductibleDays);
+      const paymentAfterAbsences = payAfterAbsences(allowance, deductibleDays);
+
+      // Adicional de domingo: uma diária extra (bolsa/30) por domingo com
+      // presença registrada (ponto de entrada) no mês, reaproveitando o
+      // mesmo pareamento entrada/saída usado no módulo de horas.
+      const internPresenceRecords = records.filter(r => {
+        if (r.internId !== intern.id) return false;
+        if (!r.timestamp) return false;
+        const dateStr = typeof r.timestamp === 'string' ? r.timestamp : new Date(r.timestamp).toISOString();
+        return dateStr.substring(0, 7) === monthKey;
+      });
+      const presenceDays = pairPresenceRecords(internPresenceRecords, { keyOf: (r) => r.internId });
+      const sundaysWorked = presenceDays.filter(
+        (d) => d.day.getDay() === 0 && d.events.some((e) => e.action === 'entrada')
+      ).length;
+      const sundayBonusValue = sundayBonus(allowance, sundaysWorked);
+      const finalPayment = paymentAfterAbsences + sundayBonusValue;
 
       return {
         intern,
@@ -198,6 +215,8 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         dailyValue,
         deductionValue,
         occurrenceDetails,
+        sundaysWorked,
+        sundayBonusValue,
         finalPayment
       };
     });
@@ -328,13 +347,14 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
               <th style="padding: 8px; text-align: center;">Conta (CC)</th>
               <th style="padding: 8px; text-align: left;">Chave Pix</th>
               <th style="padding: 8px; text-align: center;">Faltas / Desconto (1/30)</th>
+              <th style="padding: 8px; text-align: center;">Domingos / Adicional</th>
               <th style="padding: 8px; text-align: right;">Valor Final Devido</th>
             </tr>
           </thead>
           <tbody>
             ${calculatedInterns.length === 0 ? `
               <tr>
-                <td colspan="8" style="padding: 20px; text-align: center; color: #94a3b8; italic;">Nenhum estagiário listado no período.</td>
+                <td colspan="9" style="padding: 20px; text-align: center; color: #94a3b8; italic;">Nenhum estagiário listado no período.</td>
               </tr>
             ` : calculatedInterns.map((item, idx) => `
               <tr style="border-bottom: 1px solid #e2e8f0; background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
@@ -345,6 +365,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
                 <td style="padding: 8px; text-align: center; color: #475569;">${item.intern.bankAccount || '—'}</td>
                 <td style="padding: 8px; color: #475569; word-break: break-all;">${item.intern.pixKey || '—'}</td>
                 <td style="padding: 8px; text-align: center; color: #b91c1c;">${item.deductibleDays > 0 ? `${item.deductibleDays}d • - ${item.deductionValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : '—'}</td>
+                <td style="padding: 8px; text-align: center; color: #047857;">${item.sundaysWorked > 0 ? `${item.sundaysWorked}d • + ${item.sundayBonusValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : '—'}</td>
                 <td style="padding: 8px; text-align: right; font-weight: bold; color: #0f172a; font-size: 12px;">
                   ${item.finalPayment.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </td>
@@ -353,7 +374,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
           </tbody>
           <tfoot>
             <tr style="background-color: #e2e8f0; font-weight: bold; border-top: 2px solid #94a3b8;">
-              <td colspan="7" style="padding: 10px; text-align: right; text-transform: uppercase; font-size: 11px; color: #1e293b;">TOTAL GERAL A PAGAR:</td>
+              <td colspan="8" style="padding: 10px; text-align: right; text-transform: uppercase; font-size: 11px; color: #1e293b;">TOTAL GERAL A PAGAR:</td>
               <td style="padding: 10px; text-align: right; font-size: 13px; color: #1e3a8a;">
                 ${totalPayrollValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </td>
@@ -495,7 +516,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 text-xs text-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
                 <p><strong>Período de Referência:</strong> {month.toString().padStart(2, '0')}/{year} • <strong>Base de cálculo:</strong> bolsa declarada ÷ 30 dias = valor do dia.</p>
-                <p className="mt-1 text-slate-500"><strong>Regra de Negócio:</strong> Atestados Médicos (com comprovante) abonam faltas e não possuem desconto. Cada dia de falta ou ausência não justificada desconta 1/30 da bolsa declarada.</p>
+                <p className="mt-1 text-slate-500"><strong>Regra de Negócio:</strong> Atestados Médicos (com comprovante) abonam faltas e não possuem desconto. Cada dia de falta ou ausência não justificada desconta 1/30 da bolsa declarada. Cada domingo com presença registrada soma 1/30 da bolsa como adicional.</p>
               </div>
               <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-3.5 py-2 text-right shrink-0">
                 <span className="text-[10px] text-indigo-700 uppercase tracking-wider font-semibold block">Total Geral de Bolsas</span>
@@ -515,16 +536,18 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
                     <th className="p-3 font-semibold">Ocorrências do Mês</th>
                     <th className="p-3 font-semibold text-center">Dias Descontados</th>
                     <th className="p-3 font-semibold text-right">Desconto (1/30)</th>
+                    <th className="p-3 font-semibold text-center">Domingos Trabalhados</th>
+                    <th className="p-3 font-semibold text-right">Adicional Domingo</th>
                     <th className="p-3 font-semibold text-right">Valor Final Devido</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {calculatedInterns.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-4 text-center text-gray-400">Nenhum estagiário correspondente aos filtros.</td>
+                      <td colSpan="9" className="p-4 text-center text-gray-400">Nenhum estagiário correspondente aos filtros.</td>
                     </tr>
                   ) : (
-                    calculatedInterns.map(({ intern, allowance, medicalDays, deductibleDays, dailyValue, deductionValue, occurrenceDetails, finalPayment }) => {
+                    calculatedInterns.map(({ intern, allowance, medicalDays, deductibleDays, dailyValue, deductionValue, occurrenceDetails, sundaysWorked, sundayBonusValue, finalPayment }) => {
                       return (
                         <tr key={intern.id} className="hover:bg-slate-50 transition-colors">
                           <td className="p-3 font-medium text-gray-800">
@@ -568,6 +591,20 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
                           <td className="p-3 text-right font-semibold text-red-700">
                             {deductionValue > 0
                               ? `- ${deductionValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                              : <span className="text-gray-400 italic font-normal">—</span>}
+                          </td>
+                          <td className="p-3 text-center">
+                            {sundaysWorked > 0 ? (
+                              <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                                {sundaysWorked} {sundaysWorked === 1 ? 'domingo' : 'domingos'}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic">Nenhum</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-semibold text-emerald-700">
+                            {sundayBonusValue > 0
+                              ? `+ ${sundayBonusValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
                               : <span className="text-gray-400 italic font-normal">—</span>}
                           </td>
                           <td className="p-3 text-right font-bold text-gray-900 text-sm">
