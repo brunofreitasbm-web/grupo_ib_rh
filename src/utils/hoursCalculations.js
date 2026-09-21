@@ -217,6 +217,13 @@ export function calculateProfessionalProduction(presence, professionals, monthKe
       const afternoonShifts = agg.days.filter((d) => d.afternoon).length;
       const shiftsPresent = morningShifts + afternoonShifts;
       const shiftValue = Number(p.shiftValue) || 0;
+      // Adicional de domingo: uma diária extra (shiftValue) por turno
+      // trabalhado em domingo, somada ao valor normal desses turnos.
+      const sundayMorningShifts = agg.days.filter((d) => d.date.getDay() === 0 && d.morning).length;
+      const sundayAfternoonShifts = agg.days.filter((d) => d.date.getDay() === 0 && d.afternoon).length;
+      const sundayShiftsPresent = sundayMorningShifts + sundayAfternoonShifts;
+      const sundayBonusTotal = shiftValue * sundayShiftsPresent;
+      const shiftTotal = shiftValue * shiftsPresent;
       return {
         professional: p,
         totalHours: agg.hours,
@@ -226,7 +233,10 @@ export function calculateProfessionalProduction(presence, professionals, monthKe
         shiftsPresent,
         shiftValue,
         // Gratificação PJ = valor do turno × turnos com presença na competência.
-        shiftTotal: shiftValue * shiftsPresent,
+        shiftTotal,
+        sundayShiftsPresent,
+        sundayBonusTotal,
+        totalPayable: shiftTotal + sundayBonusTotal,
         days: agg.days,
       };
     })

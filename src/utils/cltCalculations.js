@@ -311,6 +311,13 @@ export function payAfterAbsences(monthlyPay, unjustifiedDays) {
   return Math.max(0, v - absenceDeduction(v, unjustifiedDays));
 }
 
+// Adicional de domingo trabalhado: uma diária extra (mesma base 1/30 de
+// dailyPayRate) por domingo com presença registrada no mês.
+export function sundayBonus(monthlyPay, sundaysWorked) {
+  const d = Math.max(0, Number(sundaysWorked) || 0);
+  return dailyPayRate(monthlyPay) * d;
+}
+
 // ---------------------------------------------------------------------------
 // Férias
 // ---------------------------------------------------------------------------

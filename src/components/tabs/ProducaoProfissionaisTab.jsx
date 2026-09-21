@@ -147,7 +147,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   };
 
   const handleExportCSV = () => {
-    const headers = 'Prestador,Dias com Presença,Total de Horas,Módulos Matutinos,Módulos Vespertinos,Módulos Entregues,Preço do Módulo,Honorários\n';
+    const headers = 'Prestador,Dias com Presença,Total de Horas,Módulos Matutinos,Módulos Vespertinos,Módulos Entregues,Preço do Módulo,Módulos em Domingo,Diária Extra de Domingo,Honorários\n';
     const rows = production
       .map((row) => [
         `"${row.professional.name}"`,
@@ -157,7 +157,9 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
         row.afternoonShifts,
         row.shiftsPresent,
         row.shiftValue.toFixed(2),
-        row.shiftTotal.toFixed(2),
+        row.sundayShiftsPresent,
+        row.sundayBonusTotal.toFixed(2),
+        row.totalPayable.toFixed(2),
       ].join(','))
       .join('\n');
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
@@ -216,6 +218,8 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
         Base de conferência para as Notas Fiscais da competência. Não representa folha de pagamento nem controle de jornada.
         Os honorários são o preço do Módulo Assistencial multiplicado pelos módulos entregues na competência
         (corte matutino/vespertino às 12h); um mesmo dia rende dois módulos quando há execução antes e depois do corte.
+        Módulos entregues aos domingos rendem, cada um, uma diária extra no mesmo valor do Módulo Assistencial,
+        somada aos honorários da competência.
         Os registros de execução têm finalidade fiscal e não constituem controle de ponto ou de jornada
         (art. 74 da CLT) — ver Cláusula 6ª do contrato-quadro PJ.
       </p>
@@ -230,13 +234,15 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
               <th className="p-3 font-semibold">Módulos (Mat. / Vesp.)</th>
               <th className="p-3 font-semibold">Módulos Entregues</th>
               <th className="p-3 font-semibold">Preço do Módulo</th>
+              <th className="p-3 font-semibold">Módulos em Domingo</th>
+              <th className="p-3 font-semibold text-right">Diária Extra de Domingo</th>
               <th className="p-3 font-semibold text-right">Honorários</th>
               <th className="p-3 font-semibold text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {production.length === 0 ? (
-              <tr><td colSpan={8} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
+              <tr><td colSpan={10} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
             ) : (
               production.map((row) => {
                 const notice = noticeByProfessional.get(row.professional.id);
@@ -253,7 +259,9 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
                     <td className="p-3 text-gray-600">
                       {row.shiftValue > 0 ? fmtBRL(row.shiftValue) : <span className="text-amber-600">não informado</span>}
                     </td>
-                    <td className="p-3 text-right font-bold text-gray-800">{fmtBRL(row.shiftTotal)}</td>
+                    <td className="p-3 text-gray-600">{row.sundayShiftsPresent}</td>
+                    <td className="p-3 text-right text-gray-600">{fmtBRL(row.sundayBonusTotal)}</td>
+                    <td className="p-3 text-right font-bold text-gray-800">{fmtBRL(row.totalPayable)}</td>
                     <td className="p-3 text-right">
                       {hasNf ? (
                         <span className="text-[10px] text-emerald-700 font-semibold">NF recebida</span>
@@ -282,7 +290,9 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
                 <td className="p-3" colSpan={4}>Total da competência</td>
                 <td className="p-3">{production.reduce((acc, r) => acc + r.shiftsPresent, 0)}</td>
                 <td className="p-3"></td>
-                <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.shiftTotal, 0))}</td>
+                <td className="p-3">{production.reduce((acc, r) => acc + r.sundayShiftsPresent, 0)}</td>
+                <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.sundayBonusTotal, 0))}</td>
+                <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.totalPayable, 0))}</td>
                 <td className="p-3"></td>
               </tr>
             </tfoot>
