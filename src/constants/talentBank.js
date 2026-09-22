@@ -29,6 +29,8 @@ export const OPPORTUNITY_LABEL = {
   REMUNERADO: 'Remunerado',
   VOLUNTARIO: 'Voluntário',
   ESTAGIO: 'Estágio',
+  BOLSA: 'Bolsa',
+  PJ: 'PJ',
 };
 
 export const statusLabel = (value) =>
