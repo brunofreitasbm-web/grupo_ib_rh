@@ -257,4 +257,50 @@ describe('calculateProfessionalProduction', () => {
       expect(carla.shiftTotal).toBe(0);
     });
   });
+
+  // Adicional de domingo: uma diária extra (shiftValue) por turno trabalhado
+  // em domingo, somada ao valor normal desses turnos (Grupo IB).
+  describe('adicional de domingo', () => {
+    const comValor = [
+      { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a', shiftValue: 1000 },
+    ];
+
+    it('soma uma diária extra por turno de domingo trabalhado (2024-06-09 é domingo)', () => {
+      const presence = [
+        presenceRecord('p1', 'entrada', 2024, 5, 9, 8, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 9, 11, 0, 'clinica-a'),
+      ];
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.sundayShiftsPresent).toBe(1);
+      expect(carla.sundayBonusTotal).toBe(1000);
+      expect(carla.shiftTotal).toBe(1000);
+      expect(carla.totalPayable).toBe(2000);
+    });
+
+    it('dobra o adicional quando trabalha manhã e tarde no mesmo domingo (2024-06-16)', () => {
+      const presence = [
+        presenceRecord('p1', 'entrada', 2024, 5, 16, 8, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 16, 17, 0, 'clinica-a'),
+      ];
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.sundayShiftsPresent).toBe(2);
+      expect(carla.sundayBonusTotal).toBe(2000);
+      expect(carla.shiftTotal).toBe(2000);
+      expect(carla.totalPayable).toBe(4000);
+    });
+
+    it('não soma adicional para turnos em dias que não são domingo (2024-06-10 é segunda)', () => {
+      const presence = [
+        presenceRecord('p1', 'entrada', 2024, 5, 10, 8, 0, 'clinica-a'),
+        presenceRecord('p1', 'saida', 2024, 5, 10, 11, 0, 'clinica-a'),
+      ];
+      const carla = calculateProfessionalProduction(presence, comValor, '2024-06', 'all')
+        .find((r) => r.professional.id === 'p1');
+      expect(carla.sundayShiftsPresent).toBe(0);
+      expect(carla.sundayBonusTotal).toBe(0);
+      expect(carla.totalPayable).toBe(carla.shiftTotal);
+    });
+  });
 });

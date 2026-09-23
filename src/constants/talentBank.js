@@ -26,9 +26,11 @@ export const STATUS_BADGE = {
 };
 
 export const OPPORTUNITY_LABEL = {
-  REMUNERADO: 'Remunerado',
+  REMUNERADO: 'CLT',
   VOLUNTARIO: 'Voluntário',
   ESTAGIO: 'Estágio',
+  BOLSA: 'Bolsa',
+  PJ: 'PJ',
 };
 
 export const statusLabel = (value) =>

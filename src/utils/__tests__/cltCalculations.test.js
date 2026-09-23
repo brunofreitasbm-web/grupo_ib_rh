@@ -4,7 +4,7 @@ import {
   computeWorkedIntervals, nightMinutes, computeDay, computeMonth,
   vacationEntitlementDays, validateVacationFractions, noticeDays,
   experienceDates, interjornadaViolations, movableHolidays, easterDate,
-  dailyPayRate, absenceDeduction, payAfterAbsences, computeEmployeeAlerts,
+  dailyPayRate, absenceDeduction, payAfterAbsences, sundayBonus, computeEmployeeAlerts,
 } from '../cltCalculations';
 
 describe('toMinutes / addDays / diffDays', () => {
@@ -286,5 +286,21 @@ describe('descontos em folha — 1/30 do salário/bolsa declarado por dia', () =
     const salario = 1200;
     expect(absenceDeduction(bolsa, 2)).toBe(absenceDeduction(salario, 2));
     expect(absenceDeduction(bolsa, 2)).toBe(80);
+  });
+});
+
+describe('sundayBonus — adicional de domingo trabalhado (Grupo IB)', () => {
+  it('soma uma diária (1/30) por domingo trabalhado', () => {
+    expect(sundayBonus(3000, 1)).toBe(100);
+    expect(sundayBonus(3000, 2)).toBe(200);
+  });
+
+  it('não soma nada quando não há domingo trabalhado', () => {
+    expect(sundayBonus(3000, 0)).toBe(0);
+  });
+
+  it('trata quantidade ausente, inválida ou negativa de domingos como zero', () => {
+    expect(sundayBonus(3000, null)).toBe(0);
+    expect(sundayBonus(3000, -1)).toBe(0);
   });
 });
