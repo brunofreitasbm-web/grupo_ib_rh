@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, KeyRound, ShieldCheck, Loader2, Copy, Check } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
@@ -159,9 +159,16 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
 
   const unitName = (id) => units.find((u) => u.id === id)?.name || '—';
 
-  const professionalIds = filteredProfessionals.map((p) => p.id);
+  const professionalIds = useMemo(
+    () => (BRANDING.showStaffDiscAssessment !== false ? filteredProfessionals.map((p) => p.id) : []),
+    [filteredProfessionals]
+  );
+  const professionalEmails = useMemo(
+    () => (BRANDING.showStaffDiscAssessment !== false ? filteredProfessionals.map((p) => p.email) : []),
+    [filteredProfessionals]
+  );
   const { tokensById: discTokensById, assessmentsById: discAssessmentsById, reload: reloadDisc } = useStaffDiscOverlay('professional', professionalIds);
-  const candidateDiscByEmail = useCandidateDiscByEmail(filteredProfessionals.map((p) => p.email));
+  const candidateDiscByEmail = useCandidateDiscByEmail(professionalEmails);
 
   if (loading) {
     return (
@@ -228,17 +235,19 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                   </td>
                   <td className="p-3 text-right">
                     <div className="flex justify-end gap-1.5">
-                      <StaffDiscCell
-                        subjectType="professional"
-                        subjectId={p.id}
-                        name={p.name}
-                        email={p.email}
-                        phone={p.phone}
-                        token={discTokensById[p.id]}
-                        assessment={discAssessmentsById[p.id]}
-                        candidateMatch={candidateDiscByEmail[(p.email || '').toLowerCase()]}
-                        onSent={reloadDisc}
-                      />
+                      {BRANDING.showStaffDiscAssessment !== false && (
+                        <StaffDiscCell
+                          subjectType="professional"
+                          subjectId={p.id}
+                          name={p.name}
+                          email={p.email}
+                          phone={p.phone}
+                          token={discTokensById[p.id]}
+                          assessment={discAssessmentsById[p.id]}
+                          candidateMatch={candidateDiscByEmail[(p.email || '').toLowerCase()]}
+                          onSent={reloadDisc}
+                        />
+                      )}
                       <button
                         onClick={() => setPinModalId(p.id)}
                         disabled={p.registrationStatus === 'pending_validation'}

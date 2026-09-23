@@ -667,9 +667,16 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   );
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
 
-  const internIds = useMemo(() => filteredInterns.map((i) => i.id), [filteredInterns]);
+  const internIds = useMemo(
+    () => (BRANDING.showStaffDiscAssessment !== false ? filteredInterns.map((i) => i.id) : []),
+    [filteredInterns]
+  );
+  const internEmails = useMemo(
+    () => (BRANDING.showStaffDiscAssessment !== false ? filteredInterns.map((i) => i.email) : []),
+    [filteredInterns]
+  );
   const { tokensById: discTokensById, assessmentsById: discAssessmentsById, reload: reloadDisc } = useStaffDiscOverlay('intern', internIds);
-  const candidateDiscByEmail = useCandidateDiscByEmail(filteredInterns.map((i) => i.email));
+  const candidateDiscByEmail = useCandidateDiscByEmail(internEmails);
 
   if (loading) {
     return (
@@ -1036,17 +1043,19 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    <StaffDiscCell
-                      subjectType="intern"
-                      subjectId={intern.id}
-                      name={intern.name}
-                      email={intern.email}
-                      phone={intern.phone}
-                      token={discTokensById[intern.id]}
-                      assessment={discAssessmentsById[intern.id]}
-                      candidateMatch={candidateDiscByEmail[(intern.email || '').toLowerCase()]}
-                      onSent={reloadDisc}
-                    />
+                    {BRANDING.showStaffDiscAssessment !== false && (
+                      <StaffDiscCell
+                        subjectType="intern"
+                        subjectId={intern.id}
+                        name={intern.name}
+                        email={intern.email}
+                        phone={intern.phone}
+                        token={discTokensById[intern.id]}
+                        assessment={discAssessmentsById[intern.id]}
+                        candidateMatch={candidateDiscByEmail[(intern.email || '').toLowerCase()]}
+                        onSent={reloadDisc}
+                      />
+                    )}
                     <button
                       onClick={() => handleOpenBiometricsModal(intern)}
                       className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 border shadow-2xs ${

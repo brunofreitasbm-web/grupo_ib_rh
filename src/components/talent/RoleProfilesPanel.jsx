@@ -20,7 +20,7 @@ export default function RoleProfilesPanel() {
         ))}
       </p>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {ROLE_PROFILES.map((role) => (
           <div key={role.id} className="border border-slate-200 rounded-2xl bg-white p-4 flex flex-col gap-3">
             <div>

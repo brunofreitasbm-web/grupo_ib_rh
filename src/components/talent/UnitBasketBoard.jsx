@@ -42,9 +42,9 @@ function useHiredTeamByQuadrant() {
       setLoading(true);
       try {
         const [internsRes, professionalsRes, employeesRes, assessmentsRes] = await Promise.all([
-          supabase.from('interns').select('id, name, unit_id').neq('active', false),
-          supabase.from('professionals').select('id, name, unit_id').neq('active', false),
-          supabase.from('employees').select('id, name, unit_id').eq('status', 'ativo'),
+          supabase.from('interns').select('id, name, unit_id, role_id').neq('active', false),
+          supabase.from('professionals').select('id, name, unit_id, role_id').neq('active', false),
+          supabase.from('employees').select('id, name, unit_id, role_id').eq('status', 'ativo'),
           supabase.from('staff_disc_assessments').select('*'),
         ]);
         if (internsRes.error) throw internsRes.error;
@@ -63,7 +63,7 @@ function useHiredTeamByQuadrant() {
 
         const map = {};
         for (const r of roster) {
-          const roleId = SUBJECT_TYPE_ROLE_ID[r.subjectType];
+          const roleId = r.role_id || SUBJECT_TYPE_ROLE_ID[r.subjectType];
           const key = `${r.unit_id}::${roleId}`;
           const assessment = assessmentByKey[`${r.subjectType}:${r.id}`] || null;
           (map[key] ||= []).push({ id: r.id, name: r.name, subjectType: r.subjectType, assessment });
@@ -214,7 +214,7 @@ export default function UnitBasketBoard({
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
               {ROLE_PROFILES.map((role) => {
                 const key = `${unit.id}::${role.id}`;
                 const items = placed[key] || [];

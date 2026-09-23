@@ -110,12 +110,15 @@ describe('computeRoleFit', () => {
 });
 
 describe('bestRoleFor', () => {
-  it('aponta Recepção para um perfil I/S e PJ para um perfil S/C', () => {
+  it('aponta Recepção para um perfil I/S, PJ para um perfil S/C e Administrativo para um perfil C/D', () => {
     const recepcao = bestRoleFor(assessmentFrom({ D: 20, I: 42, S: 26, C: 12 }, 'I', 'S'));
     expect(recepcao.role.id).toBe('operador_recepcao');
 
     const pj = bestRoleFor(assessmentFrom({ D: 8, I: 20, S: 42, C: 30 }, 'S', 'C'));
     expect(pj.role.id).toBe('profissional_pj');
+
+    const admin = bestRoleFor(assessmentFrom({ D: 26, I: 14, S: 24, C: 36 }, 'C', 'D'));
+    expect(admin.role.id).toBe('administrativo');
   });
 
   it('retorna null sem avaliação', () => {

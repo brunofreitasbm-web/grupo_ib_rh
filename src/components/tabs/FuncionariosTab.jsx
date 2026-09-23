@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Loader2, ShieldCheck, Upload, UserPlus, Trash, ScanFace, Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
@@ -231,9 +231,16 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
   }, [fetchData]);
 
   const filteredEmployees = employees.filter((e) => filterUnit === 'all' || e.unitId === filterUnit);
-  const employeeIds = filteredEmployees.map((e) => e.id);
+  const employeeIds = useMemo(
+    () => (BRANDING.showStaffDiscAssessment !== false ? filteredEmployees.map((e) => e.id) : []),
+    [filteredEmployees]
+  );
+  const employeeEmails = useMemo(
+    () => (BRANDING.showStaffDiscAssessment !== false ? filteredEmployees.map((e) => e.email) : []),
+    [filteredEmployees]
+  );
   const { tokensById: discTokensById, assessmentsById: discAssessmentsById, reload: reloadDisc } = useStaffDiscOverlay('employee', employeeIds);
-  const candidateDiscByEmail = useCandidateDiscByEmail(filteredEmployees.map((e) => e.email));
+  const candidateDiscByEmail = useCandidateDiscByEmail(employeeEmails);
 
   const fetchDependents = async (employeeId) => {
     if (!employeeId) { setDependents([]); return; }
@@ -500,17 +507,19 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex justify-end gap-1.5">
-                        <StaffDiscCell
-                          subjectType="employee"
-                          subjectId={emp.id}
-                          name={emp.name}
-                          email={emp.email}
-                          phone={emp.phone}
-                          token={discTokensById[emp.id]}
-                          assessment={discAssessmentsById[emp.id]}
-                          candidateMatch={candidateDiscByEmail[(emp.email || '').toLowerCase()]}
-                          onSent={reloadDisc}
-                        />
+                        {BRANDING.showStaffDiscAssessment !== false && (
+                          <StaffDiscCell
+                            subjectType="employee"
+                            subjectId={emp.id}
+                            name={emp.name}
+                            email={emp.email}
+                            phone={emp.phone}
+                            token={discTokensById[emp.id]}
+                            assessment={discAssessmentsById[emp.id]}
+                            candidateMatch={candidateDiscByEmail[(emp.email || '').toLowerCase()]}
+                            onSent={reloadDisc}
+                          />
+                        )}
                         <button
                           onClick={() => handleOpenBiometricsModal(emp)}
                           className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 border shadow-2xs ${

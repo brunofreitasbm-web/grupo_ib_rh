@@ -40,6 +40,30 @@ export const ROLE_PROFILES = [
     ],
   },
   {
+    id: 'administrativo',
+    label: 'Administrativo',
+    short: 'Administrativo',
+    expectedCode: 'C/D',
+    ideal: { D: 25, I: 15, S: 25, C: 35 },
+    preferredPrimary: ['C', 'D'],
+    cautionPrimary: ['I'],
+    summary:
+      'Gestão administrativa da clínica, processos, organização, supervisão e faturamento. ' +
+      'Perfil Analista (C) com foco em processos, exatidão e conformidade, sustentado por Dominância (D) para liderança e tomada de decisão, e Estabilidade (S) na organização de rotinas.',
+    traits: [
+      { label: 'Organização de processos, fluxos e rotinas da clínica', factors: ['C', 'S'], why: 'Sistematização, padronização e manutenção da ordem administrativa.' },
+      { label: 'Gestão de faturamento, métricas e exatidão financeira', factors: ['C'], why: 'Atenção aos detalhes, conferência rigorosa e cumprimento de prazos.' },
+      { label: 'Supervisão de equipe e acompanhamento de metas', factors: ['D'], why: 'Firmeza, orientação a resultados e liderança diretiva.' },
+      { label: 'Resolução proativa de gargalos operacionais', factors: ['D', 'C'], why: 'Iniciativa para destravar problemas com base em regras e procedimentos.' },
+      { label: 'Padronização e controle documental da clínica', factors: ['C', 'S'], why: 'Disciplina e previsibilidade no fluxo de arquivos e contratos.' },
+      { label: 'Comunicação assertiva com diretoria e fornecedores', factors: ['D', 'I'], why: 'Clareza, objetividade e negociação sem dispersão.' },
+    ],
+    attention: [
+      'I muito alto sem ancoragem em C pode resultar em dispersão e falhas de detalhamento no faturamento.',
+      'D excessivo sem ponderação pode gerar rigidez ou conflito na supervisão administrativa.',
+    ],
+  },
+  {
     id: 'profissional_pj',
     label: 'Profissional PJ',
     short: 'Profissional PJ',

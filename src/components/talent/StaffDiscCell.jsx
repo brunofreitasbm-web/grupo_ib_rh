@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { DISC_PROFILE_INFO, discProfileCode } from '../../utils/disc';
 import DiscResultModal from './DiscResultModal';
 
+import { BRANDING } from '../../config/branding';
+
 // Célula reutilizável para as abas de Estagiários / Profissionais PJ /
 // Funcionários CLT: mostra o resultado do DISC (se já respondido), um botão
 // "Enviar Levantamento de Perfil Comportamental" (edge function
@@ -15,6 +17,10 @@ import DiscResultModal from './DiscResultModal';
 // Mesma ideia de CandidateActionsMenu, mas sem menu — aqui cada aba já usa
 // botões de ícone inline nas linhas/cards.
 export default function StaffDiscCell({ subjectType, subjectId, name, email, phone, token, assessment, candidateMatch, onSent }) {
+  if (BRANDING.showStaffDiscAssessment === false) {
+    return null;
+  }
+
   const [busy, setBusy] = useState(false);
   const [showResult, setShowResult] = useState(false);
 

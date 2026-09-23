@@ -68,14 +68,13 @@ export const WORKSPACES = {
     // (resolveAdminKey). Qualquer outro texto digitado cai no "supervisor"
     // genérico. O e-mail de cada uma é o mesmo em auth.users nos dois sites
     // (é a mesma conta Supabase) — só a lista exibida/reconhecível muda.
-    // Tela de Usuários do Sistema (Configurações > Usuários do Sistema) —
-    // cadastro/edição/reset de senha das contas que logam no painel e nos
-    // quiosques. Desligada neste site: as contas da Porto Terapia continuam
-    // sendo as fixas de adminUsers/kioskUnits.
+    // Módulo de Usuários do Sistema
     showSystemUsersModule: false,
-    // Banco de Talentos (candidatos do módulo gerencial do app Faça Amigos)
-    // — desligado neste site, que não tem esse convênio.
+    // Banco de Talentos
     showTalentBankModule: false,
+    // Levantamento de Perfil Comportamental (DISC) para equipe/estagiários
+    // Desligado no módulo Porto Terapia por solicitação da gestão.
+    showStaffDiscAssessment: false,
     adminUsers: {
       supervisor: { label: 'Supervisor Geral', email: 'supervisor@portoterapia.com' },
       guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
@@ -217,6 +216,8 @@ export const WORKSPACES = {
     // Candidatos captados pelo Banco de Talentos do app Faça Amigos (módulo
     // gerencial, projeto Supabase separado) — ver supabase/functions/fetch-talent-bank.
     showTalentBankModule: true,
+    // Levantamento de Perfil Comportamental (DISC) para equipe
+    showStaffDiscAssessment: true,
     adminUsers: {
       bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
     },
