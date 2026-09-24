@@ -379,13 +379,14 @@ export default function BancoTalentosTab() {
   const assignToBasket = async (candidate, unitId, roleId) => {
     const role = ROLE_BY_ID[roleId];
     const fit = computeRoleFit(candidate.discAssessment, role);
+    const candidateIdStr = String(candidate.id);
     setBusyId(candidate.id);
     try {
       // Garante a linha-mãe do overlay (FK) sem sobrescrever status/notas.
       const { error: metaErr } = await supabase.from('talent_candidates_meta').upsert(
         {
-          candidate_id: candidate.id,
-          snapshot: { full_name: candidate.full_name, email: candidate.email, phone: candidate.phone },
+          candidate_id: candidateIdStr,
+          snapshot: { full_name: candidate.full_name || '', email: candidate.email || '', phone: candidate.phone || '' },
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'candidate_id', ignoreDuplicates: true }
@@ -393,7 +394,7 @@ export default function BancoTalentosTab() {
       if (metaErr) throw metaErr;
 
       const row = {
-        candidate_id: candidate.id,
+        candidate_id: candidateIdStr,
         unit_id: unitId,
         role_id: roleId,
         fit_score: fit?.score ?? null,
@@ -401,31 +402,35 @@ export default function BancoTalentosTab() {
       };
       const { error: err } = await supabase.from('talent_basket_assignments').upsert(row, { onConflict: 'candidate_id' });
       if (err) throw err;
-      setBasketById((prev) => ({ ...prev, [candidate.id]: row }));
+      setBasketById((prev) => ({ ...prev, [candidate.id]: row, [candidateIdStr]: row }));
       const unitLabel = SIMULATION_UNITS.find((u) => u.id === unitId)?.shortLabel || unitId;
       toast.success(`${candidate.full_name} → ${unitLabel} · ${role?.label || roleId} (compatibilidade ${fit?.score ?? '—'}).`);
     } catch (err) {
-      console.error('Erro ao alocar candidato na simulação:', err);
-      toast.error('Não foi possível salvar a alocação. A migração talent_basket_assignments foi aplicada?');
+      const detail = err?.message || err?.details || err?.hint || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      console.error('Erro ao alocar candidato na simulação:', detail, err);
+      toast.error(`Não foi possível salvar a alocação: ${detail}`);
     } finally {
       setBusyId(null);
     }
   };
 
   const removeFromBasket = async (candidate) => {
+    const candidateIdStr = String(candidate.id);
     setBusyId(candidate.id);
     try {
-      const { error: err } = await supabase.from('talent_basket_assignments').delete().eq('candidate_id', candidate.id);
+      const { error: err } = await supabase.from('talent_basket_assignments').delete().eq('candidate_id', candidateIdStr);
       if (err) throw err;
       setBasketById((prev) => {
         const next = { ...prev };
         delete next[candidate.id];
+        delete next[candidateIdStr];
         return next;
       });
       toast.success(`${candidate.full_name} removido(a) da simulação.`);
     } catch (err) {
-      console.error('Erro ao remover candidato da simulação:', err);
-      toast.error('Não foi possível remover a alocação.');
+      const detail = err?.message || err?.details || err?.hint || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      console.error('Erro ao remover candidato da simulação:', detail, err);
+      toast.error(`Não foi possível remover a alocação: ${detail}`);
     } finally {
       setBusyId(null);
     }
