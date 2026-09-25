@@ -1332,9 +1332,16 @@ export default function App() {
   }, [records, interns, effectiveFilterUnit]);
 
   // Motor de Auditoria de Ponto Retroativo de 30 dias com Sincronização
+  const auditRunningRef = useRef(false);
   const runPointAudit = useCallback(async () => {
     if (!user || user.user_metadata?.role !== 'supervisor') return;
-    
+    // Evita execuções concorrentes (ex.: múltiplas mudanças em 'records' disparando
+    // o useEffect quase ao mesmo tempo), que causavam inserção duplicada do mesmo
+    // alerta ao checar 'já existe?' contra um snapshot desatualizado do banco.
+    if (auditRunningRef.current) return;
+    auditRunningRef.current = true;
+    try {
+
     // Obter data de 30 dias atrás
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
@@ -1487,7 +1494,16 @@ export default function App() {
     }
 
     if (recordsToInsert.length > 0) {
-      await supabase.from('records').insert(recordsToInsert);
+      // Insere um a um (em vez de um único insert em lote) para que uma
+      // colisão com o índice único records_audit_alert_unique_idx — inserida
+      // por outra execução concorrente do mesmo motor de auditoria — rejeite
+      // apenas aquele alerta específico, sem abortar os demais.
+      await Promise.all(recordsToInsert.map(async (record) => {
+        const { error: insertError } = await supabase.from('records').insert(record);
+        if (insertError && insertError.code !== '23505') {
+          console.error("Erro ao salvar alerta de auditoria:", insertError.code, insertError.message);
+        }
+      }));
     }
 
     const idsToDelete = [];
@@ -1506,6 +1522,9 @@ export default function App() {
 
     if (idsToDelete.length > 0) {
       await supabase.from('records').delete().in('id', idsToDelete);
+    }
+    } finally {
+      auditRunningRef.current = false;
     }
   }, [user, interns]);
 
