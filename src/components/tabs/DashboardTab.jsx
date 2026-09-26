@@ -214,10 +214,23 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [], isAct
   }, [activeInterns]);
 
   const systemAuditOccurrences = useMemo(() => {
-    return records.filter(r => 
-      r.action === 'ocorrencia' && 
+    const filtered = records.filter(r =>
+      r.action === 'ocorrencia' &&
       (r.justification || '').startsWith('[AUDITORIA SISTÊMICA]')
     );
+    // Salvaguarda defensiva de apresentação: caso alguma corrida no motor de
+    // auditoria (App.jsx) tenha gravado o mesmo alerta mais de uma vez para o
+    // mesmo estagiário, mostra apenas uma ocorrência por combinação de
+    // estagiário + texto do alerta.
+    const seen = new Set();
+    const deduped = [];
+    for (const occ of filtered) {
+      const key = `${occ.internId}|${occ.justification}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(occ);
+    }
+    return deduped;
   }, [records]);
 
   if (loading) {

@@ -947,6 +947,13 @@ alter publication supabase_realtime add table public.units;
 CREATE INDEX IF NOT EXISTS idx_records_intern_id ON public.records(intern_id);
 CREATE INDEX IF NOT EXISTS idx_records_timestamp ON public.records(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_records_action ON public.records(action);
+
+-- Impede que o motor de auditoria de ponto insira o mesmo alerta sistêmico
+-- (mesmo estagiário + mesmo texto de alerta) mais de uma vez, mesmo sob
+-- execuções concorrentes (ver 20260924160000_dedupe_and_lock_audit_alerts.sql).
+CREATE UNIQUE INDEX IF NOT EXISTS records_audit_alert_unique_idx
+  ON public.records (intern_id, justification)
+  WHERE action = 'ocorrencia' AND justification LIKE '[AUDITORIA SISTÊMICA]%';
 CREATE INDEX IF NOT EXISTS idx_interns_unit_id ON public.interns(unit_id);
 CREATE INDEX IF NOT EXISTS idx_interns_active ON public.interns(active);
 CREATE INDEX IF NOT EXISTS idx_document_contents_intern ON public.document_contents(intern_id, doc_key);
