@@ -4089,3 +4089,30 @@ REVOKE ALL ON FUNCTION public.get_therapist_directory(text, timestamp with time 
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_therapist_directory(text, timestamp with time zone, boolean)
   TO authenticated, service_role;
+
+-- =========================================================================
+-- 22. TABELA DE AVALIAÇÕES NPS (NET PROMOTER SCORE) DE ATENDIMENTO
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.nps_evaluations (
+    id uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+    intern_id uuid REFERENCES public.interns(id) ON DELETE SET NULL,
+    intern_name text,
+    supervisor_name text,
+    score integer NOT NULL CHECK (score >= 0 AND score <= 10),
+    category text CHECK (category IN ('detractor', 'neutral', 'promoter')),
+    feedback text,
+    session_duration integer DEFAULT 15,
+    unit_id text REFERENCES public.units(id) ON DELETE SET NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+-- Habilitar RLS
+ALTER TABLE public.nps_evaluations ENABLE ROW LEVEL SECURITY;
+
+-- Políticas de RLS
+CREATE POLICY "Permitir leitura de avaliacoes NPS para autenticados" ON public.nps_evaluations
+    FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Permitir insercao de avaliacoes NPS para autenticados e anonimos" ON public.nps_evaluations
+    FOR INSERT WITH CHECK (true);
+
