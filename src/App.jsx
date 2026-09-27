@@ -5,7 +5,7 @@ import {
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
-  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck
 } from 'lucide-react';
 import { getFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
@@ -90,6 +90,9 @@ import PublicPayrollUploadModal from './components/PublicPayrollUploadModal';
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
 // Autocadastro de Funcionários CLT (sem sessão) — mesmo motivo do lazy acima.
 const EmployeeSelfRegistration = lazyWithRetry(() => import('./components/EmployeeSelfRegistration'));
+// Quiosque e Autocadastro de Freelancers (sem sessão) — módulo Freelance (trabalhos pontuais).
+const FreelanceKiosk = lazyWithRetry(() => import('./components/FreelanceKiosk'));
+const FreelanceSelfRegistration = lazyWithRetry(() => import('./components/FreelanceSelfRegistration'));
 
 
 
@@ -252,6 +255,12 @@ export default function App() {
 
     if (profileId === 'supervisor') {
       setSelectedLoginOption('supervisor');
+      setIsProcessingProfile(null);
+      return;
+    }
+
+    if (profileId === 'freelance') {
+      setKioskCategory('freelance');
       setIsProcessingProfile(null);
       return;
     }
@@ -2814,6 +2823,24 @@ export default function App() {
         </button>
       );
 
+      if (kioskCategory === 'freelance') {
+        return (
+          <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
+            <Suspense fallback={
+              <div className="min-h-screen flex justify-center items-center">
+                <Loader2 size={32} className="animate-spin text-teal-600" />
+              </div>
+            }>
+              <FreelanceKiosk
+                units={units}
+                branding={BRANDING}
+                onBack={() => setKioskCategory(null)}
+              />
+            </Suspense>
+          </div>
+        );
+      }
+
       return (
         <div className="min-h-screen bg-blue-50 flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
@@ -2972,6 +2999,39 @@ export default function App() {
                             {isProcessingProfile === 'clt'
                               ? (profileStatusMessage || 'Obtendo localização GPS...')
                               : 'Registro de ponto (Biometria + GPS + NSR)'}
+                          </p>
+                        </div>
+                      </button>
+                    )}
+
+                    {BRANDING.showFreelanceModule && (
+                      <button
+                        type="button"
+                        disabled={isProcessingProfile !== null}
+                        onClick={() => handleSelectProfile('freelance')}
+                        aria-label="Acessar Central de Freelancers (Cadastro Obrigatório e Gestão de OS)"
+                        className={`w-full p-5 border-2 border-gray-200 rounded-xl hover:border-teal-500 hover:bg-teal-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0D7A75] focus-visible:outline-offset-2 transition-all flex items-center gap-4 text-left group ${
+                          isProcessingProfile !== null ? 'pointer-events-none opacity-60 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        <div className="p-3 bg-teal-100 text-teal-700 rounded-lg group-hover:bg-teal-200 transition-colors flex items-center justify-center">
+                          {isProcessingProfile === 'freelance' ? (
+                            <Loader2 size={26} className="animate-spin text-teal-700" />
+                          ) : (
+                            <UserCheck size={26} />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-gray-800 text-base">{BRANDING.freelanceLabels?.singular || 'Freelance'} (Trabalhos Pontuais)</h4>
+                            <span className="text-[9px] font-bold uppercase bg-teal-200 text-teal-800 px-1.5 py-0.5 rounded-full">
+                              Sem Login
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {isProcessingProfile === 'freelance'
+                              ? (profileStatusMessage || 'Carregando...')
+                              : 'Cadastro Obrigatório & Controle Presencial de OS por Escopo'}
                           </p>
                         </div>
                       </button>
