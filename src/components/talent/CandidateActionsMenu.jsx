@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, ArrowRightLeft, Archive, ArchiveRestore, Send, CheckCircle, MessageCircle, Mail, StickyNote } from 'lucide-react';
+import { MoreVertical, ArrowRightLeft, Archive, ArchiveRestore, Send, CheckCircle, MessageCircle, Mail, StickyNote, Briefcase } from 'lucide-react';
 import { CANDIDATE_STATUSES, statusLabel } from '../../constants/talentBank';
 
 // Menu de ações rápidas por candidato, na linha da tabela. O repo não usa
@@ -13,6 +13,7 @@ export default function CandidateActionsMenu({
   onSendDisc,
   onMarkSentManual,
   onOpenNotes,
+  onConvertFreelance,
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -109,6 +110,17 @@ export default function CandidateActionsMenu({
             >
               <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
               {candidate.hasDiscToken ? 'Atualizar p/ Enviado (Manual)' : 'Marcar como Enviado (Manual)'}
+            </button>
+          )}
+
+          {onConvertFreelance && (
+            <button
+              type="button"
+              onClick={act(onConvertFreelance)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-violet-700 hover:bg-violet-50 font-medium"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-violet-600" />
+              Cadastrar como Freelancer
             </button>
           )}
 

@@ -12,6 +12,7 @@ import DiscResultModal from '../talent/DiscResultModal';
 import UnitBasketBoard from '../talent/UnitBasketBoard';
 import RoleFitModal from '../talent/RoleFitModal';
 import RoleProfilesPanel from '../talent/RoleProfilesPanel';
+import { mapFreelancerToDb, getFriendlyDbErrorMessage } from '../../utils/mappings';
 
 const SUB_TABS = [
   { id: 'candidatos', label: 'Candidatos', icon: Users },
@@ -52,7 +53,13 @@ const formatDateTime = (isoString) => {
 // conclusão, sinaliza atraso para o gestor.
 const DISC_SLA_MS = 48 * 60 * 60 * 1000;
 
-export default function BancoTalentosTab() {
+export default function BancoTalentosTab({ units = [] }) {
+  // Unidades para o seletor do modal de conversão em Freelancer: usa as
+  // unidades reais do painel quando disponíveis, com SIMULATION_UNITS como
+  // fallback (mesmo conjunto usado pela Simulação por Unidade desta aba).
+  const convertUnitOptions = units.length
+    ? units.map((u) => ({ id: u.id, shortLabel: u.name || u.id }))
+    : SIMULATION_UNITS;
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -73,6 +80,14 @@ export default function BancoTalentosTab() {
   const [resultTarget, setResultTarget] = useState(null);
   const [fitTarget, setFitTarget] = useState(null); // { candidate, role, unit }
   const [resendConfirmTarget, setResendConfirmTarget] = useState(null);
+  // Entrada do módulo Freelance a partir do Banco de Talentos: converte um
+  // candidato já triado em cadastro de freelancer (unitId + serviceArea
+  // escolhidos aqui; o restante do cadastro — endereço, CPF, dados bancários
+  // e a Declaração de Autonomia — é completado depois em Freelancers).
+  const [convertTarget, setConvertTarget] = useState(null); // candidate
+  const [convertUnitId, setConvertUnitId] = useState('');
+  const [convertServiceArea, setConvertServiceArea] = useState('');
+  const [convertingId, setConvertingId] = useState(null);
 
   const loadOverlay = useCallback(async (ids) => {
     if (ids.length === 0) {
@@ -322,6 +337,39 @@ export default function BancoTalentosTab() {
       toast.error(err?.message ? `Não foi possível registrar o envio manual: ${err.message}` : 'Não foi possível registrar o envio manual.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const openConvertToFreelancer = (candidate) => {
+    setConvertTarget(candidate);
+    setConvertUnitId(convertUnitOptions[0]?.id || '');
+    setConvertServiceArea(candidate.desired_area || '');
+  };
+
+  const handleConfirmConvertToFreelancer = async () => {
+    if (!convertTarget) return;
+    if (!convertUnitId) { toast.error('Selecione a unidade.'); return; }
+    setConvertingId(convertTarget.id);
+    try {
+      const dbData = mapFreelancerToDb({
+        unitId: convertUnitId,
+        name: convertTarget.full_name || 'Freelancer sem nome',
+        email: convertTarget.email || '',
+        phone: convertTarget.phone || '',
+        serviceArea: convertServiceArea,
+        sourceCandidateId: String(convertTarget.id),
+        active: true,
+      });
+      const { error } = await supabase.from('freelancers').insert([dbData]);
+      if (error) throw error;
+      toast.success(`${convertTarget.full_name || 'Candidato'} cadastrado como freelancer. Complete o cadastro (CPF, endereço e Declaração de Autonomia) na aba Freelancers antes de emitir a primeira Ordem de Serviço.`);
+      setConvertTarget(null);
+      setConvertServiceArea('');
+    } catch (err) {
+      console.error('Erro ao converter candidato em freelancer:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setConvertingId(null);
     }
   };
 
@@ -739,6 +787,7 @@ export default function BancoTalentosTab() {
                           onSendDisc={() => handleInitiateSendDisc(c)}
                           onMarkSentManual={() => markSentManual(c)}
                           onOpenNotes={() => setNotesTarget(c)}
+                          onConvertFreelance={() => openConvertToFreelancer(c)}
                         />
                       </td>
                     </tr>
@@ -750,6 +799,76 @@ export default function BancoTalentosTab() {
         )}
       </div>
       </div>
+
+      {convertTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3 text-violet-700">
+              <div className="p-2.5 bg-violet-100 rounded-xl shrink-0">
+                <Briefcase className="w-6 h-6 text-violet-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Cadastrar como Freelancer</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Entra no módulo Freelance como trabalhador autônomo pessoa física, para trabalhos pontuais.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-700 space-y-1.5">
+              <p><strong>Candidato:</strong> {convertTarget.full_name}</p>
+              <p><strong>E-mail:</strong> {convertTarget.email || '—'}</p>
+              <p><strong>Telefone:</strong> {convertTarget.phone || '—'}</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Unidade</label>
+              <select
+                value={convertUnitId}
+                onChange={(e) => setConvertUnitId(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              >
+                {convertUnitOptions.map((u) => (
+                  <option key={u.id} value={u.id}>{u.shortLabel}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Área/atividade do serviço</label>
+              <input
+                value={convertServiceArea}
+                onChange={(e) => setConvertServiceArea(e.target.value)}
+                placeholder="Ex.: recreação de eventos, fotografia…"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Este passo só cria o cadastro básico. CPF, endereço, dados bancários e a Declaração de Autonomia
+              precisam ser completados na aba Freelancers antes de emitir a primeira Ordem de Serviço.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setConvertTarget(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmConvertToFreelancer}
+                disabled={convertingId === convertTarget.id}
+                className="px-4 py-2 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-60"
+              >
+                {convertingId === convertTarget.id ? 'Cadastrando…' : 'Cadastrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {resendConfirmTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">

@@ -890,3 +890,139 @@ export const employeeRpcErrorMessage = (err) => {
   if (msg.includes('invalid_type')) return 'Tipo de marcação inválido.';
   return msg || 'Erro inesperado.';
 };
+
+// =========================================================================
+// Módulo Freelance (trabalhos pontuais) — ver supabase/migrations/
+// 20260927100000_freelance_module.sql e src/config/freelanceConstants.js.
+// =========================================================================
+
+export const FREELANCER_SELECT_FIELDS = 'id, unit_id, name, cpf, nit, birthdate, email, phone, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, service_area, bank_name, bank_agency, bank_account, bank_account_type, pix_key, source_candidate_id, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, notes, photo, active, created_at';
+
+export const mapFreelancerFromDb = (f) => ({
+  id: f.id,
+  unitId: f.unit_id,
+  name: f.name,
+  cpf: f.cpf || '',
+  nit: f.nit || '',
+  birthdate: f.birthdate || '',
+  email: f.email || '',
+  phone: f.phone || '',
+  enderecoCep: f.endereco_cep || '',
+  enderecoLogradouro: f.endereco_logradouro || '',
+  enderecoNumero: f.endereco_numero || '',
+  enderecoComplemento: f.endereco_complemento || '',
+  enderecoBairro: f.endereco_bairro || '',
+  enderecoCidade: f.endereco_cidade || '',
+  enderecoUf: f.endereco_uf || '',
+  serviceArea: f.service_area || '',
+  bankName: f.bank_name || '',
+  bankAgency: f.bank_agency || '',
+  bankAccount: f.bank_account || '',
+  bankAccountType: f.bank_account_type || '',
+  pixKey: f.pix_key || '',
+  sourceCandidateId: f.source_candidate_id || '',
+  autonomyDeclarationAcceptedAt: f.autonomy_declaration_accepted_at || null,
+  autonomyDeclarationVersion: f.autonomy_declaration_version || '',
+  lgpdConsentAcceptedAt: f.lgpd_consent_accepted_at || null,
+  notes: f.notes || '',
+  photo: f.photo || '',
+  active: f.active !== false,
+  createdAt: f.created_at,
+});
+
+export const mapFreelancerToDb = (f) => ({
+  unit_id: f.unitId,
+  name: (f.name || '').trim(),
+  cpf: f.cpf || null,
+  nit: f.nit || null,
+  birthdate: f.birthdate || null,
+  email: f.email || null,
+  phone: f.phone || null,
+  endereco_cep: f.enderecoCep || null,
+  endereco_logradouro: f.enderecoLogradouro || null,
+  endereco_numero: f.enderecoNumero || null,
+  endereco_complemento: f.enderecoComplemento || null,
+  endereco_bairro: f.enderecoBairro || null,
+  endereco_cidade: f.enderecoCidade || null,
+  endereco_uf: f.enderecoUf || null,
+  service_area: f.serviceArea || null,
+  bank_name: f.bankName || null,
+  bank_agency: f.bankAgency || null,
+  bank_account: f.bankAccount || null,
+  bank_account_type: f.bankAccountType || null,
+  pix_key: f.pixKey || null,
+  source_candidate_id: f.sourceCandidateId || null,
+  autonomy_declaration_accepted_at: f.autonomyDeclarationAcceptedAt || null,
+  autonomy_declaration_version: f.autonomyDeclarationVersion || null,
+  lgpd_consent_accepted_at: f.lgpdConsentAcceptedAt || null,
+  notes: f.notes || null,
+  photo: f.photo || null,
+  active: f.active !== false,
+});
+
+export const FREELANCE_JOB_SELECT_FIELDS = 'id, freelancer_id, unit_id, title, service_type, scope, deliverable, gross_amount, iss_rate, iss_withheld, status, scheduled_date, executed_date, proposed_at, accepted_at, delivered_at, payment_accepted_at, paid_at, payment_day, rpa_number, cancellation_reason, risk_level, risk_override_reason, notes, created_at, updated_at';
+
+export const mapFreelanceJobFromDb = (j) => ({
+  id: j.id,
+  freelancerId: j.freelancer_id,
+  unitId: j.unit_id,
+  title: j.title,
+  serviceType: j.service_type || '',
+  scope: j.scope || '',
+  deliverable: j.deliverable || '',
+  grossAmount: j.gross_amount ?? '',
+  issRate: j.iss_rate ?? 0.05,
+  issWithheld: !!j.iss_withheld,
+  status: j.status || 'rascunho',
+  scheduledDate: j.scheduled_date || '',
+  executedDate: j.executed_date || '',
+  proposedAt: j.proposed_at || null,
+  acceptedAt: j.accepted_at || null,
+  deliveredAt: j.delivered_at || null,
+  paymentAcceptedAt: j.payment_accepted_at || null,
+  paidAt: j.paid_at || null,
+  paymentDay: j.payment_day ?? '',
+  rpaNumber: j.rpa_number || '',
+  cancellationReason: j.cancellation_reason || '',
+  riskLevel: j.risk_level || '',
+  riskOverrideReason: j.risk_override_reason || '',
+  notes: j.notes || '',
+  createdAt: j.created_at,
+  updatedAt: j.updated_at,
+});
+
+export const mapFreelanceJobToDb = (j) => ({
+  freelancer_id: j.freelancerId,
+  unit_id: j.unitId,
+  title: (j.title || '').trim(),
+  service_type: j.serviceType || null,
+  scope: (j.scope || '').trim(),
+  deliverable: j.deliverable || null,
+  gross_amount: j.grossAmount === '' || j.grossAmount == null ? null : Number(j.grossAmount),
+  iss_rate: j.issRate === '' || j.issRate == null ? 0.05 : Number(j.issRate),
+  iss_withheld: !!j.issWithheld,
+  status: j.status || 'rascunho',
+  scheduled_date: j.scheduledDate || null,
+  executed_date: j.executedDate || null,
+  proposed_at: j.proposedAt || null,
+  accepted_at: j.acceptedAt || null,
+  delivered_at: j.deliveredAt || null,
+  payment_accepted_at: j.paymentAcceptedAt || null,
+  paid_at: j.paidAt || null,
+  payment_day: j.paymentDay === '' || j.paymentDay == null ? null : Number(j.paymentDay),
+  rpa_number: j.rpaNumber || null,
+  cancellation_reason: j.cancellationReason || null,
+  risk_level: j.riskLevel || null,
+  risk_override_reason: j.riskOverrideReason || null,
+  notes: j.notes || null,
+});
+
+// Traduz os códigos de erro que o banco pode lançar nas escritas do módulo
+// Freelance (constraints de CHECK — ver a migração do módulo).
+export const freelanceRpcErrorMessage = (err) => {
+  const msg = String(err?.message || err || '');
+  if (msg.includes('freelance_jobs_gross_amount_check')) return 'O preço fechado do trabalho deve ser maior que zero.';
+  if (msg.includes('freelance_jobs_status_check')) return 'Status de Ordem de Serviço inválido.';
+  if (msg.includes('not authorized') || msg.includes('permission denied')) return 'Acesso não autorizado para esta operação.';
+  return msg || 'Erro inesperado.';
+};

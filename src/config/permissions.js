@@ -89,6 +89,18 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    id: 'freelance',
+    label: 'Freelancers',
+    module: 'showFreelanceModule',
+    permissions: [
+      { id: 'freelance.ver', label: 'Ver freelancers e Ordens de Serviço', default: true },
+      { id: 'freelance.editar', label: 'Cadastrar e editar freelancers' },
+      { id: 'freelance.os', label: 'Criar e avançar Ordens de Serviço' },
+      { id: 'freelance.contrato', label: 'Gerar minuta de contrato e RPA' },
+      { id: 'freelance.conformidade', label: 'Ver painel de conformidade e risco de habitualidade' },
+    ],
+  },
+  {
     id: 'funcionarios',
     label: 'Funcionários CLT',
     module: 'showEmployeesModule',
@@ -166,6 +178,8 @@ export const PERMISSION_PRESETS = [
       'estagiarios.ver',
       'profissionais.ver',
       'profissionais.producao',
+      'freelance.ver',
+      'freelance.conformidade',
       'funcionarios.ver',
       'funcionarios.apuracao',
       'documentos.ver',

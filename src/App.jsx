@@ -74,6 +74,12 @@ const SaudeOcupacionalTab = lazyWithRetry(() => import('./components/tabs/SaudeO
 const OcorrenciasFuncionariosTab = lazyWithRetry(() => import('./components/tabs/OcorrenciasFuncionariosTab'));
 const EncerramentoFuncionariosTab = lazyWithRetry(() => import('./components/tabs/EncerramentoFuncionariosTab'));
 const AlertasFuncionariosTab = lazyWithRetry(() => import('./components/tabs/AlertasFuncionariosTab'));
+// Abas do módulo Freelance (trabalhos pontuais) — quarta categoria de vínculo
+// do hub, ao lado de Estagiários/Profissionais PJ/Funcionários CLT (ver
+// src/config/freelanceConstants.js e a migração 20260927100000_freelance_module.sql).
+const FreelancersTab = lazyWithRetry(() => import('./components/tabs/FreelancersTab'));
+const FreelanceJobsTab = lazyWithRetry(() => import('./components/tabs/FreelanceJobsTab'));
+const ConformidadeFreelanceTab = lazyWithRetry(() => import('./components/tabs/ConformidadeFreelanceTab'));
 import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
 import EmployeeKiosk from './components/EmployeeKiosk';
@@ -8265,6 +8271,13 @@ export default function App() {
       { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
     ];
 
+    const freelanceLabels = BRANDING.freelanceLabels || { plural: 'Freelancers', jobs: 'Trabalhos (OS)' };
+    const freelanceNavItems = [
+      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: '🧑‍🎨' },
+      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: '📝' },
+      { id: 'freelance_conformidade',  label: 'Conformidade', icon: '⚖️' },
+    ];
+
     const showTalentBank = WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule;
     const commonNavItems = [
       { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
@@ -8272,32 +8285,38 @@ export default function App() {
       { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
     ];
 
-    // Módulos PJ e CLT só aparecem para quem tem BRANDING.showProfessionalsModule/
-    // showEmployeesModule (Grupo IB) — a Porto Terapia nunca vê o toggle nem
-    // as abas desses módulos.
+    // Módulos PJ, CLT e Freelance só aparecem para quem tem
+    // BRANDING.showProfessionalsModule/showEmployeesModule/showFreelanceModule
+    // (Grupo IB) — a Porto Terapia nunca vê o toggle nem as abas desses módulos.
     const showProfessionalsModule = !!BRANDING.showProfessionalsModule;
     const showEmployeesModule = !!BRANDING.showEmployeesModule;
-    const showModuleToggle = showProfessionalsModule || showEmployeesModule;
-    const moduleToggleCount = 1 + (showProfessionalsModule ? 1 : 0) + (showEmployeesModule ? 1 : 0);
-    const moduleToggleGridClass = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' }[moduleToggleCount] || 'grid-cols-1';
+    const showFreelanceModule = !!BRANDING.showFreelanceModule;
+    const showModuleToggle = showProfessionalsModule || showEmployeesModule || showFreelanceModule;
+    const moduleToggleCount = 1 + (showProfessionalsModule ? 1 : 0) + (showEmployeesModule ? 1 : 0) + (showFreelanceModule ? 1 : 0);
+    const moduleToggleGridClass = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-2' }[moduleToggleCount] || 'grid-cols-1';
     const adminNavItems = adminModule === 'professionals' && showProfessionalsModule
       ? professionalNavItems
       : adminModule === 'employees' && showEmployeesModule
         ? employeeNavItems
-        : internNavItems;
+        : adminModule === 'freelance' && showFreelanceModule
+          ? freelanceNavItems
+          : internNavItems;
 
     // Cor predominante do módulo ativo — usada tanto no toggle quanto nas
-    // abas do submenu, para que cada módulo (Estagiários/PJ/CLT) tenha sua
-    // própria identidade visual consistente.
+    // abas do submenu, para que cada módulo (Estagiários/PJ/CLT/Freelance)
+    // tenha sua própria identidade visual consistente.
     const moduleAccent = adminModule === 'professionals' && showProfessionalsModule
       ? 'teal'
       : adminModule === 'employees' && showEmployeesModule
         ? 'indigo'
-        : 'blue';
+        : adminModule === 'freelance' && showFreelanceModule
+          ? 'violet'
+          : 'blue';
     const navActiveClass = {
       blue: 'bg-blue-50 text-blue-700 border-blue-200/80',
       teal: 'bg-teal-50 text-teal-700 border-teal-200/80',
       indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200/80',
+      violet: 'bg-violet-50 text-violet-700 border-violet-200/80',
     }[moduleAccent];
 
     return (
@@ -8383,6 +8402,19 @@ export default function App() {
                       }`}
                     >
                       {BRANDING.employeeLabels?.plural || 'Funcionários CLT'}
+                    </button>
+                  )}
+                  {showFreelanceModule && (
+                    <button
+                      type="button"
+                      onClick={() => { setAdminModule('freelance'); setActiveAdminTab('freelance_freelancers'); }}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                        adminModule === 'freelance'
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-violet-400'
+                      }`}
+                    >
+                      {BRANDING.freelanceLabels?.plural || 'Freelancers'}
                     </button>
                   )}
                 </div>
@@ -8545,7 +8577,7 @@ export default function App() {
                   </div>
                   {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (
                     <div style={{ display: activeAdminTab === 'banco_talentos' ? 'block' : 'none' }}>
-                      <BancoTalentosTab />
+                      <BancoTalentosTab units={visibleUnits} />
                     </div>
                   )}
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
@@ -8598,6 +8630,15 @@ export default function App() {
                   </div>
                   <div style={{ display: activeAdminTab === 'clt_alertas' ? 'block' : 'none' }}>
                     <AlertasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'freelance_freelancers' ? 'block' : 'none' }}>
+                    <FreelancersTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'freelance_trabalhos' ? 'block' : 'none' }}>
+                    <FreelanceJobsTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
+                  </div>
+                  <div style={{ display: activeAdminTab === 'freelance_conformidade' ? 'block' : 'none' }}>
+                    <ConformidadeFreelanceTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
                 </Suspense>
               </ErrorBoundary>

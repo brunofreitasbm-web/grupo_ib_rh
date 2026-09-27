@@ -64,6 +64,15 @@ export const WORKSPACES = {
       plural: 'Funcionários CLT',
       timesheet: 'Ponto Eletrônico',
     },
+    // Módulo Freelance (trabalhos pontuais) — ver src/config/freelanceConstants.js.
+    // Quarta categoria de vínculo do hub, sem quiosque/PIN/presença; entrada
+    // pelo cadastro direto ou pelo Banco de Talentos. Desligado neste site.
+    showFreelanceModule: false,
+    freelanceLabels: {
+      singular: 'Freelancer',
+      plural: 'Freelancers',
+      jobs: 'Trabalhos (OS)',
+    },
     // Contas com role 'supervisor' que podem logar nomeadas neste site
     // (resolveAdminKey). Qualquer outro texto digitado cai no "supervisor"
     // genérico. O e-mail de cada uma é o mesmo em auth.users nos dois sites
@@ -203,6 +212,17 @@ export const WORKSPACES = {
       singular: 'Funcionário(a)',
       plural: 'Funcionários CLT',
       timesheet: 'Ponto Eletrônico',
+    },
+    // Módulo Freelance (trabalhos pontuais) — quarta categoria de vínculo do
+    // hub, ao lado de Estagiários/Profissionais PJ/Funcionários CLT. Ligado
+    // no Grupo IB. Ver src/config/freelanceConstants.js para o enquadramento
+    // legal (autônomo pessoa física por escopo, sem quiosque/PIN/presença) e
+    // supabase/migrations/20260927100000_freelance_module.sql para o schema.
+    showFreelanceModule: true,
+    freelanceLabels: {
+      singular: 'Freelancer',
+      plural: 'Freelancers',
+      jobs: 'Trabalhos (OS)',
     },
     // Somente o Bruno é admin nomeado neste site (mesma conta Supabase de
     // sempre); Guimelly/Isabella continuam com acesso de dados ao Grupo IB
