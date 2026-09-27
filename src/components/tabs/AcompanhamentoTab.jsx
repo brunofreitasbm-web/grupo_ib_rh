@@ -1,12 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileText, Save, Loader2, Upload, Eye, Trash, X, Download,
-  Timer, Play, Pause, RotateCcw, HeartHandshake, Star, TrendingUp,
-  MessageSquare, Award, Smile, Meh, Frown, CheckCircle2, Bell, Sparkles, Clock
 } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
-import NpsModal from '../NpsModal';
 
 export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -25,40 +22,6 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
   const [viewDocBase64, setViewDocBase64] = useState(null);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
-
-  // ============================================================
-  // ESTADOS E LÓGICA DO TEMPORIZADOR DE SESSÃO DO RESPONSÁVEL & NPS
-  // ============================================================
-  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(15);
-  const [timeLeftSeconds, setTimeLeftSeconds] = useState(15 * 60);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [sessionStatus, setSessionStatus] = useState('idle'); // 'idle' | 'running' | 'paused' | 'ended'
-  const [isNpsModalOpen, setIsNpsModalOpen] = useState(false);
-  const [npsEvaluations, setNpsEvaluations] = useState([]);
-  const [loadingNps, setLoadingNps] = useState(false);
-  const timerRef = useRef(null);
-
-  // Função para tocar alerta sonoro suave ao fim do tempo da sessão
-  const playNotificationChime = () => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.3);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.5);
-    } catch (err) {
-      console.log('Audio autoplay prevent/unsupported:', err);
-    }
-  };
 
   // Carregar dados de acompanhamento
   const fetchData = useCallback(async () => {
