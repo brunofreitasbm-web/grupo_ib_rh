@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import './index.css';
 import { BRANDING } from './config/branding';
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import { consumeHubSsoTicket } from './utils/hubSso';
 
 // Única rota pública do sistema: o link temporário do Levantamento de Perfil
 // DISC (Banco de Talentos), enviado por e-mail ao candidato. O resto do app
@@ -55,7 +56,8 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+// /sso (entrada pelo Hub de Gestão) troca o ticket por sessão antes do primeiro render.
+consumeHubSsoTicket().finally(() => ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
@@ -72,4 +74,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
     <Toaster position="top-right" richColors />
   </React.StrictMode>
-);
+));
