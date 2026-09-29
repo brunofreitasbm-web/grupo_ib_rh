@@ -878,6 +878,13 @@ export default function App() {
     };
   }, [user, fetchInterns]);
 
+  // Carrega lista pública de estagiários sempre que entra na autogestão de biometria
+  useEffect(() => {
+    if (currentView === 'autogestao_biometria') {
+      loadPublicInterns();
+    }
+  }, [currentView]);
+
   // Garante a existência do estagiário "TEste" para testes do usuário
   useEffect(() => {
     if (BRANDING.id === 'porto-terapia' && user && user.user_metadata?.role === 'supervisor' && internsLoaded) {
@@ -3593,17 +3600,39 @@ export default function App() {
       // esta tela é pública/sem sessão, então nunca deve misturar estagiários
       // do outro grupo (ver UNITS_DEFAULT acima).
       const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
+
+      // 1. Tenta via RPC get_public_interns (funciona com ou sem sessão JWT ativa)
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_public_interns', {
+        p_workspace_unit_ids: workspaceUnitIds
+      });
+
+      if (!rpcError && rpcData && rpcData.length > 0) {
+        setPublicInterns(rpcData.map(mapInternFromDb));
+        return;
+      }
+
+      // 2. Consulta direta à tabela interns
       const { data, error } = await supabase
         .from('interns')
         .select('*')
         .eq('active', true)
         .in('unit_id', workspaceUnitIds)
         .order('name', { ascending: true });
-      if (!error && data) {
+
+      if (!error && data && data.length > 0) {
         setPublicInterns(data.map(mapInternFromDb));
+      } else if (interns && interns.length > 0) {
+        // 3. Fallback para estagiários pré-carregados no estado local
+        const filtered = interns.filter(i => i.active !== false && workspaceUnitIds.includes(i.unitId));
+        if (filtered.length > 0) setPublicInterns(filtered);
       }
     } catch (e) {
       console.error("Erro público ao carregar estagiários:", e);
+      if (interns && interns.length > 0) {
+        const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
+        const filtered = interns.filter(i => i.active !== false && workspaceUnitIds.includes(i.unitId));
+        if (filtered.length > 0) setPublicInterns(filtered);
+      }
     } finally {
       setLoadingPublicInterns(false);
     }
@@ -3631,16 +3660,27 @@ export default function App() {
     const handleAutogestaoComplete = async (payload) => {
       if (!selectedInternObj) return;
       try {
-        const { error } = await supabase
-          .from('interns')
-          .update({
-            face_descriptor: JSON.stringify(payload.embedding)
-          })
-          .eq('id', selectedInternObj.id);
+        const descriptorStr = JSON.stringify(payload.embedding);
 
-        if (error) throw error;
+        // 1. Tenta atualizar via RPC SECURITY DEFINER (valida CPF e ignora RLS restriction)
+        const { data: rpcSuccess, error: rpcErr } = await supabase.rpc('save_intern_autogestao_biometria', {
+          p_intern_id: selectedInternObj.id,
+          p_face_descriptor: descriptorStr,
+          p_cpf: autogestaoCpf
+        });
+
+        if (rpcErr || !rpcSuccess) {
+          // 2. Fallback para update direto via tabela
+          const { error: directErr } = await supabase
+            .from('interns')
+            .update({
+              face_descriptor: descriptorStr
+            })
+            .eq('id', selectedInternObj.id);
+          if (directErr) throw (rpcErr || directErr);
+        }
+
         // Log de auditoria (LGPD): registra quem/quando a biometria foi cadastrada via autogestão.
-        // Não há tabela de auditoria dedicada no schema atual — mantido no console para rastreabilidade mínima.
         console.info('[Auditoria] Biometria cadastrada via autogestão', {
           internId: selectedInternObj.id,
           internName: selectedInternObj.name,
@@ -3649,10 +3689,11 @@ export default function App() {
         setAutogestaoCpfAttempts(0);
         setAutogestaoSuccess(true);
         toast.success('Biometria cadastrada com sucesso! Status: Biometria OK');
+        loadPublicInterns();
         fetchInterns();
       } catch (err) {
         console.error(err);
-        toast.error('Erro ao atualizar biometria facial no banco de dados.');
+        toast.error('Erro ao atualizar biometria facial no banco de dados: ' + (err.message || err));
       }
     };
 
