@@ -20,6 +20,9 @@ const fetchWithRetry = async (url, options = {}, retries = 3, backoff = 300) => 
       await new Promise((resolve) => setTimeout(resolve, backoff));
       return fetchWithRetry(url, options, retries - 1, backoff * 2);
     }
+    if (import.meta.env.DEV) {
+      console.warn('[Supabase Conexão] Servidor ou rede indisponível:', err.message || err);
+    }
     throw err;
   }
 };
@@ -31,10 +34,20 @@ const authAwareFetch = createAuthAwareFetch({
   baseFetch: fetchWithRetry,
   supabaseUrl: resolvedUrl,
   refreshSession: async () => {
-    const { data, error } = await supabase.auth.refreshSession();
-    return error ? null : data?.session ?? null;
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      return error ? null : data?.session ?? null;
+    } catch {
+      return null;
+    }
   },
-  onSessionDead: () => supabase.auth.signOut({ scope: 'local' }),
+  onSessionDead: async () => {
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // Ignora erro de deslogar caso estejamos completamente offline
+    }
+  },
 });
 
 export const supabase = createClient(
