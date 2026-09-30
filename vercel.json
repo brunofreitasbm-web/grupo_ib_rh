@@ -12,6 +12,7 @@
         "Content-Security-Policy": "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; frame-src 'self' data: blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
         "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
         "X-Content-Type-Options": "nosniff",
+        "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "camera=(self), geolocation=(self), microphone=()"
