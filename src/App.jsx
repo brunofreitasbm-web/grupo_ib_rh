@@ -1836,15 +1836,20 @@ export default function App() {
       if (videoRef.current) {
         try {
           const canvas = document.createElement('canvas');
-          canvas.width = 400;
-          canvas.height = 300;
+          // Mantém a proporção nativa do vídeo (celulares em retrato) e limita a 640px:
+          // um canvas fixo 400x300 achatava o rosto e inflava a distância biométrica.
+          const vw = videoRef.current.videoWidth || 640;
+          const vh = videoRef.current.videoHeight || 480;
+          const scale = Math.min(1, 640 / Math.max(vw, vh));
+          canvas.width = Math.round(vw * scale);
+          canvas.height = Math.round(vh * scale);
           const ctx = canvas.getContext('2d');
           // Inverte horizontalmente para o snapshot coincidir com o espelho do preview
           ctx.translate(canvas.width, 0);
           ctx.scale(-1, 1);
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
           ctx.setTransform(1, 0, 0, 1, 0, 0); // limpa transformações
-          photoBase64 = canvas.toDataURL('image/jpeg', 0.6); // ~15kb
+          photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
         } catch (e) {
           console.error("Erro ao capturar foto:", e);
         }
