@@ -1,0 +1,3 @@
+# Sistema interno (gestão de pessoas): não indexar.
+User-agent: *
+Disallow: /
