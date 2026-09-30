@@ -43,6 +43,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const [bioUploadMsg, setBioUploadMsg] = useState('');
 
   // State da Varredura em Lote de Biometria
+  const [onlyWithoutBio, setOnlyWithoutBio] = useState(false);
   const [isBatchScanOpen, setIsBatchScanOpen] = useState(false);
   const [batchScanRunning, setBatchScanRunning] = useState(false);
   const [batchScanTotal, setBatchScanTotal] = useState(0);
@@ -661,9 +662,15 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
     toast.success(`Varredura concluída: ${successCount} de ${targets.length} biometria(s) extraída(s) com sucesso.`);
   };
 
-  const filteredInterns = useMemo(
+  const hasBio = (i) => !!i.faceDescriptor && i.faceDescriptor !== '[]';
+  const unitInterns = useMemo(
     () => interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit),
     [interns, filterUnit]
+  );
+  const withoutBioCount = useMemo(() => unitInterns.filter(i => i.active !== false && !hasBio(i)).length, [unitInterns]);
+  const filteredInterns = useMemo(
+    () => (onlyWithoutBio ? unitInterns.filter(i => !hasBio(i)) : unitInterns),
+    [unitInterns, onlyWithoutBio]
   );
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
 
@@ -979,6 +986,22 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
             </div>
           </form>
         ) : null}
+
+        {withoutBioCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+            <span>
+              <strong>{withoutBioCount}</strong> estagiário(s) sem biometria facial salva. A referência é gerada na hora
+              a partir da foto 3x4 e pode falhar no ponto. Refaça pela câmera (botão "Biometria" do cartão).
+            </span>
+            <button
+              type="button"
+              onClick={() => setOnlyWithoutBio(v => !v)}
+              className="rounded-lg border border-amber-400 bg-white px-2 py-1 font-semibold hover:bg-amber-100"
+            >
+              {onlyWithoutBio ? 'Mostrar todos' : 'Mostrar só sem biometria'}
+            </button>
+          </div>
+        )}
 
         {/* Interns List */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

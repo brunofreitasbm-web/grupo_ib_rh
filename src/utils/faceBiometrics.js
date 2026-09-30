@@ -84,6 +84,36 @@ export async function getFaceDescriptor(base64Image) {
   });
 }
 
+/**
+ * Descritor da imagem espelhada horizontalmente. A referência cadastrada pode ter
+ * sido gerada espelhada (câmera) ou não (upload de arquivo); comparar as duas
+ * orientações elimina esse descompasso sem afrouxar o limite de distância.
+ */
+export async function getMirroredFaceDescriptor(base64Image) {
+  if (!base64Image) return null;
+  const flipped = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      } catch (err) {
+        console.error('Erro ao espelhar imagem:', err);
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = base64Image;
+  });
+  return flipped ? getFaceDescriptor(flipped) : null;
+}
+
 export function compareFaces(descriptor1, descriptor2, threshold = 0.45) {
   if (!descriptor1 || !descriptor2) return { isMatch: false, distance: 1.0 };
   try {

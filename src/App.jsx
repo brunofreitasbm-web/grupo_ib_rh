@@ -7,7 +7,7 @@ import {
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
   ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck
 } from 'lucide-react';
-import { getFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
+import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
   getFriendlyDbErrorMessage,
   INTERN_SELECT_FIELDS,
@@ -1887,7 +1887,15 @@ export default function App() {
           setGeoError('Não foi possível identificar seu rosto na imagem capturada. Centralize seu rosto na câmera e garanta boa iluminação.');
           return;
         }
-        const { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+        let { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+        if (!isMatch) {
+          // Referência pode estar em orientação oposta (upload x câmera): tenta a captura espelhada.
+          const mirroredDescriptor = await getMirroredFaceDescriptor(photoBase64);
+          if (mirroredDescriptor) {
+            const mirrored = compareFaces(targetDescriptor, mirroredDescriptor, 0.45);
+            if (mirrored.distance < distance) ({ isMatch, distance } = mirrored);
+          }
+        }
         console.log(`[BIOMETRIA] Comparação realizada. Distância: ${distance.toFixed(3)}, Match: ${isMatch}`);
         if (!isMatch) {
           setGeoError(`Acesso negado por divergência biométrica facial (Diferença: ${distance.toFixed(2)}).`);
