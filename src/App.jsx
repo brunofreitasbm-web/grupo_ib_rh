@@ -498,6 +498,9 @@ export default function App() {
   // CPF não é segredo forte, então limitamos tentativas de força bruta contra o campo).
   const [autogestaoCpfAttempts, setAutogestaoCpfAttempts] = useState(0);
   const [autogestaoLockedUntil, setAutogestaoLockedUntil] = useState(0);
+  // Resultado da verificação de CPF no servidor (RPC verify_intern_cpf). status: 'checking' | 'ok' | 'fail'.
+  // O navegador nunca recebe o CPF do estagiário: só sabe se o CPF digitado confere.
+  const [autogestaoCpfCheck, setAutogestaoCpfCheck] = useState({ key: '', status: '' });
   const [publicInterns, setPublicInterns] = useState([]);
   const [loadingPublicInterns, setLoadingPublicInterns] = useState(false);
 
@@ -3614,13 +3617,22 @@ export default function App() {
       // do outro grupo (ver UNITS_DEFAULT acima).
       const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
 
-      // 1. Tenta via RPC get_public_interns (funciona com ou sem sessão JWT ativa)
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_public_interns', {
+      // 1. RPC get_public_interns_basic (funciona com ou sem sessão JWT ativa). Devolve só
+      // id, nome, unidade e um indicador de biometria: nunca CPF nem a assinatura facial (LGPD).
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_public_interns_basic', {
         p_workspace_unit_ids: workspaceUnitIds
       });
 
       if (!rpcError && rpcData && rpcData.length > 0) {
-        setPublicInterns(rpcData.map(mapInternFromDb));
+        setPublicInterns(rpcData.map((r) => ({
+          id: r.id,
+          name: r.name,
+          unitId: r.unit_id,
+          active: r.active !== false,
+          hasBiometria: !!r.has_biometria,
+          cpf: '',
+          faceDescriptor: ''
+        })));
         return;
       }
 
@@ -3648,21 +3660,46 @@ export default function App() {
   const renderAutogestaoBiometria = () => {
     const selectedInternObj = publicInterns.find(i => i.id === autogestaoInternId);
     const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
-    const cleanInternCpf = selectedInternObj ? selectedInternObj.cpf.replace(/\D/g, '') : '';
     const isAutogestaoLocked = Date.now() < autogestaoLockedUntil;
-    const isCpfValid = !isAutogestaoLocked && selectedInternObj && cleanInputCpf && cleanInputCpf === cleanInternCpf;
+    const currentCpfKey = selectedInternObj ? `${selectedInternObj.id}|${cleanInputCpf}` : '';
+    const cpfCheckForCurrent = autogestaoCpfCheck.key && autogestaoCpfCheck.key === currentCpfKey ? autogestaoCpfCheck.status : '';
+    const isCpfValid = !isAutogestaoLocked && !!selectedInternObj && cleanInputCpf.length === 11 && cpfCheckForCurrent === 'ok';
     const AUTOGESTAO_MAX_ATTEMPTS = 5;
     const AUTOGESTAO_LOCK_MS = 60000;
 
-    const handleCpfBlur = () => {
-      if (isAutogestaoLocked || !selectedInternObj || cleanInputCpf.length !== 11 || cleanInputCpf === cleanInternCpf) return;
-      const nextAttempts = autogestaoCpfAttempts + 1;
-      setAutogestaoCpfAttempts(nextAttempts);
-      if (nextAttempts >= AUTOGESTAO_MAX_ATTEMPTS) {
-        setAutogestaoLockedUntil(Date.now() + AUTOGESTAO_LOCK_MS);
-        toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+    // Verifica o CPF no servidor (verify_intern_cpf, com limite de tentativas por estagiário).
+    const verifyCpf = async (internId, digits) => {
+      if (isAutogestaoLocked || !internId || digits.length !== 11) return;
+      const key = `${internId}|${digits}`;
+      if (autogestaoCpfCheck.key === key) return; // já verificado (ou em verificação) para este CPF
+      setAutogestaoCpfCheck({ key, status: 'checking' });
+      try {
+        const { data, error } = await supabase.rpc('verify_intern_cpf', { p_intern_id: internId, p_cpf: digits });
+        if (error) {
+          setAutogestaoCpfCheck({ key: '', status: '' });
+          toast.error(/tentativas/i.test(error.message || '') ? error.message : 'Não foi possível verificar o CPF. Tente novamente.');
+          return;
+        }
+        if (data) {
+          setAutogestaoCpfCheck({ key, status: 'ok' });
+          setAutogestaoCpfAttempts(0);
+          return;
+        }
+        setAutogestaoCpfCheck({ key, status: 'fail' });
+        const nextAttempts = autogestaoCpfAttempts + 1;
+        setAutogestaoCpfAttempts(nextAttempts);
+        if (nextAttempts >= AUTOGESTAO_MAX_ATTEMPTS) {
+          setAutogestaoLockedUntil(Date.now() + AUTOGESTAO_LOCK_MS);
+          toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+        }
+      } catch (e) {
+        console.error('Erro ao verificar CPF:', e);
+        setAutogestaoCpfCheck({ key: '', status: '' });
+        toast.error('Não foi possível verificar o CPF. Tente novamente.');
       }
     };
+
+    const handleCpfBlur = () => verifyCpf(selectedInternObj?.id, cleanInputCpf);
 
     const handleAutogestaoComplete = async (payload) => {
       if (!selectedInternObj) return;
@@ -3679,7 +3716,7 @@ export default function App() {
         // Sem fallback de update direto: sem sessão a RLS bloqueia em silêncio (0 linhas,
         // sem erro) e a tela mostrava sucesso mesmo com CPF errado ou RPC falhando.
         if (rpcErr || !rpcSuccess) {
-          throw (rpcErr || new Error('Não foi possível salvar a biometria.'));
+          throw (rpcErr || new Error('CPF não confere ou muitas tentativas. Verifique o CPF e tente novamente.'));
         }
 
         // Log de auditoria (LGPD): registra quem/quando a biometria foi cadastrada via autogestão.
@@ -3699,7 +3736,7 @@ export default function App() {
       }
     };
 
-    const hasBiometria = selectedInternObj && selectedInternObj.faceDescriptor && selectedInternObj.faceDescriptor !== '[]';
+    const hasBiometria = !!selectedInternObj && (selectedInternObj.hasBiometria ?? (!!selectedInternObj.faceDescriptor && selectedInternObj.faceDescriptor !== '[]'));
 
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
@@ -3801,13 +3838,21 @@ export default function App() {
                           type="text"
                           placeholder="Apenas números ou formatado"
                           value={autogestaoCpf}
-                          onChange={(e) => setAutogestaoCpf(e.target.value)}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setAutogestaoCpf(value);
+                            verifyCpf(selectedInternObj?.id, value.replace(/\D/g, ''));
+                          }}
                           onBlur={handleCpfBlur}
                           className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
                         />
                       </div>
 
-                      {autogestaoCpf && !isCpfValid && (
+                      {cpfCheckForCurrent === 'checking' && (
+                        <p className="text-slate-500 text-[11px] font-semibold">Verificando CPF...</p>
+                      )}
+
+                      {cpfCheckForCurrent === 'fail' && !isCpfValid && (
                         <p className="text-red-500 text-[11px] font-semibold">
                           ❌ O CPF informado não coincide com o do estagiário selecionado.
                         </p>
@@ -3824,7 +3869,7 @@ export default function App() {
 
                           <BiometricEnrollment
                             internName={selectedInternObj.name}
-                            internCpf={selectedInternObj.cpf}
+                            internCpf={autogestaoCpf}
                             onEnrollmentComplete={handleAutogestaoComplete}
                             onCancel={() => setCurrentView('kiosk')}
                           />
