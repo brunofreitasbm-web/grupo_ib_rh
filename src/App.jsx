@@ -3624,17 +3624,11 @@ export default function App() {
         return;
       }
 
-      // 2. Consulta direta à tabela interns
-      const { data, error } = await supabase
-        .from('interns')
-        .select('*')
-        .eq('active', true)
-        .in('unit_id', workspaceUnitIds)
-        .order('name', { ascending: true });
+      // 2. Sem fallback para select('*') em public.interns: esta tela é pública e
+      // a leitura direta da tabela por anon expõe CPF, dados bancários e documentos.
+      if (rpcError) console.error('Erro ao carregar estagiários públicos:', rpcError);
 
-      if (!error && data && data.length > 0) {
-        setPublicInterns(data.map(mapInternFromDb));
-      } else if (interns && interns.length > 0) {
+      if (interns && interns.length > 0) {
         // 3. Fallback para estagiários pré-carregados no estado local
         const filtered = interns.filter(i => i.active !== false && workspaceUnitIds.includes(i.unitId));
         if (filtered.length > 0) setPublicInterns(filtered);
@@ -3682,15 +3676,10 @@ export default function App() {
           p_cpf: autogestaoCpf
         });
 
+        // Sem fallback de update direto: sem sessão a RLS bloqueia em silêncio (0 linhas,
+        // sem erro) e a tela mostrava sucesso mesmo com CPF errado ou RPC falhando.
         if (rpcErr || !rpcSuccess) {
-          // 2. Fallback para update direto via tabela
-          const { error: directErr } = await supabase
-            .from('interns')
-            .update({
-              face_descriptor: descriptorStr
-            })
-            .eq('id', selectedInternObj.id);
-          if (directErr) throw (rpcErr || directErr);
+          throw (rpcErr || new Error('Não foi possível salvar a biometria.'));
         }
 
         // Log de auditoria (LGPD): registra quem/quando a biometria foi cadastrada via autogestão.
@@ -4107,21 +4096,14 @@ export default function App() {
       setIsSubmittingCadastro(true);
       try {
         const cleanCpf = cadastroForm.cpf.replace(/\D/g, '');
-        let formattedCpf = cleanCpf;
-        if (cleanCpf.length === 11) {
-          formattedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9)}`;
-        }
-        const { data: existingCpfUsers, error: cpfError } = await supabase
-          .from('interns')
-          .select('id, name, cpf')
-          .or(`cpf.eq.${cleanCpf},cpf.eq.${formattedCpf},cpf.eq.${cadastroForm.cpf.trim()}`);
+        // Cadastro público (sem sessão): a checagem de CPF duplicado usa uma função
+        // SECURITY DEFINER que devolve só true/false. Nunca consultar public.interns
+        // direto aqui, nem expor o nome do estagiário dono do CPF (LGPD).
+        const { data: cpfAlreadyExists, error: cpfError } = await supabase
+          .rpc('intern_cpf_exists', { p_cpf: cleanCpf });
         if (cpfError) throw cpfError;
-        const duplicate = existingCpfUsers?.find(intern => {
-          const cleanDbCpf = (intern.cpf || '').replace(/\D/g, '');
-          return cleanDbCpf === cleanCpf;
-        });
-        if (duplicate) {
-          toast.error(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+        if (cpfAlreadyExists) {
+          toast.error('Duplicidade de Cadastro: já existe um estagiário cadastrado com este CPF.');
           setIsSubmittingCadastro(false);
           return;
         }
