@@ -3,56 +3,383 @@
 // a partir desta mesma lista de estagiários.
 export const INTERN_SELECT_FIELDS = 'id, name, course, institution, internship_type, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, photo, face_descriptor, role_id';
 
-export const fileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-  });
+// ---------------------------------------------------------------------------
+// Uploads: compressão no navegador (imagem -> WebP, PDF -> imagens recomprimidas)
+// ---------------------------------------------------------------------------
+
+// Presets: lado maior em px (null = mantém a resolução de captura) e qualidade.
+export const IMAGE_PRESETS = {
+  documento: { maxSide: 2200, quality: 0.85 }, // legibilidade de texto
+  foto: { maxSide: 1600, quality: 0.82 },
+  avatar: { maxSide: 512, quality: 0.82 },
+  selfie: { maxSide: null, quality: 0.85 }, // biometria: não reduz a captura
 };
 
-export const compressImage = (file, maxWidth = 300, maxHeight = 400, quality = 0.7) => {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-      return;
+export const PDF_MIN_GAIN = 0.15; // só substitui o original se economizar >= 15%
+const PDF_MAX_BYTES = 20 * 1024 * 1024; // acima disso não vale o custo no navegador
+const PDF_MAX_LONG_SIDE = 2339; // ~200 dpi no lado maior de uma folha A4
+const PDF_MAX_SHORT_SIDE = 1654; // ~200 dpi no lado menor de uma folha A4
+
+const ascii = (bytes, start, end) => {
+  let s = '';
+  for (let i = start; i < end && i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return s;
+};
+
+// Detecta o tipo real pelos bytes (não confia em file.type).
+export const sniffMime = (bytes) => {
+  if (!bytes || bytes.length < 4) return null;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes[0] === 0x89 && ascii(bytes, 1, 4) === 'PNG') return 'image/png';
+  if (ascii(bytes, 0, 4) === 'GIF8') return 'image/gif';
+  if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') return 'image/webp';
+  if (ascii(bytes, 0, 5) === '%PDF-') return 'application/pdf';
+  if (ascii(bytes, 4, 8) === 'ftyp') {
+    const brand = ascii(bytes, 8, 12);
+    if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand)) return 'image/heic';
+  }
+  return null;
+};
+
+const EXT_BY_MIME = {
+  'image/webp': 'webp',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'application/pdf': 'pdf',
+};
+
+export const replaceFileExtension = (name, ext) => {
+  const base = String(name || 'arquivo').replace(/\.[^./\\]+$/, '');
+  return `${base}.${ext}`;
+};
+
+const bytesToBase64 = (bytes) => {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+};
+
+export const blobToDataUrl = async (blob, mimeOverride) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return `data:${mimeOverride || blob.type || 'application/octet-stream'};base64,${bytesToBase64(bytes)}`;
+};
+
+// canvas.toDataURL em WebP com fallback para JPEG quando o navegador não
+// consegue gerar WebP (nesse caso o toDataURL devolve PNG).
+export const canvasToDataUrl = (canvas, quality = 0.85) => {
+  const webp = canvas.toDataURL('image/webp', quality);
+  if (webp.startsWith('data:image/webp')) return webp;
+  return canvas.toDataURL('image/jpeg', quality);
+};
+
+const canvasToBlobType = (canvas, type, quality) =>
+  new Promise((resolve) => {
+    try {
+      canvas.toBlob((blob) => resolve(blob), type, quality);
+    } catch {
+      resolve(null);
     }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (error) => reject(error);
   });
+
+const decodeImage = async (blob) => {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, release: () => bitmap.close?.() };
+    } catch {
+      // cai para <img>
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+    return { source: img, width: img.naturalWidth || img.width, height: img.naturalHeight || img.height, release: () => {} };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const fitSize = (width, height, maxWidth, maxHeight) => {
+  let scale = 1;
+  if (maxWidth) scale = Math.min(scale, maxWidth / width);
+  if (maxHeight) scale = Math.min(scale, maxHeight / height);
+  if (scale >= 1) return { width, height }; // sem upscale
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+};
+
+/**
+ * Comprime uma imagem (PNG/JPEG/WebP) para WebP, corrigindo orientação EXIF e
+ * sem upscale. Fallback para JPEG se o navegador não gerar WebP. Se o resultado
+ * ficar maior que o original (já WebP/JPEG), devolve o original.
+ * Retorna { blob, mime, ext, changed }.
+ */
+export const compressImageToBlob = async (file, { maxWidth = null, maxHeight = null, quality = 0.85 } = {}) => {
+  const original = { blob: file, mime: file.type, ext: EXT_BY_MIME[file.type] || 'bin', changed: false };
+  const decoded = await decodeImage(file);
+  try {
+    const { width, height } = fitSize(decoded.width, decoded.height, maxWidth, maxHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(decoded.source, 0, 0, width, height); // WebP preserva alpha
+
+    let blob = await canvasToBlobType(canvas, 'image/webp', quality);
+    if (!blob || blob.type !== 'image/webp') {
+      // JPEG não tem alpha: redesenha sobre fundo branco
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.globalCompositeOperation = 'source-over';
+      blob = await canvasToBlobType(canvas, 'image/jpeg', quality);
+    }
+    if (!blob) return original;
+
+    const sameDims = width === decoded.width && height === decoded.height;
+    if ((file.type === 'image/webp' || file.type === 'image/jpeg') && sameDims && blob.size >= file.size) {
+      return original;
+    }
+    return { blob, mime: blob.type, ext: EXT_BY_MIME[blob.type] || 'webp', changed: true };
+  } finally {
+    decoded.release();
+  }
+};
+
+/**
+ * Mantém a API histórica (devolve data URL), agora em WebP.
+ * Arquivos que não são imagem raster (PDF, GIF, SVG, HEIC...) passam como estão.
+ */
+export const compressImage = async (file, maxWidth = 300, maxHeight = 400, quality = 0.7) => {
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const mime = sniffMime(head);
+  if (mime !== 'image/png' && mime !== 'image/jpeg' && mime !== 'image/webp') {
+    return blobToDataUrl(file, mime || undefined);
+  }
+  const typed = file.type === mime ? file : new Blob([file], { type: mime });
+  const result = await compressImageToBlob(typed, { maxWidth, maxHeight, quality });
+  return blobToDataUrl(result.blob, result.mime);
+};
+
+const FLAG_SIGNED_OR_ENCRYPTED = ['/ByteRange', '/Encrypt', '/SigFlags', '/Type /Sig', '/Type/Sig', '/FT /Sig', '/FT/Sig'];
+
+// Busca textual nos bytes crus: pega assinatura/criptografia mesmo em PDFs
+// que o pdf-lib consegue abrir.
+const pdfLooksSignedOrEncrypted = (bytes) => {
+  const text = ascii(bytes, 0, bytes.length);
+  return FLAG_SIGNED_OR_ENCRYPTED.some((flag) => text.includes(flag));
+};
+
+// Reencoda uma imagem embutida como JPEG q0.8, limitada a ~200 dpi.
+// Entrada: bytes JPEG (DCTDecode) ou pixels crus RGBA (FlateDecode).
+const browserRasterize = async (bytes, mime, rawPixels) => {
+  const decoded = rawPixels ? null : await decodeImage(new Blob([bytes], { type: mime }));
+  try {
+    let source;
+    let width;
+    let height;
+    if (rawPixels) {
+      width = rawPixels.width;
+      height = rawPixels.height;
+      source = document.createElement('canvas');
+      source.width = width;
+      source.height = height;
+      source.getContext('2d').putImageData(new ImageData(rawPixels.rgba, width, height), 0, 0);
+    } else {
+      width = decoded.width;
+      height = decoded.height;
+      source = decoded.source;
+    }
+    const target = limitPdfImage(width, height);
+    const canvas = document.createElement('canvas');
+    canvas.width = target.width;
+    canvas.height = target.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const blob = await canvasToBlobType(canvas, 'image/jpeg', 0.8);
+    if (!blob) return null;
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height };
+  } finally {
+    decoded?.release();
+  }
+};
+
+// Limita a ~200 dpi equivalentes em A4 (sem upscale).
+const limitPdfImage = (width, height) => {
+  const long = Math.max(width, height);
+  const short = Math.min(width, height);
+  const scale = Math.min(1, PDF_MAX_LONG_SIDE / long, PDF_MAX_SHORT_SIDE / short);
+  if (scale >= 1) return { width, height };
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+};
+
+/**
+ * Núcleo da recompressão de PDF (testável sem DOM): recebe bytes e uma função
+ * `rasterize(bytes, mime, rawPixels)` -> { bytes, width, height } | null.
+ * Retorna Uint8Array novo ou null quando não vale a pena (ou não é seguro).
+ */
+export const recompressPdfBytes = async (bytes, rasterize) => {
+  if (bytes.length > PDF_MAX_BYTES) return null;
+  if (pdfLooksSignedOrEncrypted(bytes)) return null;
+
+  const { PDFDocument, PDFName, PDFRawStream, PDFNumber, PDFBool, decodePDFRawStream } = await import('pdf-lib');
+  let pdfDoc;
+  try {
+    pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: false, updateMetadata: false });
+  } catch {
+    return null; // criptografado ou ilegível: original intacto
+  }
+
+  const context = pdfDoc.context;
+  let replaced = 0;
+  for (const [ref, obj] of context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue;
+    const dict = obj.dict;
+    if (dict.get(PDFName.of('Subtype')) !== PDFName.of('Image')) continue;
+    if (dict.has(PDFName.of('SMask')) || dict.has(PDFName.of('Mask')) || dict.has(PDFName.of('Decode'))) continue;
+    const imageMask = dict.get(PDFName.of('ImageMask'));
+    if (imageMask instanceof PDFBool && imageMask.asBoolean()) continue;
+    const bpc = dict.get(PDFName.of('BitsPerComponent'));
+    if (bpc instanceof PDFNumber && bpc.asNumber() !== 8) continue;
+    const cs = dict.get(PDFName.of('ColorSpace'));
+    const csName = cs instanceof PDFName ? cs.asString() : null;
+    if (csName !== '/DeviceRGB' && csName !== '/DeviceGray') continue;
+    const widthObj = dict.get(PDFName.of('Width'));
+    const heightObj = dict.get(PDFName.of('Height'));
+    if (!(widthObj instanceof PDFNumber) || !(heightObj instanceof PDFNumber)) continue;
+    const width = widthObj.asNumber();
+    const height = heightObj.asNumber();
+
+    const filter = dict.get(PDFName.of('Filter'));
+    const filterName = filter instanceof PDFName ? filter.asString() : null;
+    const originalSize = obj.getContents().length;
+
+    let out = null;
+    try {
+      if (filterName === '/DCTDecode') {
+        out = await rasterize(obj.getContents(), 'image/jpeg', null);
+      } else if (filterName === '/FlateDecode' && !dict.has(PDFName.of('DecodeParms'))) {
+        const raw = decodePDFRawStream(obj).decode();
+        const comps = csName === '/DeviceRGB' ? 3 : 1;
+        if (raw.length !== width * height * comps) continue;
+        const rgba = new Uint8ClampedArray(width * height * 4);
+        for (let i = 0, p = 0; i < width * height; i++) {
+          if (comps === 3) {
+            rgba[p++] = raw[i * 3];
+            rgba[p++] = raw[i * 3 + 1];
+            rgba[p++] = raw[i * 3 + 2];
+          } else {
+            rgba[p++] = raw[i];
+            rgba[p++] = raw[i];
+            rgba[p++] = raw[i];
+          }
+          rgba[p++] = 255;
+        }
+        out = await rasterize(null, null, { width, height, rgba });
+      } else {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+    if (!out || out.bytes.length >= originalSize) continue;
+
+    const newStream = context.stream(out.bytes, {
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: out.width,
+      Height: out.height,
+      ColorSpace: 'DeviceRGB', // o JPEG gerado pelo canvas é sempre RGB
+      BitsPerComponent: 8,
+      Filter: 'DCTDecode',
+    });
+    context.assign(ref, newStream);
+    replaced += 1;
+    await new Promise((r) => setTimeout(r, 0)); // devolve o controle à UI
+  }
+
+  if (!replaced) return null;
+  return pdfDoc.save({ useObjectStreams: true });
+};
+
+/**
+ * Recomprime as imagens embutidas de um PDF. Devolve o original se o PDF for
+ * assinado/criptografado, ilegível, sem imagens elegíveis ou se o ganho for < 15%.
+ * Roda no thread principal (precisa de canvas); cede o controle entre imagens.
+ */
+export const compressPdf = async (file) => {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const out = await recompressPdfBytes(bytes, browserRasterize);
+    if (!out || out.length > bytes.length * (1 - PDF_MIN_GAIN)) return file;
+    return new Blob([out], { type: 'application/pdf' });
+  } catch {
+    return file;
+  }
+};
+
+/**
+ * Ponto único de entrada: roteia pelo tipo REAL (bytes), aplica o preset e
+ * devolve { dataUrl, mime, ext, name, blob, changed }.
+ * xlsx/csv/GIF/SVG/HEIC e qualquer outro tipo passam intactos.
+ */
+export const prepareUpload = async (file, preset = 'documento') => {
+  const cfg = IMAGE_PRESETS[preset] || IMAGE_PRESETS.documento;
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const sniffed = sniffMime(head);
+
+  let blob = file;
+  let mime = sniffed || file.type || 'application/octet-stream';
+  let changed = false;
+
+  try {
+    if (sniffed === 'image/png' || sniffed === 'image/jpeg' || sniffed === 'image/webp') {
+      const typed = file.type === sniffed ? file : new Blob([file], { type: sniffed });
+      const res = await compressImageToBlob(typed, { maxWidth: cfg.maxSide, maxHeight: cfg.maxSide, quality: cfg.quality });
+      blob = res.blob;
+      mime = res.mime;
+      changed = res.changed;
+    } else if (sniffed === 'application/pdf') {
+      const res = await compressPdf(file);
+      changed = res !== file;
+      blob = res;
+      mime = 'application/pdf';
+    }
+  } catch {
+    blob = file; // nunca perder o arquivo
+    changed = false;
+  }
+
+  const ext = changed ? EXT_BY_MIME[mime] : (file.name?.match(/\.([^./\\]+)$/)?.[1]?.toLowerCase() || EXT_BY_MIME[mime] || 'bin');
+  return {
+    dataUrl: await blobToDataUrl(blob, mime),
+    mime,
+    ext,
+    name: changed && file.name ? replaceFileExtension(file.name, ext) : file.name,
+    blob,
+    changed,
+  };
+};
+
+export const fileToBase64 = async (file, preset = 'documento') => (await prepareUpload(file, preset)).dataUrl;
+
+// Nome de download coerente com o conteúdo gravado (ex.: .jpg enviado -> .webp).
+export const downloadNameForDataUrl = (filename, dataUrl) => {
+  const m = /^data:([^;,]+)/.exec(dataUrl || '');
+  const ext = m && EXT_BY_MIME[m[1]];
+  if (!ext || !filename) return filename;
+  const current = filename.match(/\.([^./\\]+)$/)?.[1]?.toLowerCase();
+  const same = current === ext || (ext === 'jpg' && current === 'jpeg');
+  return same || !/\.(png|jpe?g|webp|pdf)$/i.test(filename) ? filename : replaceFileExtension(filename, ext);
 };
 
 export const getFriendlyDbErrorMessage = (err) => {
@@ -486,6 +813,7 @@ export const professionalRpcErrorMessage = (err) => {
   if (msg.includes('lgpd_consent_required')) return 'É necessário aceitar o consentimento de tratamento de dados (LGPD).';
   if (msg.includes('invalid_doc_key')) return 'Tipo de documento inválido.';
   if (msg.includes('invalid_file_size')) return 'Arquivo inválido ou excede o limite de 2MB.';
+  if (msg.includes('invalid_file_type')) return 'Tipo de arquivo não permitido. Envie imagem (JPG, PNG, WebP) ou PDF.';
   if (msg.includes('invalid_token') || msg.includes('token_expired')) return 'Sessão de envio de documentos expirada. Reinicie o cadastro.';
   if (msg.includes('upload_limit_reached')) return 'Limite de anexos deste cadastro atingido.';
   if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';
@@ -884,6 +1212,7 @@ export const employeeRpcErrorMessage = (err) => {
   if (msg.includes('lgpd_consent_required')) return 'É necessário aceitar o consentimento de tratamento de dados (LGPD).';
   if (msg.includes('invalid_doc_key')) return 'Tipo de documento inválido.';
   if (msg.includes('invalid_file_size')) return 'Arquivo inválido ou excede o limite de 2MB.';
+  if (msg.includes('invalid_file_type')) return 'Tipo de arquivo não permitido. Envie imagem (JPG, PNG, WebP) ou PDF.';
   if (msg.includes('invalid_token') || msg.includes('token_expired')) return 'Sessão de envio de documentos expirada. Reinicie o cadastro.';
   if (msg.includes('upload_limit_reached')) return 'Limite de anexos deste cadastro atingido.';
   if (msg.includes('not authorized')) return 'Acesso não autorizado para esta operação.';

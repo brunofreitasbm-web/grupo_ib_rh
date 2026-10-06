@@ -3,7 +3,7 @@ import {
   FileText, Save, Loader2, Upload, Eye, Trash, X, Download,
 } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { mapInternFromDb, mapUnitFromDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -210,7 +210,7 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
