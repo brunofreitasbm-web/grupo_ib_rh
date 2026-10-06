@@ -8619,7 +8619,7 @@ export default function App() {
         <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
           <div className="max-w-7xl mx-auto space-y-6">
 
-            {adminModule === 'interns' && hoursAlerts.length > 0 && (
+            {adminModule === 'interns' && activeAdminTab === 'dashboard' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
                 <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2 text-sm">
                   <AlertTriangle size={18} /> Atenção: Limite de Carga Horária Excedido ({LABOR.maxDailyHours}h/dia)
