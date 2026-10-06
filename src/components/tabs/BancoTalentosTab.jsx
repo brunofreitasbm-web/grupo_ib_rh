@@ -89,20 +89,17 @@ export default function BancoTalentosTab({ units = [] }) {
   const [convertServiceArea, setConvertServiceArea] = useState('');
   const [convertingId, setConvertingId] = useState(null);
 
-  const loadOverlay = useCallback(async (ids) => {
-    if (ids.length === 0) {
-      setMetaById({});
-      setTokensById({});
-      setAssessmentsById({});
-      setBasketById({});
-      return;
-    }
+  // Carrega o overlay inteiro (sem .in() por candidate_id): as tabelas só
+  // guardam candidatos do próprio banco, então são pequenas, e assim a carga
+  // não depende da lista remota — roda em paralelo com o fetch-talent-bank em
+  // vez de esperar por ele (e evita URLs com 200 ids no filtro).
+  const loadOverlay = useCallback(async () => {
     try {
       const [metaRes, tokenRes, assessmentRes, basketRes] = await Promise.all([
-        supabase.from('talent_candidates_meta').select('*').in('candidate_id', ids),
-        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at').in('candidate_id', ids),
-        supabase.from('talent_disc_assessments').select('*').in('candidate_id', ids),
-        supabase.from('talent_basket_assignments').select('*').in('candidate_id', ids),
+        supabase.from('talent_candidates_meta').select('*'),
+        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at'),
+        supabase.from('talent_disc_assessments').select('*'),
+        supabase.from('talent_basket_assignments').select('*'),
       ]);
       if (metaRes.error) throw metaRes.error;
       if (tokenRes.error) throw tokenRes.error;
@@ -130,6 +127,7 @@ export default function BancoTalentosTab({ units = [] }) {
       // "efetivo" pode ter sido sobrescrito localmente, então o filtro por
       // status passa a ser feito no cliente junto com a busca textual.
       const params = new URLSearchParams({ limit: '200' });
+      const overlayPromise = loadOverlay();
       const { data, error: err } = await supabase.functions.invoke(
         `fetch-talent-bank?${params.toString()}`,
         { method: 'GET' }
@@ -139,7 +137,7 @@ export default function BancoTalentosTab({ units = [] }) {
       const list = Array.isArray(data) ? data : (data?.candidates ?? data?.data ?? []);
       const safeList = Array.isArray(list) ? list : [];
       setCandidates(safeList);
-      await loadOverlay(safeList.map((c) => c.id).filter(Boolean));
+      await overlayPromise;
     } catch (err) {
       console.error('Erro ao carregar Banco de Talentos:', err);
       let msg = err?.message || '';
@@ -274,7 +272,7 @@ export default function BancoTalentosTab({ units = [] }) {
       });
       if (err) throw err;
       toast.success(`Levantamento de Perfil enviado para ${data?.sentTo || candidate.email}.`);
-      await loadOverlay(candidates.map((c) => c.id).filter(Boolean));
+      await loadOverlay();
     } catch (err) {
       console.error('Erro ao enviar Levantamento de Perfil:', err);
       let detailMsg = '';
@@ -414,7 +412,7 @@ export default function BancoTalentosTab({ units = [] }) {
       if (tokenErr) throw tokenErr;
 
       toast.success(`${unsentList.length} candidato(s) marcados como enviado(s)!`);
-      await loadOverlay(candidates.map((c) => c.id).filter(Boolean));
+      await loadOverlay();
     } catch (err) {
       const detail = err?.message || err?.details || (typeof err === 'object' ? JSON.stringify(err) : String(err));
       console.error('Erro ao marcar envios em massa:', detail, err);
