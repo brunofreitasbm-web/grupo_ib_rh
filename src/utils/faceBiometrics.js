@@ -1,4 +1,5 @@
 import * as faceapi from 'face-api.js';
+import { canvasToDataUrl, IMAGE_PRESETS } from './mappings';
 
 // Modelos hospedados localmente em public/models (sem dependência de CDNs de terceiros).
 const MODEL_URL = '/models';
@@ -102,7 +103,7 @@ export async function getMirroredFaceDescriptor(base64Image) {
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        resolve(canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality));
       } catch (err) {
         console.error('Erro ao espelhar imagem:', err);
         resolve(null);

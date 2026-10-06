@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Upload, Calendar, X, FileText, Download, Trash, Eye } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
 export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
@@ -269,7 +269,7 @@ export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

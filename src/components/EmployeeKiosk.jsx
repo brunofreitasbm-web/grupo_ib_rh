@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { LogOut, User, ScanFace, CheckCircle, Loader2, Building2, MapPin, Camera, AlertTriangle, Coffee, LogIn, LogOut as LogOutIcon, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../supabase';
-import { employeeRpcErrorMessage } from '../utils/mappings';
+import { employeeRpcErrorMessage, canvasToDataUrl, IMAGE_PRESETS } from '../utils/mappings';
 import { getCurrentPosition, geoErrorMessage, haversineKm } from '../hooks/useGeolocation';
 import { getFaceDescriptor, compareFaces, loadModels } from '../utils/faceBiometrics';
 import { allowedNextTypes } from '../utils/cltCalculations';
@@ -157,7 +157,7 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality);
   };
 
   const tryGetGeo = async () => {

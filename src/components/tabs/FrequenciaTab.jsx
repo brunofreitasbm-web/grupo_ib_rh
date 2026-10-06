@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { List, AlertTriangle, LogIn, LogOut, MapPin, FileText, Timer, Camera, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { startOfWeek, formatDistance, formatDate, formatTime } from '../../utils/helpers';
 import { BRANDING } from '../../config/branding';
 
@@ -213,7 +213,7 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, canvasToDataUrl, IMAGE_PRESETS, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { BRANDING } from '../../config/branding';
 import { CourseSelect, InternshipTypeField } from '../CourseFields';
@@ -115,7 +115,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, vWidth, vHeight);
-      const base64 = canvas.toDataURL('image/jpeg', 0.85);
+      const base64 = canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality);
       setBioPhoto(base64);
 
       const descriptor = await getFaceDescriptor(base64);

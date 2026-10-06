@@ -13,6 +13,9 @@ import {
   INTERN_SELECT_FIELDS,
   fileToBase64,
   compressImage,
+  canvasToDataUrl,
+  IMAGE_PRESETS,
+  downloadNameForDataUrl,
   generateUsername,
   mapInternFromDb,
   mapInternToDb,
@@ -1852,7 +1855,7 @@ export default function App() {
           ctx.scale(-1, 1);
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
           ctx.setTransform(1, 0, 0, 1, 0, 0); // limpa transformações
-          photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+          photoBase64 = canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality);
         } catch (e) {
           console.error("Erro ao capturar foto:", e);
         }
@@ -7863,7 +7866,7 @@ export default function App() {
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
