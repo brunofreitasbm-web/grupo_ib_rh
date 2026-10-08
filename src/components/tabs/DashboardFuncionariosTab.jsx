@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Wallet, Hourglass, AlertCircle, AlertTriangle, Info, Cake } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapEmployeeFromDb, EMPLOYEE_LIST_FIELDS,
   mapOccurrenceFromDb, mapMedicalExamFromDb, mapTerminationFromDb,
@@ -65,14 +66,18 @@ export default function DashboardFuncionariosTab({ filterUnit, restrictedUnitIds
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchAll());
     fetchAll();
     const channel = supabase
       .channel('dashboard-clt-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_vacation_periods' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_medical_exams' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, onRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_vacation_periods' }, onRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_medical_exams' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchAll]);
 
   const activeEmployees = useMemo(

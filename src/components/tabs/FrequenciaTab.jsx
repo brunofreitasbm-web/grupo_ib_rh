@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { List, AlertTriangle, LogIn, LogOut, MapPin, FileText, Timer, Camera, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
+import useInternPhotos from '../../hooks/useInternPhotos';
+import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { startOfWeek, formatDistance, formatDate, formatTime } from '../../utils/helpers';
 import { BRANDING } from '../../config/branding';
@@ -13,6 +15,9 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
 
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'timeline'
   const [selectedRecordPhoto, setSelectedRecordPhoto] = useState(null);
+  // Foto de cadastro (3x4) só é buscada quando o modal de comparação abre.
+  const modalInternPhotos = useInternPhotos(selectedRecordPhoto ? [selectedRecordPhoto.internId] : []);
+  const modalInternPhoto = selectedRecordPhoto ? modalInternPhotos[selectedRecordPhoto.internId] : null;
   const [viewDocBase64, setViewDocBase64] = useState(null);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
@@ -73,23 +78,24 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const recordsChannel = supabase
       .channel('frequencia-records-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
-        fetchData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isAuditRecordEvent(payload)) return;
+        onRealtimeChange();
       })
       .subscribe();
 
     const internsChannel = supabase
       .channel('frequencia-interns-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(recordsChannel);
       supabase.removeChannel(internsChannel);
     };
@@ -536,7 +542,7 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
       {/* Local Photo Modal */}
       {selectedRecordPhoto && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in animate-once">
-          <div className={`bg-white rounded-2xl shadow-2xl p-6 w-full ${interns.find(i => i.id === selectedRecordPhoto.internId)?.photo ? 'max-w-2xl' : 'max-w-sm'} relative transition-all duration-300`}>
+          <div className={`bg-white rounded-2xl shadow-2xl p-6 w-full ${modalInternPhoto ? 'max-w-2xl' : 'max-w-sm'} relative transition-all duration-300`}>
             <button
               onClick={() => setSelectedRecordPhoto(null)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 rounded-full p-1 border border-gray-100"
@@ -549,13 +555,13 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
               </h3>
             </div>
 
-            {interns.find(i => i.id === selectedRecordPhoto.internId)?.photo ? (
+            {modalInternPhoto ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
                 <div className="flex flex-col items-center">
                   <span className="text-[11px] font-semibold text-slate-500 mb-1.5">Foto do Cadastro</span>
                   <div className="aspect-[3/4] w-36 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 shadow-sm flex items-center justify-center">
                     <img
-                      src={interns.find(i => i.id === selectedRecordPhoto.internId)?.photo}
+                      src={modalInternPhoto}
                       alt="Cadastro"
                       className="w-full h-full object-cover"
                     />

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Wallet, FileWarning, AlertCircle, AlertTriangle, Info, Cake } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS } from '../../utils/mappings';
 import { computeProfessionalAlerts } from '../../utils/professionalAlerts';
 import { BRANDING } from '../../config/branding';
@@ -45,13 +46,17 @@ export default function DashboardProfissionaisTab({ filterUnit, restrictedUnitId
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchAll());
     fetchAll();
     const channel = supabase
       .channel('dashboard-pj-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professional_documents' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals' }, onRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professional_documents' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchAll]);
 
   const activeProfessionals = useMemo(

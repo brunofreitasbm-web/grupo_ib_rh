@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Timer, Clock, FileText, Cake, CheckCircle2, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { supabase } from '../../supabase';
+import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
 
@@ -48,24 +49,25 @@ export default function DashboardTab({ filterUnit, restrictedUnitIds = [], isAct
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     // Sincronização em tempo real via canais Supabase
     const internsChannel = supabase
       .channel('dashboard-interns-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     const recordsChannel = supabase
       .channel('dashboard-records-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
-        fetchData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isAuditRecordEvent(payload)) return;
+        onRealtimeChange();
       })
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
       supabase.removeChannel(recordsChannel);
     };

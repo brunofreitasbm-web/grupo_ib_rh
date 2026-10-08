@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Clock, Camera, Ban, Plus, X, Printer, Lock, Unlock, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapEmployeeFromDb, EMPLOYEE_LIST_FIELDS,
   mapTimeRecordFromDb, EMPLOYEE_TIME_RECORD_SELECT_FIELDS,
@@ -56,13 +57,17 @@ export default function PontoFuncionariosTab({ filterUnit, restrictedUnitIds = [
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchAll());
     fetchAll();
     const channel = supabase
       .channel('clt-ponto-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_time_records' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_time_adjustments' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_time_records' }, onRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_time_adjustments' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchAll]);
 
   const employeesOfUnit = useMemo(() => employees.filter((e) => filterUnit === 'all' || e.unitId === filterUnit), [employees, filterUnit]);

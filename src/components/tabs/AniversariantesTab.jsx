@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Cake, Users, Printer, Calendar, Edit2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../supabase';
+import useInternPhotos from '../../hooks/useInternPhotos';
+import { createDebounced } from '../../utils/debounce';
 import { mapInternFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
 import { escapeHtmlForDocument } from '../../utils/helpers';
@@ -81,14 +83,18 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
   }, [restrictedUnitIds, showProfessionals, showEmployees]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const tables = ['interns', ...(showProfessionals ? ['professionals'] : []), ...(showEmployees ? ['employees'] : [])];
     const channel = supabase.channel('aniversariantes-sync');
     tables.forEach(table => {
-      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData());
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, onRealtimeChange);
     });
     channel.subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData, showProfessionals, showEmployees]);
 
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
@@ -112,6 +118,13 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
       }),
     [filteredPeople, selectedMonth]
   );
+
+  // Fotos de estagiários não vêm na lista padrão: carrega só as do mês exibido.
+  const birthdayInternIds = useMemo(
+    () => birthdayPeople.filter(p => p.personType === 'intern').map(p => p.id),
+    [birthdayPeople]
+  );
+  const internPhotos = useInternPhotos(birthdayInternIds);
 
   const withoutBirthday = useMemo(() =>
     filteredPeople.filter(p => !p.birthdate && p.active !== false),
@@ -337,8 +350,8 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
                   <div className={`flex gap-4 p-4 ${isToday ? '' : ''}`}>
                     <div className="shrink-0">
                       <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shadow-inner">
-                        {person.photo
-                          ? <img src={person.photo} alt={person.name} className="w-full h-full object-cover" />
+                        {(person.photo || internPhotos[person.id])
+                          ? <img src={person.photo || internPhotos[person.id]} alt={person.name} className="w-full h-full object-cover" />
                           : <span className="text-3xl">👤</span>
                         }
                       </div>
@@ -381,8 +394,8 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
             {withoutBirthday.map(person => (
               <div key={`${person.personType}-${person.id}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                  {person.photo
-                    ? <img src={person.photo} alt={person.name} className="w-full h-full object-cover" />
+                  {(person.photo || internPhotos[person.id])
+                    ? <img src={person.photo || internPhotos[person.id]} alt={person.name} className="w-full h-full object-cover" />
                     : <span className="text-sm">👤</span>
                   }
                 </div>

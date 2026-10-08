@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Save, FileText, Printer, Upload, Eye, Trash, Loader2, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import { mapInternFromDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function EncerramentoTab({ filterUnit, onPrintDocument, restrictedUnitIds = [] }) {
@@ -34,16 +35,16 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument, restricte
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('encerramento-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);

@@ -1,7 +1,10 @@
-// Inclui photo e face_descriptor: necessários para a comparação biométrica no
-// quiosque (login de unidade compartilhado), que lê intern.faceDescriptor/intern.photo
-// a partir desta mesma lista de estagiários.
-export const INTERN_SELECT_FIELDS = 'id, name, course, institution, internship_type, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, photo, face_descriptor, role_id';
+// Lista padrão (roda a cada evento Realtime): SEM photo/face_descriptor, que são
+// base64/vetores pesados. Busque sob demanda com src/utils/internBiometry.js.
+export const INTERN_SELECT_FIELDS = 'id, name, course, institution, internship_type, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, role_id';
+
+// Variante com biometria: use SOMENTE em telas/consultas estreitas (nunca em listas
+// recarregadas por Realtime).
+export const INTERN_SELECT_FIELDS_WITH_BIOMETRY = `${INTERN_SELECT_FIELDS}, photo, face_descriptor`;
 
 // ---------------------------------------------------------------------------
 // Uploads: compressão no navegador (imagem -> WebP, PDF -> imagens recomprimidas)
@@ -451,7 +454,8 @@ export const mapInternFromDb = (i) => ({
   semestralReports: i.semestral_reports || {},
   contractTermination: i.contract_termination || {},
   birthdate: i.birthdate || '',
-  faceDescriptor: i.face_descriptor || '',
+  // undefined = coluna não carregada (não confundir com 'sem biometria').
+  faceDescriptor: i.face_descriptor === undefined ? undefined : (i.face_descriptor || ''),
   // Função esperada na Simulação por Unidade do Banco de Talentos (ver
   // src/config/roleProfiles.js). Nula até o gestor marcar.
   roleId: i.role_id || '',
@@ -473,6 +477,7 @@ export const mapInternToDb = (i) => ({
   username: i.username,
   is_first_login: i.isFirstLogin !== false,
   documents: i.documents || {},
+  // Omitido quando undefined (JSON.stringify descarta) -> não sobrescreve a foto.
   photo: i.photo,
   cpf: i.cpf || '',
   email: i.email || '',
@@ -493,7 +498,9 @@ export const mapInternToDb = (i) => ({
   semestral_reports: i.semestralReports || {},
   contract_termination: i.contractTermination || {},
   birthdate: i.birthdate || null,
-  face_descriptor: i.faceDescriptor || null,
+  // Só envia se carregado/definido: evita apagar a biometria num update quando a
+  // lista padrão não traz face_descriptor.
+  ...(i.faceDescriptor !== undefined ? { face_descriptor: i.faceDescriptor || null } : {}),
 });
 
 export const mapRecordFromDb = (r) => ({

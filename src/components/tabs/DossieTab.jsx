@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, AlertTriangle, Check, Eye, Trash, Upload, Loader2, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import { mapInternFromDb, mapUnitFromDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
@@ -43,16 +44,16 @@ export default function DossieTab({ filterUnit, restrictedUnitIds = [] }) {
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('dossie-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);

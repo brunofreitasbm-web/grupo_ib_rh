@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, ShieldCheck, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapFreelancerFromDb,
   mapFreelancerToDb,
@@ -57,12 +58,16 @@ export default function FreelancersTab({ filterUnit, restrictedUnitIds = [], uni
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const channel = supabase
       .channel('freelance-freelancers-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'freelancers' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'freelancers' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const filteredFreelancers = freelancers.filter((f) => filterUnit === 'all' || f.unitId === filterUnit);

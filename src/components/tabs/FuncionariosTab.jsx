@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2, Save, X, Loader2, ShieldCheck, Upload, UserPlus, Trash, ScanFace, Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapEmployeeFromDb, mapEmployeeToDb, EMPLOYEE_SELECT_FIELDS,
   mapDependentFromDb, mapDependentToDb,
@@ -222,12 +223,16 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const channel = supabase
       .channel('clt-funcionarios-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const filteredEmployees = employees.filter((e) => filterUnit === 'all' || e.unitId === filterUnit);

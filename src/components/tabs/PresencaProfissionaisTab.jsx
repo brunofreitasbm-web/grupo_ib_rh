@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { List, LogIn, LogOut, Plus, Trash2, X, MapPin } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapProfessionalFromDb,
   mapProfessionalPresenceFromDb,
@@ -45,12 +46,16 @@ export default function PresencaProfissionaisTab({ filterUnit, restrictedUnitIds
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const channel = supabase
       .channel('pj-presenca-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professional_presence' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professional_presence' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const filteredPresence = useMemo(

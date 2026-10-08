@@ -3,6 +3,7 @@ import {
   FileText, Save, Loader2, Upload, Eye, Trash, X, Download,
 } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import { mapInternFromDb, mapUnitFromDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }) {
@@ -45,16 +46,16 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('acompanhamento-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);

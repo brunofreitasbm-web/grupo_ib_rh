@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Upload, Calendar, X, FileText, Download, Trash, Eye } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
 import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
@@ -55,23 +56,24 @@ export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('ocorrencias-interns-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     const recordsChannel = supabase
       .channel('ocorrencias-records-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
-        fetchData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isAuditRecordEvent(payload)) return;
+        onRealtimeChange();
       })
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
       supabase.removeChannel(recordsChannel);
     };
