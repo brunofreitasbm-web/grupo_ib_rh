@@ -75,13 +75,14 @@ export default function FreelanceSelfRegistration({ units = [], branding, onCanc
     setSubmitting(true);
     try {
       const cleanCpf = form.cpf.replace(/\D/g, '');
+      const validBirthdate = form.birthdate && form.birthdate.trim() !== '' ? form.birthdate : null;
 
-      // Tenta via RPC RPC SECURITY DEFINER primeiro
+      // Tenta via RPC SECURITY DEFINER primeiro
       const { data: rpcData, error: rpcError } = await supabase.rpc('create_freelancer_self_registration', {
         p_unit_id: form.unitId,
         p_name: form.name.trim(),
         p_cpf: cleanCpf,
-        p_birthdate: form.birthdate || null,
+        p_birthdate: validBirthdate,
         p_email: form.email.trim() || null,
         p_phone: form.phone.trim() || null,
         p_endereco_cep: form.enderecoCep.trim() || null,
@@ -105,36 +106,59 @@ export default function FreelanceSelfRegistration({ units = [], branding, onCanc
       if (rpcError) {
         console.warn('RPC create_freelancer_self_registration indisponível ou erro:', rpcError.message);
 
-        // Fallback: inserção direta em public.freelancers
-        const { data: directData, error: directError } = await supabase
+        // Fallback: verifica se já existe registro com o CPF informado para fazer UPDATE ou INSERT
+        const { data: existing } = await supabase
           .from('freelancers')
-          .insert({
-            unit_id: form.unitId,
-            name: form.name.trim(),
-            cpf: cleanCpf,
-            birthdate: form.birthdate || null,
-            email: form.email.trim() || null,
-            phone: form.phone.trim() || null,
-            endereco_cep: form.enderecoCep.trim() || null,
-            endereco_logradouro: form.enderecoLogradouro.trim() || null,
-            endereco_numero: form.enderecoNumero.trim() || null,
-            endereco_complemento: form.enderecoComplemento.trim() || null,
-            endereco_bairro: form.enderecoBairro.trim() || null,
-            endereco_cidade: form.enderecoCidade.trim() || null,
-            endereco_uf: form.enderecoUf.trim() || null,
-            service_area: form.serviceArea,
-            bank_name: form.bankName.trim() || null,
-            bank_agency: form.bankAgency.trim() || null,
-            bank_account: form.bankAccount.trim() || null,
-            bank_account_type: form.bankAccountType,
-            pix_key: form.pixKey.trim() || null,
-            autonomy_declaration_accepted_at: new Date().toISOString(),
-            autonomy_declaration_version: FREELANCE_AUTONOMY_DECLARATION_VERSION,
-            lgpd_consent_accepted_at: new Date().toISOString(),
-            active: true,
-          })
-          .select()
-          .single();
+          .select('id')
+          .eq('cpf', cleanCpf)
+          .maybeSingle();
+
+        const payload = {
+          unit_id: form.unitId,
+          name: form.name.trim(),
+          birthdate: validBirthdate,
+          email: form.email.trim() || null,
+          phone: form.phone.trim() || null,
+          endereco_cep: form.enderecoCep.trim() || null,
+          endereco_logradouro: form.enderecoLogradouro.trim() || null,
+          endereco_numero: form.enderecoNumero.trim() || null,
+          endereco_complemento: form.enderecoComplemento.trim() || null,
+          endereco_bairro: form.enderecoBairro.trim() || null,
+          endereco_cidade: form.enderecoCidade.trim() || null,
+          endereco_uf: form.enderecoUf.trim() || null,
+          service_area: form.serviceArea,
+          bank_name: form.bankName.trim() || null,
+          bank_agency: form.bankAgency.trim() || null,
+          bank_account: form.bankAccount.trim() || null,
+          bank_account_type: form.bankAccountType,
+          pix_key: form.pixKey.trim() || null,
+          autonomy_declaration_accepted_at: new Date().toISOString(),
+          autonomy_declaration_version: FREELANCE_AUTONOMY_DECLARATION_VERSION,
+          lgpd_consent_accepted_at: new Date().toISOString(),
+          active: true,
+        };
+
+        let directData = null;
+        let directError = null;
+
+        if (existing?.id) {
+          const res = await supabase
+            .from('freelancers')
+            .update(payload)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          directData = res.data;
+          directError = res.error;
+        } else {
+          const res = await supabase
+            .from('freelancers')
+            .insert({ ...payload, cpf: cleanCpf })
+            .select()
+            .single();
+          directData = res.data;
+          directError = res.error;
+        }
 
         if (directError) throw directError;
         setCreatedFreelancer(directData);
@@ -146,7 +170,10 @@ export default function FreelanceSelfRegistration({ units = [], branding, onCanc
       toast.success('Cadastro de Freelancer concluído com sucesso!');
     } catch (err) {
       console.error('Erro ao cadastrar freelancer:', err);
-      toast.error(err?.message || 'Não foi possível concluir o cadastro. Verifique os dados e tente novamente.');
+      const userMessage = err?.message?.toLowerCase()?.includes('row-level security')
+        ? 'A política de segurança da tabela de freelancers precisa ser atualizada no Supabase. Aplique a migração 20261008150000_fix_freelancer_self_reg_rls.sql.'
+        : err?.message || 'Não foi possível concluir o cadastro. Verifique os dados e tente novamente.';
+      toast.error(userMessage);
     } finally {
       setSubmitting(false);
     }
