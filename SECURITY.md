@@ -18,7 +18,7 @@ Este repositório é o front-end React/Vite e as migrações/Edge Functions do S
 
 Os itens abaixo devem ser rotacionados imediatamente se houver suspeita de vazamento, e revisados periodicamente (recomendado: a cada 6 meses ou a cada saída de administrador):
 
-- Segredo do webhook da Edge Function `sync-grupoib-professional` (`SYNC_WEBHOOK_SECRET`, e o cabeçalho correspondente configurado no Database Webhook do Supabase).
+- Segredo do webhook da Edge Function `sync-grupoib-professional` (`GRUPOIB_WEBHOOK_SECRET` nos secrets da Edge Function e o mesmo valor no Vault, segredo `grupoib_webhook_secret`, lido por `sync_grupoib_to_clinica()`; trocar os dois juntos).
 - Senhas das contas de quiosque (`intern_unit`, `professional_unit`, `employee_unit`) — ver decisão pendente em `SECURITY_HARDENING_PROMPT.md`, item C-1.
 - `SUPABASE_SERVICE_ROLE_KEY` da Edge Function, se houver qualquer suspeita de exposição.
 
