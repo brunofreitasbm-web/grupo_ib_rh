@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import {
   FileText, Save, Loader2, Upload, Eye, Trash, X, Download,
 } from 'lucide-react';
@@ -21,6 +22,11 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
 
   // Document View Modal State
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
 

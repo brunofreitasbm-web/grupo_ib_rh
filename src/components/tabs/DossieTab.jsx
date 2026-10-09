@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { FileText, AlertTriangle, Check, Eye, Trash, Upload, Loader2, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced } from '../../utils/debounce';
@@ -16,6 +17,11 @@ export default function DossieTab({ filterUnit, restrictedUnitIds = [] }) {
 
   // Modal State
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
 

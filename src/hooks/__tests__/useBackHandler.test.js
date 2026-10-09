@@ -2,7 +2,7 @@
 import React, { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { useBackHandler, __resetBackHandlerForTests } from '../useBackHandler';
+import { useBackHandler, useBackLayers, __resetBackHandlerForTests } from '../useBackHandler';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -89,5 +89,58 @@ describe('useBackHandler', () => {
     await tick(60);
     expect(window.history.state?.__backHandler).toBeUndefined();
     await mount();
+  });
+
+  it('dois donos (casca + subtela): voltar desfaz primeiro o mais recente', async () => {
+    let ctl;
+    function Child({ onGone }) {
+      const [modal, setModal] = useState(false);
+      useBackLayers([{ active: modal, back: () => setModal(false) }]);
+      ctl.openModal = () => setModal(true);
+      ctl.modal = modal;
+      return null;
+    }
+    function Shell() {
+      const [tab, setTab] = useState('home');
+      const [child, setChild] = useState(true);
+      useBackLayers([{ active: tab !== 'home', back: () => setTab('home') }]);
+      Object.assign(ctl, { tab, setTab, setChild });
+      return child ? React.createElement(Child) : null;
+    }
+    ctl = {};
+    await act(async () => root.unmount());
+    root = createRoot(document.createElement('div'));
+    await act(async () => root.render(React.createElement(Shell)));
+    await act(async () => ctl.setTab('x'));
+    await act(async () => ctl.openModal());
+    await back();
+    expect(ctl.modal).toBe(false);
+    expect(ctl.tab).toBe('x');
+    await back();
+    expect(ctl.tab).toBe('home');
+  });
+
+  it('subtela desmontada com modal aberto limpa a entrada e não derruba a casca', async () => {
+    let ctl = {};
+    function Child() {
+      const [modal, setModal] = useState(false);
+      useBackLayers([{ active: modal, back: () => setModal(false) }]);
+      ctl.openModal = () => setModal(true);
+      return null;
+    }
+    function Shell() {
+      const [tab, setTab] = useState('home');
+      useBackLayers([{ active: tab !== 'home', back: () => setTab('home') }]);
+      Object.assign(ctl, { tab, setTab });
+      return tab === 'x' ? React.createElement(Child) : null;
+    }
+    await act(async () => root.unmount());
+    root = createRoot(document.createElement('div'));
+    await act(async () => root.render(React.createElement(Shell)));
+    await act(async () => ctl.setTab('x'));
+    await act(async () => ctl.openModal());
+    await act(async () => ctl.setTab('home')); // botão da casca: some a subtela inteira
+    await tick(80);
+    expect(window.history.state?.__backHandler).toBeUndefined();
   });
 });

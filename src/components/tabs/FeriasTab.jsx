@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Palmtree, Printer, Plus, X, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
@@ -38,6 +39,11 @@ export default function FeriasTab({ filterUnit, restrictedUnitIds = [], units = 
   const [syncing, setSyncing] = useState(false);
 
   const [showScheduleForm, setShowScheduleForm] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showScheduleForm, back: () => setShowScheduleForm(false) }
+  ]);
   const [scheduleForm, setScheduleForm] = useState({ periodId: '', startDate: '', days: 30, abonoDays: 0 });
   const [saving, setSaving] = useState(false);
 

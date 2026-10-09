@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Cake, Users, Printer, Calendar, Edit2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../supabase';
 import useInternPhotos from '../../hooks/useInternPhotos';
@@ -45,6 +46,11 @@ export default function AniversariantesTab({ filterUnit, restrictedUnitIds = [] 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [editingId, setEditingId] = useState(null);
   const [editBirthday, setEditBirthday] = useState('');
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: editingId !== null, back: () => { setEditingId(null); setEditBirthday(''); } }
+  ]);
   const [saving, setSaving] = useState(false);
 
   const showProfessionals = !!BRANDING.showProfessionalsModule;

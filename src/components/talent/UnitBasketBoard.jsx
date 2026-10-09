@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Search, GripVertical, X, MapPin, Users, ChevronDown, Loader2, RotateCcw, ArrowRightLeft, UserCheck, Sparkles, Filter, Info, Briefcase } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { BRANDING } from '../../config/branding';
@@ -119,6 +120,12 @@ export default function UnitBasketBoard({
   const [activeSideTab, setActiveSideTab] = useState('candidatos'); // 'candidatos' | 'equipe'
   const [search, setSearch] = useState('');
   const [teamDetail, setTeamDetail] = useState(null); // membro da equipe em detalhe (DiscResultModal)
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!teamDetail, back: () => setTeamDetail(null) },
+    { active: activeSideTab !== 'candidatos', back: () => setActiveSideTab('candidatos') }
+  ]);
   const [draggingId, setDraggingId] = useState(null); // ex: 'candidate:123' ou 'staff:employee:45'
   const [hoverKey, setHoverKey] = useState(null);
 

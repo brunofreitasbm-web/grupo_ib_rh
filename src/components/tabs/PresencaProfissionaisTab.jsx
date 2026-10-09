@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { List, LogIn, LogOut, Plus, Trash2, X, MapPin } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced } from '../../utils/debounce';
@@ -22,6 +23,11 @@ export default function PresencaProfissionaisTab({ filterUnit, restrictedUnitIds
   const [presence, setPresence] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showManualForm, setShowManualForm] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showManualForm, back: () => setShowManualForm(false) }
+  ]);
   const [manualForm, setManualForm] = useState({ professionalId: '', action: 'entrada', date: '', time: '', note: '' });
   const [saving, setSaving] = useState(false);
 

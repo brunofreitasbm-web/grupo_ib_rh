@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
 import useInternPhotos from '../../hooks/useInternPhotos';
@@ -50,6 +51,14 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const [onlyWithoutBio, setOnlyWithoutBio] = useState(false);
   const [isBatchScanOpen, setIsBatchScanOpen] = useState(false);
   const [batchScanRunning, setBatchScanRunning] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: isBatchScanOpen, back: () => { if (!batchScanRunning) setIsBatchScanOpen(false); } },
+    { active: isBioUploadModalOpen, back: () => setIsBioUploadModalOpen(false) },
+    { active: !!bioModalIntern, back: () => handleCloseBiometricsModal() },
+    { active: showManage, back: () => resetForm() }
+  ]);
   const [batchScanTotal, setBatchScanTotal] = useState(0);
   const [batchScanCurrent, setBatchScanCurrent] = useState(0);
   const [batchScanCurrentName, setBatchScanCurrentName] = useState('');

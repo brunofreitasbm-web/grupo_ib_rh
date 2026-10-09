@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { ShieldAlert, FileText, MessageSquare } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
@@ -11,6 +12,11 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
   const [loading, setLoading] = useState(true);
   const [chatRecords, setChatRecords] = useState([]);
   const [replyingId, setReplyingId] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: replyingId !== null, back: () => setReplyingId(null) }
+  ]);
   const [replyText, setReplyText] = useState('');
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 

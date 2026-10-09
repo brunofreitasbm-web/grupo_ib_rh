@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import {
   Building2,
   MapPin,
@@ -35,6 +36,12 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
   const [expandedUnitId, setExpandedUnitId] = useState(null);
   const [editingUnits, setEditingUnits] = useState({});
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: isPayrollModalOpen, back: () => setIsPayrollModalOpen(false) },
+    { active: activeSubTab !== 'empresa', back: () => setActiveSubTab('empresa') }
+  ]);
   const [targetPayrollUnit, setTargetPayrollUnit] = useState('');
 
   // Lista consolidada de unidades (branding + banco de dados)

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Plus, Upload, Calendar, X, FileText, Download, Trash, Eye } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
@@ -22,6 +23,11 @@ export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
 
   // Modal State
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
 

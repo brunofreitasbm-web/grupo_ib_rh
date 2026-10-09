@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Timer, Printer, Download, FileText, Building2, Upload, Eye, Trash2, CheckCircle2, Plus, DollarSign, Calendar, Tag, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
@@ -21,6 +22,13 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [payrolls, setPayrolls] = useState([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [viewingPayrollDoc, setViewingPayrollDoc] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewingPayrollDoc, back: () => setViewingPayrollDoc(null) },
+    { active: isUploadModalOpen, back: () => setIsUploadModalOpen(false) },
+    { active: activeSubTab !== 'estagiarios', back: () => setActiveSubTab('estagiarios') }
+  ]);
   const [uploadUnitTarget, setUploadUnitTarget] = useState('');
 
   const fetchPayrolls = useCallback(async () => {

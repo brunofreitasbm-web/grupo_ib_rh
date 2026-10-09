@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { AlertTriangle, Plus, X, Printer } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
@@ -20,6 +21,11 @@ export default function OcorrenciasFuncionariosTab({ filterUnit, restrictedUnitI
   const [occurrences, setOccurrences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showForm, back: () => setShowForm(false) }
+  ]);
   const [form, setForm] = useState({ employeeId: '', type: 'falta_injustificada', startDate: '', endDate: '', days: 1, description: '', legalBasis: '' });
   const [saving, setSaving] = useState(false);
 

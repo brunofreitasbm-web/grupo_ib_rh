@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { List, AlertTriangle, LogIn, LogOut, MapPin, FileText, Timer, Camera, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
 import useInternPhotos from '../../hooks/useInternPhotos';
@@ -19,6 +20,13 @@ export default function FrequenciaTab({ filterUnit, restrictedUnitIds = [] }) {
   const modalInternPhotos = useInternPhotos(selectedRecordPhoto ? [selectedRecordPhoto.internId] : []);
   const modalInternPhoto = selectedRecordPhoto ? modalInternPhotos[selectedRecordPhoto.internId] : null;
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) },
+    { active: !!selectedRecordPhoto, back: () => setSelectedRecordPhoto(null) },
+    { active: viewMode !== 'table', back: () => setViewMode('table') }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
   const [photoLoading, setPhotoLoading] = useState(false);
