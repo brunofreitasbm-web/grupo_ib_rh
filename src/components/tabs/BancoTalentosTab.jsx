@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { toast } from 'sonner';
@@ -85,6 +86,16 @@ export default function BancoTalentosTab({ units = [] }) {
   // escolhidos aqui; o restante do cadastro — endereço, CPF, dados bancários
   // e a Declaração de Autonomia — é completado depois em Freelancers).
   const [convertTarget, setConvertTarget] = useState(null); // candidate
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!resendConfirmTarget, back: () => setResendConfirmTarget(null) },
+    { active: !!convertTarget, back: () => setConvertTarget(null) },
+    { active: !!fitTarget, back: () => setFitTarget(null) },
+    { active: !!notesTarget, back: () => setNotesTarget(null) },
+    { active: !!resultTarget, back: () => setResultTarget(null) },
+    { active: activeSubTab !== 'candidatos', back: () => setActiveSubTab('candidatos') }
+  ]);
   const [convertUnitId, setConvertUnitId] = useState('');
   const [convertServiceArea, setConvertServiceArea] = useState('');
   const [convertingId, setConvertingId] = useState(null);

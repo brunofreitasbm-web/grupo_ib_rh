@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Stethoscope, Plus, X, Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../supabase';
 import {
@@ -26,6 +27,11 @@ export default function SaudeOcupacionalTab({ filterUnit, restrictedUnitIds = []
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showForm, back: () => setShowForm(false) }
+  ]);
   const [form, setForm] = useState({ employeeId: '', examType: 'periodico', examDate: '', riskGrade: 2, result: 'apto', doctorName: '', doctorCrm: '', restrictions: '' });
   const [saving, setSaving] = useState(false);
 

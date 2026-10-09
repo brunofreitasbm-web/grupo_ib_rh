@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Users, Plus, Pencil, Trash2, Save, X, ShieldCheck, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced } from '../../utils/debounce';
@@ -34,6 +35,11 @@ export default function FreelancersTab({ filterUnit, restrictedUnitIds = [], uni
   const [freelancers, setFreelancers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showManage, setShowManage] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showManage, back: () => setShowManage(false) }
+  ]);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);

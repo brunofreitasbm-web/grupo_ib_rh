@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Clock, Camera, Ban, Plus, X, Printer, Lock, Unlock, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced } from '../../utils/debounce';
@@ -29,6 +30,13 @@ export default function PontoFuncionariosTab({ filterUnit, restrictedUnitIds = [
   const [photoModal, setPhotoModal] = useState(null);
 
   const [showAdjustForm, setShowAdjustForm] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!photoModal, back: () => setPhotoModal(null) },
+    { active: showAdjustForm, back: () => setShowAdjustForm(false) },
+    { active: subTab !== 'registros', back: () => setSubTab('registros') }
+  ]);
   const [adjustForm, setAdjustForm] = useState({ employeeId: '', workDate: '', type: 'entrada', time: '', reason: '', voidsRecordId: '' });
   const [savingAdjust, setSavingAdjust] = useState(false);
 

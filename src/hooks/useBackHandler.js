@@ -160,3 +160,11 @@ export function __resetBackHandlerForTests() {
   dirty = false;
   clearTimeout(suppressTimer);
 }
+
+// Açúcar para telas com várias camadas (modais, formulários, sub-abas):
+// `layers` vai da camada mais interna para a mais externa; só as ativas contam.
+// O voltar do celular desfaz a primeira ativa.
+export function useBackLayers(layers) {
+  const active = layers.filter((layer) => layer.active);
+  useBackHandler(active.length, () => active[0]?.back());
+}

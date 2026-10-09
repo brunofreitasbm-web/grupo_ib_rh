@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Users, Plus, Pencil, Trash2, Save, X, Loader2, ShieldCheck, Upload, UserPlus, Trash, ScanFace, Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { createDebounced } from '../../utils/debounce';
@@ -51,6 +52,12 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
 
   // Modal de Biometria e Reset Biométrico para CLT
   const [bioModalEmployee, setBioModalEmployee] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!bioModalEmployee, back: () => handleCloseBiometricsModal() },
+    { active: showManage, back: () => setShowManage(false) }
+  ]);
   const [bioPhoto, setBioPhoto] = useState('');
   const [bioDescriptor, setBioDescriptor] = useState('');
   const [bioStatusMsg, setBioStatusMsg] = useState('');
