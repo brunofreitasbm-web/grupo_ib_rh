@@ -47,9 +47,15 @@ function consumeSuppress() {
 // history.go(-k); as que estão enterradas sob outro dono viram "órfãs" (ficam
 // no histórico, mas o popstate delas é pulado).
 function shrink(owner, n) {
+  // Só dá para desempilhar com history.go(-k) se ainda estamos parados na
+  // nossa entrada do topo. Se algo navegou por cima (ex.: mudança de rota
+  // num app com router), as entradas só são esquecidas: o histórico real fica
+  // com sobras, que o handlePopState pula quando o usuário chegar nelas.
+  const atTop = entries.length > 0 && window.history.state?.[MARK] === entries[entries.length - 1].id;
   let k = 0;
   while (k < n && entries[entries.length - 1 - k]?.owner === owner) k += 1;
   if (k > 0) entries.splice(entries.length - k, k);
+  if (!atTop) k = 0;
   let rest = n - k;
   for (let i = entries.length - 1; i >= 0 && rest > 0; i -= 1) {
     if (entries[i].owner === owner) {
@@ -110,14 +116,17 @@ function handlePopState(event) {
 
   const popped = entries.splice(entries.length - popCount, popCount);
   const handler = [...popped].reverse().find((e) => e.owner)?.owner;
-  if (handler) {
-    handler.onBack();
-  } else if (dest !== null) {
-    window.history.back(); // só órfãs saíram: o usuário não deve sentir um "voltar" morto
+  try {
+    if (handler) {
+      handler.onBack();
+    } else if (dest !== null) {
+      window.history.back(); // só órfãs saíram: o usuário não deve sentir um "voltar" morto
+    }
+  } finally {
+    // Se o onBack não reduziu o depth (ou lançou erro), o histórico ficou com uma
+    // entrada a menos que o estado: ressincroniza depois que o React aplicar o setState.
+    setTimeout(syncAll, 0);
   }
-  // Se o onBack não reduziu o depth, o histórico ficou com uma entrada a menos
-  // que o estado: ressincroniza depois que o React aplicar o setState.
-  setTimeout(syncAll, 0);
 }
 
 function ensureListener() {

@@ -143,4 +143,13 @@ describe('useBackHandler', () => {
     await tick(80);
     expect(window.history.state?.__backHandler).toBeUndefined();
   });
+
+  it('se algo navegou por cima das entradas, não usa history.go para limpá-las', async () => {
+    await act(async () => { api.push('a'); });
+    window.history.pushState({ rota: 'outra' }, '', '/outra'); // ex.: router.push
+    await act(async () => { api.pop(); });
+    await tick(60);
+    expect(window.history.state).toEqual({ rota: 'outra' });
+    expect(window.location.pathname).toBe('/outra');
+  });
 });
