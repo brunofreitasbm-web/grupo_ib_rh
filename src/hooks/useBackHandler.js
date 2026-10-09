@@ -116,14 +116,17 @@ function handlePopState(event) {
 
   const popped = entries.splice(entries.length - popCount, popCount);
   const handler = [...popped].reverse().find((e) => e.owner)?.owner;
-  if (handler) {
-    handler.onBack();
-  } else if (dest !== null) {
-    window.history.back(); // só órfãs saíram: o usuário não deve sentir um "voltar" morto
+  try {
+    if (handler) {
+      handler.onBack();
+    } else if (dest !== null) {
+      window.history.back(); // só órfãs saíram: o usuário não deve sentir um "voltar" morto
+    }
+  } finally {
+    // Se o onBack não reduziu o depth (ou lançou erro), o histórico ficou com uma
+    // entrada a menos que o estado: ressincroniza depois que o React aplicar o setState.
+    setTimeout(syncAll, 0);
   }
-  // Se o onBack não reduziu o depth, o histórico ficou com uma entrada a menos
-  // que o estado: ressincroniza depois que o React aplicar o setState.
-  setTimeout(syncAll, 0);
 }
 
 function ensureListener() {
