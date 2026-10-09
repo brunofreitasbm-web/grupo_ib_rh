@@ -92,6 +92,7 @@ import { createDebounced, isAuditRecordEvent } from './utils/debounce';
 import { classifySession, SESSION_LOST_MESSAGE, SESSION_TRANSIENT_MESSAGE } from './utils/sessionGuard';
 import { fetchInternBiometry } from './utils/internBiometry';
 import useInternPhotos from './hooks/useInternPhotos';
+import { useBackHandler } from './hooks/useBackHandler';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
@@ -603,6 +604,44 @@ export default function App() {
   // Modais de templates e minuta
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [viewingMinutaIntern, setViewingMinutaIntern] = useState(null);
+
+  // Botão/gesto "voltar" do celular: cada passo interno abaixo vira uma entrada
+  // no histórico (ver hooks/useBackHandler). Ordem do onBack, da camada mais
+  // interna à mais externa: modais → painel admin (aba, módulo) → telas cheias
+  // abertas a partir do quiosque → seleção do quiosque. Na raiz (quiosque sem
+  // seleção / painel admin no módulo e aba iniciais) não bloqueia: sai do site.
+  const ADMIN_MODULE_HOME_TAB = {
+    interns: 'dashboard',
+    professionals: 'pj_dashboard',
+    employees: 'clt_dashboard',
+    freelance: 'freelance_freelancers',
+  };
+  const adminHomeTab = ADMIN_MODULE_HOME_TAB[adminModule] || 'dashboard';
+  const backLayers = [
+    { active: !!confirmModalState, back: () => { confirmModalState.resolve(false); setConfirmModalState(null); } },
+    { active: !!(activeTemplate || viewingMinutaIntern), back: () => { setActiveTemplate(null); setViewingMinutaIntern(null); } },
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) },
+    { active: !!selectedRecordPhoto, back: () => setSelectedRecordPhoto(null) },
+    { active: showOccurrenceModal, back: () => setShowOccurrenceModal(false) },
+    { active: showGlobalNfseModal, back: () => setShowGlobalNfseModal(false) },
+    { active: showPublicPayrollModal, back: () => setShowPublicPayrollModal(false) },
+    { active: currentView === 'admin' && isOmnibarOpen, back: () => setIsOmnibarOpen(false) },
+    { active: currentView === 'admin' && activeAdminTab !== adminHomeTab, back: () => setActiveAdminTab(adminHomeTab) },
+    {
+      active: currentView === 'admin' && adminModule !== 'interns',
+      back: () => { setAdminModule('interns'); setActiveAdminTab('dashboard'); },
+    },
+    {
+      active: ['recadastro', 'autogestao_biometria', 'pj_autocadastro', 'clt_autocadastro', 'clt_biometria_autogestao'].includes(currentView),
+      back: () => setCurrentView('kiosk'),
+    },
+    {
+      active: !user && !!selectedLoginOption,
+      back: () => { setSelectedLoginOption(null); setLoginError(''); setLoginPassword(''); setLoginAdminName(''); },
+    },
+    { active: !user && !!kioskCategory, back: () => setKioskCategory(null) },
+  ].filter((layer) => layer.active);
+  useBackHandler(backLayers.length, () => backLayers[0]?.back());
 
   // 1. Autenticação e Sessão do Supabase
   const handleSession = useCallback(async (session) => {
