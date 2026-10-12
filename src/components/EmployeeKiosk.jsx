@@ -38,8 +38,6 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
   // Estados de Autogestão de Biometria no Quiosque
   const [autogestaoCpf, setAutogestaoCpf] = useState('');
   const [autogestaoSaving, setAutogestaoSaving] = useState(false);
-  const [autogestaoAttempts, setAutogestaoAttempts] = useState(0);
-  const [autogestaoLockedUntil, setAutogestaoLockedUntil] = useState(0);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -76,17 +74,23 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
   const needsConsent = selectedEmployee && !selectedEmployee.biometric_consent_at;
 
   const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
-  const cleanEmpCpf = selectedEmployee ? (selectedEmployee.cpf || '').replace(/\D/g, '') : '';
-  const isAutogestaoLocked = Date.now() < autogestaoLockedUntil;
-  const isAutogestaoCpfValid = !isAutogestaoLocked && selectedEmployee && cleanInputCpf.length === 11 && cleanInputCpf === cleanEmpCpf;
+  // O CPF nunca vai para o tablet: a conferência é feita no servidor (verify_employee_cpf).
+  const [cpfCheck, setCpfCheck] = useState({ cpf: '', employeeId: '', status: 'idle' }); // idle | checking | ok | fail
+  const cpfCheckForCurrent = cpfCheck.employeeId === selectedId && cpfCheck.cpf === cleanInputCpf ? cpfCheck.status : 'idle';
+  const isAutogestaoCpfValid = cpfCheckForCurrent === 'ok';
 
-  const handleAutogestaoCpfBlur = () => {
-    if (isAutogestaoLocked || !selectedEmployee || cleanInputCpf.length !== 11 || cleanInputCpf === cleanEmpCpf) return;
-    const nextAttempts = autogestaoAttempts + 1;
-    setAutogestaoAttempts(nextAttempts);
-    if (nextAttempts >= 5) {
-      setAutogestaoLockedUntil(Date.now() + 60000);
-      toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+  const verifyAutogestaoCpf = async (value) => {
+    const digits = value.replace(/\D/g, '');
+    if (!selectedId || digits.length !== 11) return;
+    setCpfCheck({ cpf: digits, employeeId: selectedId, status: 'checking' });
+    try {
+      const { data, error: rpcError } = await supabase.rpc('verify_employee_cpf', { p_employee_id: selectedId, p_cpf: digits });
+      if (rpcError) throw rpcError;
+      setCpfCheck({ cpf: digits, employeeId: selectedId, status: data === true ? 'ok' : 'fail' });
+    } catch (err) {
+      console.error('Erro ao verificar CPF:', err);
+      toast.error(err.message || 'Não foi possível verificar o CPF.');
+      setCpfCheck({ cpf: digits, employeeId: selectedId, status: 'fail' });
     }
   };
 
@@ -95,19 +99,17 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
     setAutogestaoSaving(true);
     try {
       const descriptorStr = JSON.stringify(payload.embedding);
-      const { error: dbErr } = await supabase
-        .from('employees')
-        .update({
-          face_descriptor: descriptorStr,
-          biometric_consent_at: new Date().toISOString(),
-          biometric_consent_version: branding?.biometricConsentVersion || '1.0',
-        })
-        .eq('id', selectedEmployee.id);
-
+      const { data: saved, error: dbErr } = await supabase.rpc('save_employee_autogestao_biometria', {
+        p_employee_id: selectedEmployee.id,
+        p_face_descriptor: descriptorStr,
+        p_cpf: cleanInputCpf,
+        p_consent_version: branding?.biometricConsentVersion || '1.0',
+      });
       if (dbErr) throw dbErr;
+      if (saved !== true) throw new Error('CPF não confere com o cadastro.');
       toast.success('Biometria facial atualizada com sucesso!');
       setAutogestaoCpf('');
-      setAutogestaoAttempts(0);
+      setCpfCheck({ cpf: '', employeeId: '', status: 'idle' });
       setError('');
       setStep('select');
       await fetchRoster();
@@ -342,10 +344,6 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
                     ))}
                   </select>
                 </div>
-              ) : isAutogestaoLocked ? (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-center text-red-800 text-xs font-semibold">
-                  ⛔ Muitas tentativas incorretas. Aguarde 1 minuto antes de tentar novamente.
-                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100">
@@ -365,11 +363,13 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
                       type="text"
                       placeholder="Apenas números (ex: 12345678900)"
                       value={autogestaoCpf}
-                      onChange={(e) => setAutogestaoCpf(e.target.value)}
-                      onBlur={handleAutogestaoCpfBlur}
+                      onChange={(e) => { setAutogestaoCpf(e.target.value); verifyAutogestaoCpf(e.target.value); }}
                       className="w-full p-2.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     />
-                    {autogestaoCpf && !isAutogestaoCpfValid && (
+                    {cpfCheckForCurrent === 'checking' && (
+                      <p className="text-slate-500 text-[11px] font-semibold mt-1">Verificando CPF...</p>
+                    )}
+                    {cpfCheckForCurrent === 'fail' && (
                       <p className="text-red-500 text-[11px] font-semibold mt-1">
                         ❌ O CPF informado não coincide com o do funcionário selecionado.
                       </p>
@@ -393,7 +393,7 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
                       ) : (
                         <BiometricEnrollment
                           internName={selectedEmployee.name}
-                          internCpf={selectedEmployee.cpf}
+                          internCpf={cleanInputCpf}
                           onEnrollmentComplete={handleAutogestaoComplete}
                           onCancel={() => {
                             setStep('select');
