@@ -75,7 +75,7 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
 
   const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
   // O CPF nunca vai para o tablet: a conferência é feita no servidor (verify_employee_cpf).
-  const [cpfCheck, setCpfCheck] = useState({ cpf: '', employeeId: '', status: 'idle' }); // idle | checking | ok | fail
+  const [cpfCheck, setCpfCheck] = useState({ cpf: '', employeeId: '', status: 'idle' }); // idle | checking | ok | fail | error
   const cpfCheckForCurrent = cpfCheck.employeeId === selectedId && cpfCheck.cpf === cleanInputCpf ? cpfCheck.status : 'idle';
   const isAutogestaoCpfValid = cpfCheckForCurrent === 'ok';
 
@@ -89,8 +89,7 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
       setCpfCheck({ cpf: digits, employeeId: selectedId, status: data === true ? 'ok' : 'fail' });
     } catch (err) {
       console.error('Erro ao verificar CPF:', err);
-      toast.error(err.message || 'Não foi possível verificar o CPF.');
-      setCpfCheck({ cpf: digits, employeeId: selectedId, status: 'fail' });
+      setCpfCheck({ cpf: digits, employeeId: selectedId, status: 'error', message: err.message || 'Erro desconhecido' });
     }
   };
 
@@ -368,6 +367,11 @@ export default function EmployeeKiosk({ unit, branding, onLogout }) {
                     />
                     {cpfCheckForCurrent === 'checking' && (
                       <p className="text-slate-500 text-[11px] font-semibold mt-1">Verificando CPF...</p>
+                    )}
+                    {cpfCheckForCurrent === 'error' && (
+                      <p className="text-amber-700 text-[11px] font-semibold mt-1">
+                        ⚠️ Não foi possível verificar o CPF agora ({cpfCheck.message}). Atualize a página e tente de novo; se persistir, avise o RH.
+                      </p>
                     )}
                     {cpfCheckForCurrent === 'fail' && (
                       <p className="text-red-500 text-[11px] font-semibold mt-1">
