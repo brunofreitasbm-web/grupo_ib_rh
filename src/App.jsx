@@ -93,6 +93,7 @@ import { classifySession, SESSION_LOST_MESSAGE, SESSION_TRANSIENT_MESSAGE } from
 import { fetchInternBiometry } from './utils/internBiometry';
 import useInternPhotos from './hooks/useInternPhotos';
 import { useBackHandler } from './hooks/useBackHandler';
+import { withAppClaims } from './utils/sessionClaims';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
@@ -646,7 +647,7 @@ export default function App() {
   // 1. Autenticação e Sessão do Supabase
   const handleSession = useCallback(async (session) => {
     if (session) {
-      const userObj = session.user;
+      const userObj = withAppClaims(session.user);
       setUser(userObj);
       const role = userObj.user_metadata?.role;
       if (role === 'supervisor') {
