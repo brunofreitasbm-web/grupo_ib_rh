@@ -106,10 +106,12 @@ Deno.serve(async (req: Request) => {
     const reqUrl = new URL(req.url);
     const status = reqUrl.searchParams.get("status");
     const limit = reqUrl.searchParams.get("limit");
+    const offset = reqUrl.searchParams.get("offset");
 
     const upstream = new URL(TALENT_API_URL);
     if (status && ALLOWED_STATUS.includes(status)) upstream.searchParams.set("status", status);
     upstream.searchParams.set("limit", String(Math.min(Math.max(Number(limit) || 50, 1), 200)));
+    upstream.searchParams.set("offset", String(Math.max(Math.floor(Number(offset) || 0), 0)));
 
     // 4. Chamada à API Remota com Tratamento de Erros
     try {

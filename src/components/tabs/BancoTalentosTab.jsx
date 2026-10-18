@@ -65,6 +65,9 @@ const DEFAULT_FILTERS = {
 };
 const PERIOD_DAYS = { '7d': 7, '30d': 30, '90d': 90 };
 const BATCH = 50;
+const IN_CHUNK = 100;
+const PAGE_SIZE = 200;
+const MAX_PAGES = 50;
 const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 const loadSavedFilters = () => {
   try { return JSON.parse(localStorage.getItem(SAVED_FILTERS_KEY) || '[]'); } catch { return []; }
@@ -79,6 +82,7 @@ export default function BancoTalentosTab({ units = [] }) {
     : SIMULATION_UNITS;
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [remoteTotal, setRemoteTotal] = useState(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -137,12 +141,18 @@ export default function BancoTalentosTab({ units = [] }) {
       return;
     }
     try {
+      // `.in()` com centenas de ids estoura o limite de URL do PostgREST: consulta
+      // em blocos e junta os resultados.
+      const inChunks = async (query) => {
+        const parts = await Promise.all(chunk(ids.map(String), IN_CHUNK).map((part) => query(part)));
+        return { data: parts.flatMap((r) => r.data || []), error: parts.find((r) => r.error)?.error || null };
+      };
       const [metaRes, tokenRes, assessmentRes, basketRes, freelancerRes] = await Promise.all([
-        supabase.from('talent_candidates_meta').select('*').in('candidate_id', ids),
-        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at, is_manual').in('candidate_id', ids),
-        supabase.from('talent_disc_assessments').select('*').in('candidate_id', ids),
-        supabase.from('talent_basket_assignments').select('*').in('candidate_id', ids),
-        supabase.from('freelancers').select('source_candidate_id').in('source_candidate_id', ids.map(String)),
+        inChunks((part) => supabase.from('talent_candidates_meta').select('*').in('candidate_id', part)),
+        inChunks((part) => supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at, is_manual').in('candidate_id', part)),
+        inChunks((part) => supabase.from('talent_disc_assessments').select('*').in('candidate_id', part)),
+        inChunks((part) => supabase.from('talent_basket_assignments').select('*').in('candidate_id', part)),
+        inChunks((part) => supabase.from('freelancers').select('source_candidate_id').in('source_candidate_id', part)),
       ]);
       if (metaRes.error) throw metaRes.error;
       if (tokenRes.error) throw tokenRes.error;
@@ -174,15 +184,28 @@ export default function BancoTalentosTab({ units = [] }) {
       // Busca sempre a lista completa (sem filtro remoto de status): o status
       // "efetivo" pode ter sido sobrescrito localmente, então o filtro por
       // status passa a ser feito no cliente junto com a busca textual.
-      const params = new URLSearchParams({ limit: '200' });
-      const { data, error: err } = await supabase.functions.invoke(
-        `fetch-talent-bank?${params.toString()}`,
-        { method: 'GET' }
-      );
-      if (err) throw err;
+      // A API limita cada página a 200: busca página a página (offset) até
+      // completar o `total` informado, sem repetir ids.
+      const byId = new Map();
+      let total = null;
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
+        const { data, error: err } = await supabase.functions.invoke(
+          `fetch-talent-bank?${params.toString()}`,
+          { method: 'GET' }
+        );
+        if (err) throw err;
 
-      const list = Array.isArray(data) ? data : (data?.candidates ?? data?.data ?? []);
-      const safeList = Array.isArray(list) ? list : [];
+        const list = Array.isArray(data) ? data : (data?.candidates ?? data?.data ?? []);
+        const rows = Array.isArray(list) ? list : [];
+        if (typeof data?.total === 'number') total = data.total;
+        rows.forEach((c) => c?.id && byId.set(c.id, c));
+        // Termina quando a página veio incompleta, vazia, ou já cobriu o total
+        // (o servidor pode ocultar excluídos, então não dá para exigir 200 exatos).
+        if (rows.length === 0 || total === null || (page + 1) * PAGE_SIZE >= total) break;
+      }
+      const safeList = [...byId.values()];
+      setRemoteTotal(total ?? safeList.length);
       setCandidates(safeList);
       await loadOverlay(safeList.map((c) => c.id).filter(Boolean));
     } catch (err) {
@@ -762,6 +785,11 @@ export default function BancoTalentosTab({ units = [] }) {
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Candidatos captados pelo Banco de Talentos do sistema.
+            {!loading && candidates.length > 0 && (
+              <span className="ml-1 font-semibold text-slate-600">
+                Exibindo {candidates.length}{remoteTotal && remoteTotal !== candidates.length ? ` de ${remoteTotal}` : ''} candidatura(s).
+              </span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 self-start md:self-auto">
