@@ -5,7 +5,8 @@ import {
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
-  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
@@ -209,6 +210,33 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+  // Sidebar do painel admin retrátil (só desktop). Preferência persistida; sem
+  // preferência salva, começa recolhida em telas < 1280px para dar espaço às tabelas.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin_sidebar_collapsed');
+      if (saved !== null) return saved === '1';
+    } catch { /* localStorage indisponível */ }
+    return typeof window !== 'undefined' && window.innerWidth < 1280;
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('admin_sidebar_collapsed', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (currentView !== 'admin') return undefined;
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentView, toggleSidebar]);
   const [showGlobalNfseModal, setShowGlobalNfseModal] = useState(false);
 
   // Pré-carrega os modelos de biometria facial assim que o app monta, para que
@@ -8620,43 +8648,102 @@ export default function App() {
       violet: 'bg-violet-50 text-violet-700 border-violet-200/80',
     }[moduleAccent];
 
+    const c = sidebarCollapsed;
+    // Sigla para o modo recolhido (ex.: "Profissionais PJ" -> "PP", "Estagiários" -> "E").
+    const railInitials = (label) => {
+      const words = String(label || '').split(/\s+/).filter(Boolean);
+      return (words.length > 1 ? words.slice(0, 2).map((w) => w[0]).join('') : words[0]?.slice(0, 2) || '?').toUpperCase();
+    };
+    const moduleButtons = [
+      { id: 'interns', label: 'Estagiários', firstTab: 'dashboard', activeClass: 'bg-blue-600 text-white border-blue-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-blue-400' },
+      ...(showProfessionalsModule ? [{ id: 'professionals', label: BRANDING.professionalLabels?.plural || 'Profissionais PJ', firstTab: 'pj_dashboard', activeClass: 'bg-teal-600 text-white border-teal-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-teal-400' }] : []),
+      ...(showEmployeesModule ? [{ id: 'employees', label: BRANDING.employeeLabels?.plural || 'Funcionários CLT', firstTab: 'clt_dashboard', activeClass: 'bg-indigo-600 text-white border-indigo-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400' }] : []),
+      ...(showFreelanceModule ? [{ id: 'freelance', label: BRANDING.freelanceLabels?.plural || 'Freelancers', firstTab: 'freelance_freelancers', activeClass: 'bg-violet-600 text-white border-violet-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-violet-400' }] : []),
+    ];
+    const renderNavButton = (tab) => {
+      const isActive = activeAdminTab === tab.id;
+      const badge = tab.id === 'rh' && pendingChatCount > 0 ? pendingChatCount : 0;
+      return (
+        <button
+          key={tab.id}
+          onClick={() => setActiveAdminTab(tab.id)}
+          title={c ? tab.label : undefined}
+          aria-current={isActive ? 'page' : undefined}
+          className={`relative w-full flex items-center justify-between ${c ? 'md:justify-center md:px-0' : ''} px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+            isActive
+              ? `${navActiveClass} font-bold border shadow-xs`
+              : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-base leading-none">{tab.icon}</span>
+            <span className={c ? 'md:hidden' : ''}>{tab.label}</span>
+          </div>
+          {badge > 0 && (
+            <span className={`bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${c ? 'md:absolute md:top-0.5 md:right-1 md:px-1 md:min-w-[16px] md:text-[9px]' : ''}`}>
+              {badge}
+            </span>
+          )}
+        </button>
+      );
+    };
+
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
-        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) ── */}
-        <aside className="w-full md:w-64 bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:min-h-screen sticky top-0 z-30">
+        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) — retrátil no desktop (Ctrl+B) ── */}
+        <aside className={`w-full ${c ? 'md:w-16' : 'md:w-64'} bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:h-screen sticky top-0 z-30 md:transition-[width] md:duration-200`}>
           {/* Header da Sidebar */}
-          <div className="p-4 border-b border-slate-200/80 bg-white/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />}
-              <div>
-                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">{BRANDING.displayName}</h1>
-                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">
+          <div className={`p-4 ${c ? 'md:px-0 md:py-3' : ''} border-b border-slate-200/80 bg-white/60 flex items-center justify-between shrink-0`}>
+            <div className={`flex items-center gap-3 min-w-0 ${c ? 'md:w-full md:justify-center' : ''}`}>
+              {BRANDING.logoPath && (
+                <img
+                  src={BRANDING.logoPath}
+                  alt={BRANDING.logoAlt}
+                  title={c ? BRANDING.displayName : undefined}
+                  className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200 shrink-0"
+                />
+              )}
+              <div className={`min-w-0 ${c ? 'md:hidden' : ''}`}>
+                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight truncate">{BRANDING.displayName}</h1>
+                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide truncate">
                   {BRANDING.subtitle || 'Gestão de Pessoas'}
                 </p>
               </div>
             </div>
+            {!c && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="hidden md:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                title="Recolher menu (Ctrl+B)"
+                aria-label="Recolher menu lateral"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            )}
           </div>
 
           {/* Filtro de Unidade & Ações Rápidas */}
-          <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
+          <div className={`p-3 ${c ? 'md:px-2' : ''} bg-white/40 border-b border-slate-200/80 space-y-2 shrink-0`}>
             {canSwitchWorkspace && (
               <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                   Grupo de Unidades
                 </label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className={`grid grid-cols-2 gap-1.5 ${c ? 'md:grid-cols-1' : ''}`}>
                   {Object.values(WORKSPACES).map((ws) => (
                     <button
                       key={ws.id}
                       type="button"
                       onClick={() => { setAdminWorkspace(ws.id); setFilterUnit('all'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                      title={ws.displayName}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors truncate ${
                         adminWorkspace === ws.id
                           ? 'bg-blue-600 text-white border-blue-600'
                           : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
                       }`}
                     >
-                      {ws.displayName}
+                      {c ? (<><span className="md:hidden">{ws.displayName}</span><span className="hidden md:inline">{railInitials(ws.displayName)}</span></>) : ws.displayName}
                     </button>
                   ))}
                 </div>
@@ -8664,72 +8751,46 @@ export default function App() {
             )}
             {showModuleToggle && (
               <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                   Módulo
                 </label>
-                <div className={`grid ${moduleToggleGridClass} gap-1.5`}>
-                  <button
-                    type="button"
-                    onClick={() => { setAdminModule('interns'); setActiveAdminTab('dashboard'); }}
-                    className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                      adminModule === 'interns'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
-                    }`}
-                  >
-                    Estagiários
-                  </button>
-                  {showProfessionalsModule && (
+                <div className={`grid ${moduleToggleGridClass} ${c ? 'md:grid-cols-1' : ''} gap-1.5`}>
+                  {moduleButtons.map((m) => (
                     <button
+                      key={m.id}
                       type="button"
-                      onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_dashboard'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'professionals'
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-teal-400'
+                      onClick={() => { setAdminModule(m.id); setActiveAdminTab(m.firstTab); }}
+                      title={m.label}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors truncate ${
+                        adminModule === m.id ? m.activeClass : m.idleClass
                       }`}
                     >
-                      {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                      {c ? (<><span className="md:hidden">{m.label}</span><span className="hidden md:inline">{railInitials(m.label)}</span></>) : m.label}
                     </button>
-                  )}
-                  {showEmployeesModule && (
-                    <button
-                      type="button"
-                      onClick={() => { setAdminModule('employees'); setActiveAdminTab('clt_dashboard'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'employees'
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'
-                      }`}
-                    >
-                      {BRANDING.employeeLabels?.plural || 'Funcionários CLT'}
-                    </button>
-                  )}
-                  {showFreelanceModule && (
-                    <button
-                      type="button"
-                      onClick={() => { setAdminModule('freelance'); setActiveAdminTab('freelance_freelancers'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'freelance'
-                          ? 'bg-violet-600 text-white border-violet-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-violet-400'
-                      }`}
-                    >
-                      {BRANDING.freelanceLabels?.plural || 'Freelancers'}
-                    </button>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
             <div>
-              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+              <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                 Unidade Selecionada
               </label>
+              {c && (
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  title={`Unidade: ${filterUnit === 'all' ? 'Todas as unidades' : (visibleUnits.find((u) => u.id === filterUnit)?.name || filterUnit)} — clique para alterar`}
+                  className="relative hidden md:flex w-full items-center justify-center py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-400 transition-colors"
+                >
+                  <Building2 size={16} />
+                  {filterUnit !== 'all' && <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-blue-600" />}
+                </button>
+              )}
               <select
                 value={filterUnit}
                 onChange={(e) => setFilterUnit(e.target.value)}
                 title="Filtrar por unidade"
-                className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
+                className={`w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm ${c ? 'md:hidden' : ''}`}
               >
                 <option value="all">Todas as unidades</option>
                 {visibleUnits.map((u) => (
@@ -8738,86 +8799,59 @@ export default function App() {
               </select>
             </div>
 
-            <div className="flex gap-2 pt-1">
+            <div className={`flex gap-2 pt-1 ${c ? 'md:flex-col' : ''}`}>
               <button
                 onClick={() => setIsOmnibarOpen(true)}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-2 rounded-lg font-medium transition-colors text-xs shadow-xs"
                 title="Abrir busca rápida (Ctrl+K)"
+                aria-label="Buscar"
               >
-                <Search size={13} />
-                <span>Buscar (Ctrl+K)</span>
+                <Search size={c ? 15 : 13} />
+                <span className={c ? 'md:hidden' : ''}>Buscar (Ctrl+K)</span>
               </button>
               <button
                 onClick={() => setCurrentView('kiosk')}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 py-1.5 px-2 rounded-lg font-medium transition-colors text-xs border border-slate-200 shadow-xs"
                 title="Sair do Painel da Supervisão"
+                aria-label="Sair"
               >
-                <ArrowLeft size={13} />
-                <span>Sair</span>
+                <ArrowLeft size={c ? 15 : 13} />
+                <span className={c ? 'md:hidden' : ''}>Sair</span>
               </button>
             </div>
           </div>
 
           {/* Menus / Links */}
-          <nav className="flex-1 p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
-            {adminNavItems.map(tab => {
-              const isActive = activeAdminTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveAdminTab(tab.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
-                    isActive
-                      ? `${navActiveClass} font-bold border shadow-xs`
-                      : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-base leading-none">{tab.icon}</span>
-                    <span>{tab.label}</span>
-                  </div>
-                  {tab.id === 'rh' && pendingChatCount > 0 && (
-                    <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {pendingChatCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <nav className={`flex-1 p-3 ${c ? 'md:px-2' : ''} space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none md:min-h-0 flex flex-row md:flex-col overflow-x-auto md:overflow-x-hidden`}>
+            {adminNavItems.map(renderNavButton)}
 
             {/* Seção comum aos 3 módulos — sempre visível, independente do módulo ativo */}
             <div className="pt-2 mt-2 border-t border-slate-200/80 flex flex-row md:flex-col gap-1 md:gap-0 space-y-0 md:space-y-1">
-              {commonNavItems.map(tab => {
-                const isActive = activeAdminTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveAdminTab(tab.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
-                      isActive
-                        ? `${navActiveClass} font-bold border shadow-xs`
-                        : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-base leading-none">{tab.icon}</span>
-                      <span>{tab.label}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              {commonNavItems.map(renderNavButton)}
             </div>
           </nav>
 
           {/* Rodapé da Sidebar */}
-          <div className="hidden md:block p-3 border-t border-slate-200/80 text-[11px] text-slate-400 text-center bg-white/40">
-            Controle Integrado • v2.5
+          <div className="hidden md:flex shrink-0 items-center justify-between gap-2 p-2 border-t border-slate-200/80 text-[11px] text-slate-400 bg-white/40">
+            {c ? (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="mx-auto p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors"
+                title="Expandir menu (Ctrl+B)"
+                aria-label="Expandir menu lateral"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            ) : (
+              <span className="px-1">Controle Integrado • v2.5</span>
+            )}
           </div>
         </aside>
 
         {/* ── ÁREA DE CONTEÚDO PRINCIPAL ── */}
         <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6">
 
             {adminModule === 'interns' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
