@@ -138,7 +138,33 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      return new Response(bodyText, {
+      // Rede de segurança: candidatos já excluídos (tombstone) ou mesclados em
+      // outro (alias) nunca voltam à lista, mesmo que o registro remoto ainda exista.
+      let outBody = bodyText;
+      try {
+        const [purged, aliases] = await Promise.all([
+          admin.from("talent_purged_candidates").select("candidate_id"),
+          admin.from("talent_candidate_aliases").select("alias_id"),
+        ]);
+        const hidden = new Set<string>([
+          ...(purged.data ?? []).map((r: { candidate_id: string }) => String(r.candidate_id)),
+          ...(aliases.data ?? []).map((r: { alias_id: string }) => String(r.alias_id)),
+        ]);
+        if (hidden.size > 0) {
+          const parsed = JSON.parse(bodyText);
+          // A API remota responde { data: [...] }; versões antigas, { candidates } ou array.
+          const key = Array.isArray(parsed) ? null : (Array.isArray(parsed?.data) ? "data" : "candidates");
+          const list = key ? parsed?.[key] : parsed;
+          if (Array.isArray(list)) {
+            const kept = list.filter((c: { id?: unknown }) => !hidden.has(String(c?.id)));
+            outBody = JSON.stringify(key ? { ...parsed, [key]: kept } : kept);
+          }
+        }
+      } catch (filterErr) {
+        console.error("[fetch-talent-bank] Falha ao filtrar excluídos/mesclados:", filterErr);
+      }
+
+      return new Response(outBody, {
         status: 200,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
