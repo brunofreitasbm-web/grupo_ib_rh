@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, ArrowRightLeft, Archive, ArchiveRestore, Send, CheckCircle, MessageCircle, Mail, StickyNote, Briefcase } from 'lucide-react';
+import { MoreVertical, ArrowRightLeft, Archive, ArchiveRestore, Send, CheckCircle, MessageCircle, Mail, StickyNote, Briefcase, Trash2 } from 'lucide-react';
 import { CANDIDATE_STATUSES, statusLabel } from '../../constants/talentBank';
 
 // Menu de ações rápidas por candidato, na linha da tabela. O repo não usa
@@ -14,6 +14,7 @@ export default function CandidateActionsMenu({
   onMarkSentManual,
   onOpenNotes,
   onConvertFreelance,
+  onDelete,
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -132,6 +133,17 @@ export default function CandidateActionsMenu({
             <StickyNote className="w-3.5 h-3.5 text-slate-400" />
             Notas internas
           </button>
+
+          {onDelete && (
+            <button
+              type="button"
+              onClick={act(onDelete)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-rose-700 hover:bg-rose-50 font-medium"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              Excluir definitivamente
+            </button>
+          )}
 
           <div className="my-1 border-t border-slate-100" />
 

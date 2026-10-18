@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useBackLayers } from '../../hooks/useBackHandler';
-import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle } from 'lucide-react';
+import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle, Archive, Send, MessageCircle, Trash2, GitMerge, Eye, X, Bookmark, Clock } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { toast } from 'sonner';
-import { STATUS_OPTIONS, STATUS_BADGE, OPPORTUNITY_LABEL, statusLabel } from '../../constants/talentBank';
+import { STATUS_OPTIONS, STATUS_BADGE, STATUS_ROW, OPPORTUNITY_LABEL, statusLabel } from '../../constants/talentBank';
+import { expiryReason, archiveDaysLeft, discDaysLeft } from '../../utils/talentRetention';
+import { findDuplicateClusters } from '../../utils/talentDuplicates';
+import PurgeConfirmModal from '../talent/PurgeConfirmModal';
+import MergeDuplicatesModal from '../talent/MergeDuplicatesModal';
 import { DISC_PROFILE_INFO } from '../../utils/disc';
 import { computeRoleFit, bestRoleFor } from '../../utils/roleFit';
 import { ROLE_BY_ID, SIMULATION_UNITS } from '../../config/roleProfiles';
@@ -54,6 +58,18 @@ const formatDateTime = (isoString) => {
 // conclusão, sinaliza atraso para o gestor.
 const DISC_SLA_MS = 48 * 60 * 60 * 1000;
 
+const SAVED_FILTERS_KEY = 'talent_bank_saved_filters_v1';
+const DEFAULT_FILTERS = {
+  status: 'NOVO', disc: 'todos', opp: 'todos', profile: 'todos', period: 'todos',
+  onlyResume: false, onlyDup: false, onlyExpiring: false, sort: 'date_desc',
+};
+const PERIOD_DAYS = { '7d': 7, '30d': 30, '90d': 90 };
+const BATCH = 50;
+const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+const loadSavedFilters = () => {
+  try { return JSON.parse(localStorage.getItem(SAVED_FILTERS_KEY) || '[]'); } catch { return []; }
+};
+
 export default function BancoTalentosTab({ units = [] }) {
   // Unidades para o seletor do modal de conversão em Freelancer: usa as
   // unidades reais do painel quando disponíveis, com SIMULATION_UNITS como
@@ -65,8 +81,17 @@ export default function BancoTalentosTab({ units = [] }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('NOVO');
-  const [discFilter, setDiscFilter] = useState('todos');
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+  const { status: statusFilter, disc: discFilter } = filters;
+  const [savedFilters, setSavedFilters] = useState(loadSavedFilters);
+  const [selected, setSelected] = useState(() => new Set());
+  const [freelancerIds, setFreelancerIds] = useState(() => new Set());
+  const [bulkProgress, setBulkProgress] = useState(null); // { label, done, total }
+  const [purgePlan, setPurgePlan] = useState(null); // { title, intro, reason, items }
+  const [purging, setPurging] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState('candidatos');
 
   // Overlay local, indexado por candidate_id.
@@ -89,6 +114,8 @@ export default function BancoTalentosTab({ units = [] }) {
 
   // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
   useBackLayers([
+    { active: !!purgePlan, back: () => !purging && setPurgePlan(null) },
+    { active: mergeOpen, back: () => !merging && setMergeOpen(false) },
     { active: !!resendConfirmTarget, back: () => setResendConfirmTarget(null) },
     { active: !!convertTarget, back: () => setConvertTarget(null) },
     { active: !!fitTarget, back: () => setFitTarget(null) },
@@ -106,14 +133,16 @@ export default function BancoTalentosTab({ units = [] }) {
       setTokensById({});
       setAssessmentsById({});
       setBasketById({});
+      setFreelancerIds(new Set());
       return;
     }
     try {
-      const [metaRes, tokenRes, assessmentRes, basketRes] = await Promise.all([
+      const [metaRes, tokenRes, assessmentRes, basketRes, freelancerRes] = await Promise.all([
         supabase.from('talent_candidates_meta').select('*').in('candidate_id', ids),
-        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at').in('candidate_id', ids),
+        supabase.from('talent_disc_tokens').select('candidate_id, sent_at, expires_at, consumed_at, first_opened_at, is_manual').in('candidate_id', ids),
         supabase.from('talent_disc_assessments').select('*').in('candidate_id', ids),
         supabase.from('talent_basket_assignments').select('*').in('candidate_id', ids),
+        supabase.from('freelancers').select('source_candidate_id').in('source_candidate_id', ids.map(String)),
       ]);
       if (metaRes.error) throw metaRes.error;
       if (tokenRes.error) throw tokenRes.error;
@@ -121,6 +150,11 @@ export default function BancoTalentosTab({ units = [] }) {
       // A tabela da simulação pode ainda não existir (migração pendente):
       // não derruba o resto do overlay.
       if (basketRes.error) console.error('Erro ao carregar simulação por unidade:', basketRes.error);
+
+      // Quem virou Freelancer é protegido da exclusão automática; se a consulta
+      // falhar, o servidor (purge-talent-candidates) revalida de qualquer forma.
+      if (freelancerRes.error) console.error('Erro ao carregar vínculos de freelancer:', freelancerRes.error);
+      setFreelancerIds(new Set((freelancerRes.data || []).map((f) => String(f.source_candidate_id))));
 
       setMetaById(Object.fromEntries((metaRes.data || []).map((m) => [m.candidate_id, m])));
       setTokensById(Object.fromEntries((tokenRes.data || []).map((t) => [t.candidate_id, t])));
@@ -206,9 +240,25 @@ export default function BancoTalentosTab({ units = [] }) {
         discToken: token || null,
         discAssessment: assessment || null,
         bestFit: assessment ? bestRoleFor(assessment) : null,
+        archivedAt: meta?.archived_at || null,
+        inBasket: Boolean(basketById[c.id]),
+        isFreelancer: freelancerIds.has(String(c.id)),
       };
-    });
-  }, [candidates, metaById, tokensById, assessmentsById]);
+    }).map((c) => ({
+      ...c,
+      archiveLeft: archiveDaysLeft(c),
+      discLeft: discDaysLeft(c),
+      expiry: expiryReason(c),
+    }));
+  }, [candidates, metaById, tokensById, assessmentsById, basketById, freelancerIds]);
+
+  const { clusters: duplicateClusters, clusterById } = useMemo(() => findDuplicateClusters(enriched), [enriched]);
+  const expiredList = useMemo(() => enriched.filter((c) => c.expiry), [enriched]);
+  const statusCounts = useMemo(() => {
+    const counts = { todos: enriched.length };
+    enriched.forEach((c) => { counts[c.effectiveStatus] = (counts[c.effectiveStatus] || 0) + 1; });
+    return counts;
+  }, [enriched]);
 
   // Só quem concluiu o Levantamento de Perfil entra na simulação.
   const withProfile = useMemo(() => enriched.filter((c) => c.discAssessment), [enriched]);
@@ -225,12 +275,33 @@ export default function BancoTalentosTab({ units = [] }) {
       if (discFilter === 'respondidos' && !hasAssessment) return false;
       if (discFilter === 'sem_envio' && (hasToken || hasAssessment)) return false;
 
+      if (filters.opp !== 'todos' && c.opportunity_type !== filters.opp) return false;
+      if (filters.profile !== 'todos' && c.discAssessment?.primary_profile !== filters.profile) return false;
+      if (filters.period !== 'todos') {
+        const ms = c.created_at_ms || (c.created_at_iso ? new Date(c.created_at_iso).getTime() : 0);
+        if (!ms || Date.now() - ms > PERIOD_DAYS[filters.period] * 86400000) return false;
+      }
+      if (filters.onlyResume && !c.resume_url) return false;
+      if (filters.onlyDup && !clusterById.has(String(c.id))) return false;
+      if (filters.onlyExpiring) {
+        const left = Math.min(c.archiveLeft ?? Infinity, c.discLeft ?? Infinity);
+        if (left > 2) return false;
+      }
+
       if (!q) return true;
+      const qDigits = q.replace(/\D/g, '');
       return [c.full_name, c.email, c.course, c.desired_area]
         .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q));
+        .some((v) => String(v).toLowerCase().includes(q))
+        || (qDigits.length >= 4 && String(c.phone || '').replace(/\D/g, '').includes(qDigits));
+    }).sort((a, b) => {
+      const ts = (c) => c.created_at_ms || (c.created_at_iso ? new Date(c.created_at_iso).getTime() : 0) || 0;
+      if (filters.sort === 'date_asc') return ts(a) - ts(b);
+      if (filters.sort === 'name') return String(a.full_name || '').localeCompare(String(b.full_name || ''), 'pt-BR');
+      if (filters.sort === 'fit') return (b.bestFit?.fit.score ?? -1) - (a.bestFit?.fit.score ?? -1);
+      return ts(b) - ts(a);
     });
-  }, [enriched, search, statusFilter, discFilter]);
+  }, [enriched, search, statusFilter, discFilter, filters, clusterById]);
 
   const changeStatus = async (candidate, newStatus) => {
     setBusyId(candidate.id);
@@ -238,13 +309,19 @@ export default function BancoTalentosTab({ units = [] }) {
       const { error: err } = await supabase.from('talent_candidates_meta').upsert({
         candidate_id: candidate.id,
         status: newStatus,
+        // Marca quando entrou em Arquivado (base dos 7 dias); zera ao sair.
+        archived_at: newStatus === 'ARQUIVADO' ? (candidate.archivedAt || new Date().toISOString()) : null,
         snapshot: { full_name: candidate.full_name, email: candidate.email, phone: candidate.phone },
         updated_at: new Date().toISOString(),
       });
       if (err) throw err;
       setMetaById((prev) => ({
         ...prev,
-        [candidate.id]: { ...(prev[candidate.id] || { candidate_id: candidate.id }), status: newStatus },
+        [candidate.id]: {
+          ...(prev[candidate.id] || { candidate_id: candidate.id }),
+          status: newStatus,
+          archived_at: newStatus === 'ARQUIVADO' ? (candidate.archivedAt || new Date().toISOString()) : null,
+        },
       }));
       toast.success(`Status atualizado para "${statusLabel(newStatus)}".`);
     } catch (err) {
@@ -435,6 +512,186 @@ export default function BancoTalentosTab({ units = [] }) {
     }
   };
 
+  // ---- Seleção + ações em massa -------------------------------------------
+  const toggleSelect = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    const key = String(id);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const allFilteredSelected = filtered.length > 0 && filtered.every((c) => selected.has(String(c.id)));
+  const toggleSelectAll = () => setSelected(allFilteredSelected ? new Set() : new Set(filtered.map((c) => String(c.id))));
+  const selectedCandidates = useMemo(() => enriched.filter((c) => selected.has(String(c.id))), [enriched, selected]);
+
+  // Processa em lotes com progresso e resumo ok/falhas (não trava a tela em 200 linhas).
+  const bulkChangeStatus = async (list, newStatus, label) => {
+    if (list.length === 0) return;
+    setBulkProgress({ label, done: 0, total: list.length });
+    let ok = 0;
+    let fail = 0;
+    const nowIso = new Date().toISOString();
+    for (const part of chunk(list, BATCH)) {
+      const rows = part.map((c) => ({
+        candidate_id: String(c.id),
+        status: newStatus,
+        archived_at: newStatus === 'ARQUIVADO' ? (c.archivedAt || nowIso) : null,
+        snapshot: { full_name: c.full_name || '', email: c.email || '', phone: c.phone || '' },
+        updated_at: nowIso,
+      }));
+      const { error: err } = await supabase.from('talent_candidates_meta').upsert(rows, { onConflict: 'candidate_id' });
+      if (err) {
+        console.error('Erro na ação em massa:', err);
+        fail += part.length;
+      } else {
+        ok += part.length;
+        setMetaById((prev) => {
+          const next = { ...prev };
+          rows.forEach((r) => { next[r.candidate_id] = { ...(next[r.candidate_id] || {}), ...r }; });
+          return next;
+        });
+      }
+      setBulkProgress({ label, done: ok + fail, total: list.length });
+    }
+    setBulkProgress(null);
+    if (fail) toast.warning(`${ok} atualizado(s), ${fail} com falha.`);
+    else toast.success(`${ok} candidato(s) → "${statusLabel(newStatus)}".`);
+    setSelected(new Set());
+  };
+
+  const bulkSendDisc = async (list) => {
+    const withEmail = list.filter((c) => c.email && !c.discAssessment && !c.discToken);
+    const skipped = list.length - withEmail.length;
+    if (withEmail.length === 0) {
+      toast.info('Nenhum selecionado precisa de envio (já enviado/respondido ou sem e-mail).');
+      return;
+    }
+    setBulkProgress({ label: 'Enviando Levantamento', done: 0, total: withEmail.length });
+    let ok = 0;
+    let fail = 0;
+    for (const part of chunk(withEmail, 5)) {
+      const results = await Promise.allSettled(part.map((c) => supabase.functions.invoke('send-disc-assessment', {
+        body: { candidateId: c.id, fullName: c.full_name, email: c.email, phone: c.phone },
+      }).then(({ error: err }) => { if (err) throw err; })));
+      results.forEach((r) => (r.status === 'fulfilled' ? (ok += 1) : (fail += 1)));
+      setBulkProgress({ label: 'Enviando Levantamento', done: ok + fail, total: withEmail.length });
+    }
+    setBulkProgress(null);
+    await loadOverlay(candidates.map((c) => c.id).filter(Boolean));
+    toast[fail ? 'warning' : 'success'](`${ok} enviado(s)${fail ? `, ${fail} com falha` : ''}${skipped ? ` · ${skipped} ignorado(s)` : ''}.`);
+    setSelected(new Set());
+  };
+
+  // ---- Exclusão definitiva (servidor revalida elegibilidade/proteções) -------
+  const reasonLabel = { arquivado: 'Arquivado > 7 dias', disc: 'DISC sem resposta > 10 dias', manual: 'Exclusão manual', duplicado: 'Duplicado' };
+  const openPurgePlan = (title, intro, list, reasonFor) => {
+    if (list.length === 0) { toast.info('Nada a excluir.'); return; }
+    setPurgePlan({
+      title,
+      intro,
+      items: list.map((c) => ({ id: String(c.id), name: c.full_name, email: c.email, reason: reasonFor(c), reasonLabel: reasonLabel[reasonFor(c)] })),
+    });
+  };
+  const openPurgeExpired = () => openPurgePlan(
+    'Limpar candidatos vencidos',
+    'Arquivados há 7+ dias ou sem preencher o DISC há 10+ dias (contados do envio do link).',
+    expiredList,
+    (c) => c.expiry,
+  );
+  const openPurgeSelected = (list) => openPurgePlan(
+    'Excluir candidatos selecionados',
+    'Exclusão manual definitiva.',
+    list,
+    () => 'manual',
+  );
+
+  const confirmPurge = async () => {
+    if (!purgePlan) return;
+    const byReason = {};
+    purgePlan.items.forEach((it) => { (byReason[it.reason] ||= []).push(it.id); });
+    const total = purgePlan.items.length;
+    setPurging(true);
+    setBulkProgress({ label: 'Excluindo', done: 0, total });
+    const deleted = new Set();
+    let failed = 0;
+    let refused = 0;
+    let doneCount = 0;
+    try {
+      for (const [reason, ids] of Object.entries(byReason)) {
+        for (const part of chunk(ids, 100)) {
+          const { data, error: err } = await supabase.functions.invoke('purge-talent-candidates', { body: { ids: part, reason } });
+          if (err) {
+            let detail = '';
+            try { detail = (await err.context?.json?.())?.message || ''; } catch (_) {}
+            throw new Error(detail || err.message || 'Falha ao excluir.');
+          }
+          (data?.deleted || []).forEach((id) => deleted.add(String(id)));
+          failed += (data?.failed || []).length;
+          refused += (data?.refused || []).length;
+          doneCount += part.length;
+          setBulkProgress({ label: 'Excluindo', done: doneCount, total });
+        }
+      }
+      const gone = (id) => deleted.has(String(id));
+      setCandidates((prev) => prev.filter((c) => !gone(c.id)));
+      const prune = (prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !gone(k)));
+      setMetaById(prune); setTokensById(prune); setAssessmentsById(prune); setBasketById(prune);
+      setSelected(new Set());
+      setPurgePlan(null);
+      const extra = [failed && `${failed} falharam`, refused && `${refused} preservados (protegidos/fora do prazo)`].filter(Boolean).join(' · ');
+      toast[failed ? 'warning' : 'success'](`${deleted.size} candidato(s) excluído(s)${extra ? ` · ${extra}` : ''}.`);
+    } catch (err) {
+      console.error('Erro ao excluir candidatos:', err);
+      toast.error(err.message || 'Não foi possível excluir. Nada foi apagado no trecho que falhou.');
+    } finally {
+      setPurging(false);
+      setBulkProgress(null);
+    }
+  };
+
+  // ---- Mesclagem de duplicados -------------------------------------------
+  const mergeGroup = async (masterId, aliasIds) => {
+    setMerging(true);
+    try {
+      for (const aliasId of aliasIds) {
+        const { error: err } = await supabase.rpc('merge_talent_candidates', { p_master: masterId, p_alias: aliasId });
+        if (err) throw err;
+      }
+      // Exclui o registro remoto dos aliases; se falhar, o alias já fica oculto pelo servidor.
+      const { error: purgeErr } = await supabase.functions.invoke('purge-talent-candidates', { body: { ids: aliasIds, reason: 'duplicado' } });
+      if (purgeErr) toast.warning('Mesclado, mas o registro original no Faça Amigos não foi excluído (ficará oculto).');
+      else toast.success(`${aliasIds.length} duplicado(s) mesclado(s).`);
+      await load();
+    } catch (err) {
+      console.error('Erro ao mesclar duplicados:', err);
+      toast.error(err?.message === 'forbidden' ? 'Somente supervisores podem mesclar.' : 'Não foi possível mesclar.');
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  // ---- Filtros salvos (por navegador) --------------------------------------
+  const persistSaved = (list) => {
+    setSavedFilters(list);
+    try { localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(list)); } catch (_) {}
+  };
+  const saveCurrentFilters = () => {
+    const name = window.prompt('Nome do filtro salvo:');
+    if (!name?.trim()) return;
+    persistSaved([...savedFilters.filter((f) => f.name !== name.trim()), { name: name.trim(), filters, search }]);
+  };
+
+  // Atalhos na linha focada: A arquivar · E enviar DISC · N notas · X selecionar.
+  const onRowKeyDown = (e, c) => {
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'a') changeStatus(c, c.effectiveStatus === 'ARQUIVADO' ? 'CONTATADO' : 'ARQUIVADO');
+    else if (k === 'e') handleInitiateSendDisc(c);
+    else if (k === 'n') setNotesTarget(c);
+    else if (k === 'x') toggleSelect(c.id);
+    else return;
+    e.preventDefault();
+  };
+
   const assignToBasket = async (candidate, unitId, roleId) => {
     const role = ROLE_BY_ID[roleId];
     const fit = computeRoleFit(candidate.discAssessment, role);
@@ -507,13 +764,33 @@ export default function BancoTalentosTab({ units = [] }) {
             Candidatos captados pelo Banco de Talentos do sistema.
           </p>
         </div>
-        <button
-          onClick={load}
-          className="px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 flex items-center gap-2 self-start md:self-auto"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
+        <div className="flex flex-wrap gap-2 self-start md:self-auto">
+          {duplicateClusters.length > 0 && (
+            <button
+              onClick={() => setMergeOpen(true)}
+              className="px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 flex items-center gap-2"
+            >
+              <GitMerge className="w-4 h-4" />
+              Duplicados ({duplicateClusters.length})
+            </button>
+          )}
+          <button
+            onClick={openPurgeExpired}
+            disabled={expiredList.length === 0 || loading}
+            className="px-3 py-2 text-sm font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Exclui arquivados há 7+ dias e quem não preencheu o DISC em 10+ dias"
+          >
+            <Trash2 className="w-4 h-4" />
+            Limpar vencidos ({expiredList.length})
+          </button>
+          <button
+            onClick={load}
+            className="px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -590,7 +867,7 @@ export default function BancoTalentosTab({ units = [] }) {
               <button
                 key={s.value}
                 type="button"
-                onClick={() => setStatusFilter(s.value)}
+                onClick={() => setFilter('status', s.value)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
                   statusFilter === s.value
                     ? 'bg-blue-600 text-white border-blue-600'
@@ -598,6 +875,7 @@ export default function BancoTalentosTab({ units = [] }) {
                 }`}
               >
                 {s.label}
+                <span className="ml-1 opacity-70">{statusCounts[s.value] || 0}</span>
               </button>
             ))}
           </div>
@@ -615,7 +893,7 @@ export default function BancoTalentosTab({ units = [] }) {
             <button
               key={df.value}
               type="button"
-              onClick={() => setDiscFilter(df.value)}
+              onClick={() => setFilter('disc', df.value)}
               className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${
                 discFilter === df.value
                   ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
@@ -639,7 +917,81 @@ export default function BancoTalentosTab({ units = [] }) {
             </button>
           )}
         </div>
+
+        {/* Filtros avançados */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+          <select value={filters.opp} onChange={(e) => setFilter('opp', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 bg-white">
+            <option value="todos">Oportunidade: todas</option>
+            {Object.entries(OPPORTUNITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <select value={filters.profile} onChange={(e) => setFilter('profile', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 bg-white">
+            <option value="todos">Perfil DISC: todos</option>
+            {['D', 'I', 'S', 'C'].map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={filters.period} onChange={(e) => setFilter('period', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 bg-white">
+            <option value="todos">Candidatura: qualquer data</option>
+            <option value="7d">Últimos 7 dias</option>
+            <option value="30d">Últimos 30 dias</option>
+            <option value="90d">Últimos 90 dias</option>
+          </select>
+          <select value={filters.sort} onChange={(e) => setFilter('sort', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 bg-white">
+            <option value="date_desc">Mais recentes</option>
+            <option value="date_asc">Mais antigos</option>
+            <option value="name">Nome (A–Z)</option>
+            <option value="fit">Maior compatibilidade</option>
+          </select>
+          {[
+            ['onlyResume', 'Com currículo'],
+            ['onlyDup', `Duplicados (${clusterById.size})`],
+            ['onlyExpiring', 'Vencendo em ≤2 dias'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key, !filters[key])}
+              className={`px-2.5 py-1 font-medium rounded-lg border transition-colors ${filters[key] ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            {savedFilters.map((sf) => (
+              <span key={sf.name} className="inline-flex items-center border border-blue-200 bg-blue-50 text-blue-700 rounded-lg overflow-hidden">
+                <button type="button" className="px-2 py-1 font-medium" onClick={() => { setFilters({ ...DEFAULT_FILTERS, ...sf.filters }); setSearch(sf.search || ''); }}>
+                  <Bookmark className="w-3 h-3 inline mr-1" />{sf.name}
+                </button>
+                <button type="button" title="Remover filtro salvo" className="px-1.5 py-1 hover:bg-blue-100" onClick={() => persistSaved(savedFilters.filter((f) => f.name !== sf.name))}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <button type="button" onClick={saveCurrentFilters} className="px-2.5 py-1 font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+              + Salvar filtro
+            </button>
+            <button type="button" onClick={() => { setFilters(DEFAULT_FILTERS); setSearch(''); }} className="px-2.5 py-1 font-medium rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50">
+              Limpar
+            </button>
+          </span>
+        </div>
       </div>
+
+      {/* Barra de ações em massa */}
+      {(selected.size > 0 || bulkProgress) && (
+        <div className="sticky top-2 z-30 flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-xl shadow-lg text-xs">
+          {bulkProgress ? (
+            <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{bulkProgress.label}… {bulkProgress.done}/{bulkProgress.total}</span>
+          ) : (
+            <>
+              <span className="font-semibold">{selected.size} selecionado(s)</span>
+              <button type="button" onClick={() => bulkChangeStatus(selectedCandidates, 'ARQUIVADO', 'Arquivando')} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5"><Archive className="w-3.5 h-3.5" />Arquivar</button>
+              <button type="button" onClick={() => bulkChangeStatus(selectedCandidates, 'LIDO', 'Marcando como lido')} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" />Marcar lido</button>
+              <button type="button" onClick={() => bulkSendDisc(selectedCandidates)} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5"><Send className="w-3.5 h-3.5" />Enviar DISC</button>
+              <button type="button" onClick={() => openPurgeSelected(selectedCandidates)} className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5" />Excluir</button>
+              <button type="button" onClick={() => setSelected(new Set())} className="ml-auto px-2 py-1 rounded-lg hover:bg-white/10">Limpar seleção</button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Lista */}
       <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -660,6 +1012,9 @@ export default function BancoTalentosTab({ units = [] }) {
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-100 text-slate-700 text-xs uppercase font-semibold">
                 <tr>
+                  <th className="p-3 w-8">
+                    <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Selecionar todos os filtrados" />
+                  </th>
                   <th className="p-3">Candidato</th>
                   <th className="p-3">Curso</th>
                   <th className="p-3">Área desejada</th>
@@ -680,10 +1035,39 @@ export default function BancoTalentosTab({ units = [] }) {
                   const isLate = Boolean(openedAt) && (Date.now() - new Date(openedAt).getTime()) > DISC_SLA_MS;
 
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50">
+                    <tr
+                      key={c.id}
+                      tabIndex={0}
+                      onKeyDown={(e) => onRowKeyDown(e, c)}
+                      className={`outline-none focus:ring-2 focus:ring-inset focus:ring-blue-300 ${STATUS_ROW[c.effectiveStatus] || 'border-l-4 border-l-transparent hover:bg-slate-50'}`}
+                    >
+                      <td className="p-3 align-top">
+                        <input type="checkbox" checked={selected.has(String(c.id))} onChange={() => toggleSelect(c.id)} />
+                      </td>
                       <td className="p-3">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-semibold text-slate-800">{c.full_name || '—'}</span>
+
+                          {clusterById.has(String(c.id)) && (
+                            <button type="button" onClick={() => setMergeOpen(true)} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-indigo-200 bg-indigo-50 text-indigo-700" title="Possível candidatura duplicada — clique para revisar">
+                              <GitMerge className="w-3 h-3" />Duplicado ×{duplicateClusters[clusterById.get(String(c.id))].length}
+                            </button>
+                          )}
+                          {c.archiveLeft !== null && !c.expiry && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700" title="Candidato arquivado é excluído do banco após 7 dias">
+                              <Clock className="w-3 h-3" />Exclui em {c.archiveLeft}d
+                            </span>
+                          )}
+                          {c.discLeft !== null && !c.expiry && !c.inBasket && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-orange-200 bg-orange-50 text-orange-700" title="Sem preencher o DISC em 10 dias do envio, o candidato é excluído">
+                              <Clock className="w-3 h-3" />DISC vence em {c.discLeft}d
+                            </span>
+                          )}
+                          {c.expiry && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-rose-300 bg-rose-100 text-rose-800">
+                              <Trash2 className="w-3 h-3" />Vencido
+                            </span>
+                          )}
 
                           {/* Tag visual direta no candidato sobre o Levantamento de Perfil */}
                           {c.discAssessment ? (
@@ -789,7 +1173,37 @@ export default function BancoTalentosTab({ units = [] }) {
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="p-3 text-right">
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            disabled={busyId === c.id}
+                            onClick={() => changeStatus(c, c.effectiveStatus === 'ARQUIVADO' ? 'CONTATADO' : 'ARQUIVADO')}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-white hover:text-rose-600 disabled:opacity-40"
+                            title={c.effectiveStatus === 'ARQUIVADO' ? 'Desarquivar (A)' : 'Arquivar (A)'}
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === c.id || !c.email}
+                            onClick={() => handleInitiateSendDisc(c)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-white hover:text-blue-600 disabled:opacity-30"
+                            title={c.email ? 'Enviar Levantamento DISC (E)' : 'Candidato sem e-mail'}
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                          {c.phone && (
+                            <a
+                              href={`https://wa.me/55${String(c.phone).replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-white hover:text-emerald-600"
+                              title="WhatsApp"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </a>
+                          )}
                         <CandidateActionsMenu
                           candidate={{ ...c, hasDiscToken: Boolean(c.discToken || c.discAssessment) }}
                           effectiveStatus={c.effectiveStatus}
@@ -799,7 +1213,9 @@ export default function BancoTalentosTab({ units = [] }) {
                           onMarkSentManual={() => markSentManual(c)}
                           onOpenNotes={() => setNotesTarget(c)}
                           onConvertFreelance={() => openConvertToFreelancer(c)}
+                          onDelete={() => openPurgeSelected([c])}
                         />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -810,6 +1226,27 @@ export default function BancoTalentosTab({ units = [] }) {
         )}
       </div>
       </div>
+
+      {purgePlan && (
+        <PurgeConfirmModal
+          title={purgePlan.title}
+          intro={purgePlan.intro}
+          items={purgePlan.items}
+          busy={purging}
+          progress={bulkProgress}
+          onCancel={() => setPurgePlan(null)}
+          onConfirm={confirmPurge}
+        />
+      )}
+
+      {mergeOpen && (
+        <MergeDuplicatesModal
+          clusters={duplicateClusters}
+          busy={merging}
+          onCancel={() => setMergeOpen(false)}
+          onMerge={mergeGroup}
+        />
+      )}
 
       {convertTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
