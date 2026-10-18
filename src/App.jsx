@@ -785,6 +785,44 @@ export default function App() {
 
 
 
+  // Persiste módulo/aba/workspace do painel admin (por usuário) para sobreviver ao F5.
+  // Os valores salvos são revalidados na leitura: módulo precisa estar habilitado
+  // e a aba precisa pertencer a ele, senão cai no padrão.
+  const navRestoredForRef = useRef(null);
+  const adminNavKey = user?.id ? `admin_nav_${user.id}` : null;
+  useEffect(() => {
+    if (!adminNavKey || user?.user_metadata?.role !== 'supervisor') return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(adminNavKey) || 'null');
+      if (!saved) return;
+      const moduleEnabled = {
+        interns: true,
+        professionals: !!BRANDING.showProfessionalsModule,
+        employees: !!BRANDING.showEmployeesModule,
+        freelance: !!BRANDING.showFreelanceModule,
+      };
+      const prefix = { interns: '', professionals: 'pj_', employees: 'clt_', freelance: 'freelance_' };
+      const commonTabs = ['aniversariantes', 'banco_talentos', 'configuracoes'];
+      const internTabs = ['dashboard', 'estagiarios', 'documentos', 'frequencia', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'financeiro', 'rh'];
+      const mod = moduleEnabled[saved.module] ? saved.module : null;
+      if (!mod) return;
+      const tabOk = commonTabs.includes(saved.tab)
+        || (mod === 'interns' ? internTabs.includes(saved.tab) : String(saved.tab).startsWith(prefix[mod]));
+      if (saved.workspace && canSwitchWorkspace && WORKSPACES[saved.workspace]) setAdminWorkspace(saved.workspace);
+      setAdminModule(mod);
+      if (tabOk) setActiveAdminTab(saved.tab);
+    } catch { /* storage indisponível ou JSON inválido: mantém o padrão */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminNavKey]);
+  useEffect(() => {
+    if (!adminNavKey || navRestoredForRef.current !== adminNavKey) return;
+    try {
+      localStorage.setItem(adminNavKey, JSON.stringify({ module: adminModule, tab: activeAdminTab, workspace: adminWorkspace }));
+    } catch { /* ignore */ }
+  }, [adminNavKey, adminModule, activeAdminTab, adminWorkspace]);
+  // Declarado depois do restore/save: libera a gravação só após a restauração aplicada.
+  useEffect(() => { navRestoredForRef.current = adminNavKey; }, [adminNavKey]);
+
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
     const intern = interns.find(i => i.id === selectedActivityIntern);
