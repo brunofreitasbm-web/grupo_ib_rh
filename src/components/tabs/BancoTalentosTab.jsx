@@ -1044,13 +1044,9 @@ export default function BancoTalentosTab({ units = [] }) {
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Selecionar todos os filtrados" />
                   </th>
                   <th className="p-3">Candidato</th>
-                  <th className="p-3">Curso</th>
-                  <th className="p-3">Área desejada</th>
-                  <th className="p-3">Oportunidade</th>
+                  <th className="p-3">Curso / Área</th>
                   <th className="p-3">Status</th>
                   <th className="p-3">Perfil (DISC)</th>
-                  <th className="p-3">Data</th>
-                  <th className="p-3 text-right">Currículo</th>
                   <th className="p-3 text-right">Ações</th>
                 </tr>
               </thead>
@@ -1134,13 +1130,16 @@ export default function BancoTalentosTab({ units = [] }) {
                           </div>
                         )}
                       </td>
-                      <td className="p-3 text-slate-600">{c.course || '—'}</td>
-                      <td className="p-3 text-slate-600">{c.desired_area || '—'}</td>
-                      <td className="p-3 text-slate-600">{OPPORTUNITY_LABEL[c.opportunity_type] || c.opportunity_type || '—'}</td>
+                      <td className="p-3 text-slate-600 text-xs">
+                        <div className="font-medium text-slate-700 text-sm">{c.course || '—'}</div>
+                        <div className="mt-0.5">{c.desired_area || '—'}</div>
+                        <div className="mt-0.5 text-slate-400">{OPPORTUNITY_LABEL[c.opportunity_type] || c.opportunity_type || '—'}</div>
+                      </td>
                       <td className="p-3">
                         <span className={`px-2 py-1 text-xs font-semibold rounded-md border ${STATUS_BADGE[c.effectiveStatus] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                           {statusLabel(c.effectiveStatus)}
                         </span>
+                        <div className="mt-1 text-[11px] text-slate-500">{formatDate(c)}</div>
                       </td>
                       <td className="p-3">
                         {profileInfo ? (
@@ -1185,24 +1184,19 @@ export default function BancoTalentosTab({ units = [] }) {
                           </span>
                         )}
                       </td>
-                      <td className="p-3 text-xs text-slate-500">{formatDate(c)}</td>
-                      <td className="p-3 text-right">
-                        {c.resume_url ? (
-                          <a
-                            href={c.resume_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            Ver currículo
-                          </a>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
                       <td className="p-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-0.5">
+                          {c.resume_url && (
+                            <a
+                              href={c.resume_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 rounded-lg text-blue-600 hover:bg-white hover:text-blue-800"
+                              title="Ver currículo"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </a>
+                          )}
                           <button
                             type="button"
                             disabled={busyId === c.id}

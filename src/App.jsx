@@ -8905,7 +8905,7 @@ export default function App() {
         </aside>
 
         {/* ── ÁREA DE CONTEÚDO PRINCIPAL ── */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
+        <main className="flex-1 p-4 md:p-5 xl:p-8 overflow-y-auto min-w-0">
           <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6">
 
             {adminModule === 'interns' && hoursAlerts.length > 0 && (
