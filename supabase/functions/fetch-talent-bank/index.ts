@@ -152,10 +152,12 @@ Deno.serve(async (req: Request) => {
         ]);
         if (hidden.size > 0) {
           const parsed = JSON.parse(bodyText);
-          const list = Array.isArray(parsed) ? parsed : parsed?.candidates;
+          // A API remota responde { data: [...] }; versões antigas, { candidates } ou array.
+          const key = Array.isArray(parsed) ? null : (Array.isArray(parsed?.data) ? "data" : "candidates");
+          const list = key ? parsed?.[key] : parsed;
           if (Array.isArray(list)) {
             const kept = list.filter((c: { id?: unknown }) => !hidden.has(String(c?.id)));
-            outBody = JSON.stringify(Array.isArray(parsed) ? kept : { ...parsed, candidates: kept });
+            outBody = JSON.stringify(key ? { ...parsed, [key]: kept } : kept);
           }
         }
       } catch (filterErr) {
