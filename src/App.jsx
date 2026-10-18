@@ -5,7 +5,10 @@ import {
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
-  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, ClipboardList, TrendingUp, Wallet, Bell,
+  CalendarCheck, Receipt, Calculator, Palmtree, Stethoscope, UserMinus, Scale, Cake, UserSearch,
+  Settings, ChevronRight
 } from 'lucide-react';
 import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
@@ -209,6 +212,39 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+  // Abas do painel admin já visitadas: cada aba só monta (e carrega seu chunk/dados)
+  // na primeira visita e depois fica montada, preservando filtros e rascunhos.
+  const [visitedAdminTabs, setVisitedAdminTabs] = useState(() => new Set(['dashboard']));
+  useEffect(() => {
+    setVisitedAdminTabs((prev) => (prev.has(activeAdminTab) ? prev : new Set(prev).add(activeAdminTab)));
+  }, [activeAdminTab]);
+  // Sidebar do painel admin retrátil (só desktop). Preferência persistida; sem
+  // preferência salva, começa recolhida em telas < 1280px para dar espaço às tabelas.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin_sidebar_collapsed');
+      if (saved !== null) return saved === '1';
+    } catch { /* localStorage indisponível */ }
+    return typeof window !== 'undefined' && window.innerWidth < 1280;
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('admin_sidebar_collapsed', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (currentView !== 'admin') return undefined;
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentView, toggleSidebar]);
   const [showGlobalNfseModal, setShowGlobalNfseModal] = useState(false);
 
   // Pré-carrega os modelos de biometria facial assim que o app monta, para que
@@ -748,6 +784,44 @@ export default function App() {
   }, [handleSession]);
 
 
+
+  // Persiste módulo/aba/workspace do painel admin (por usuário) para sobreviver ao F5.
+  // Os valores salvos são revalidados na leitura: módulo precisa estar habilitado
+  // e a aba precisa pertencer a ele, senão cai no padrão.
+  const navRestoredForRef = useRef(null);
+  const adminNavKey = user?.id ? `admin_nav_${user.id}` : null;
+  useEffect(() => {
+    if (!adminNavKey || user?.user_metadata?.role !== 'supervisor') return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(adminNavKey) || 'null');
+      if (!saved) return;
+      const moduleEnabled = {
+        interns: true,
+        professionals: !!BRANDING.showProfessionalsModule,
+        employees: !!BRANDING.showEmployeesModule,
+        freelance: !!BRANDING.showFreelanceModule,
+      };
+      const prefix = { interns: '', professionals: 'pj_', employees: 'clt_', freelance: 'freelance_' };
+      const commonTabs = ['aniversariantes', 'banco_talentos', 'configuracoes'];
+      const internTabs = ['dashboard', 'estagiarios', 'documentos', 'frequencia', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'financeiro', 'rh'];
+      const mod = moduleEnabled[saved.module] ? saved.module : null;
+      if (!mod) return;
+      const tabOk = commonTabs.includes(saved.tab)
+        || (mod === 'interns' ? internTabs.includes(saved.tab) : String(saved.tab).startsWith(prefix[mod]));
+      if (saved.workspace && canSwitchWorkspace && WORKSPACES[saved.workspace]) setAdminWorkspace(saved.workspace);
+      setAdminModule(mod);
+      if (tabOk) setActiveAdminTab(saved.tab);
+    } catch { /* storage indisponível ou JSON inválido: mantém o padrão */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminNavKey]);
+  useEffect(() => {
+    if (!adminNavKey || navRestoredForRef.current !== adminNavKey) return;
+    try {
+      localStorage.setItem(adminNavKey, JSON.stringify({ module: adminModule, tab: activeAdminTab, workspace: adminWorkspace }));
+    } catch { /* ignore */ }
+  }, [adminNavKey, adminModule, activeAdminTab, adminWorkspace]);
+  // Declarado depois do restore/save: libera a gravação só após a restauração aplicada.
+  useEffect(() => { navRestoredForRef.current = adminNavKey; }, [adminNavKey]);
 
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
@@ -8536,54 +8610,54 @@ export default function App() {
   // ============================================================
   const renderAdmin = () => {
     const internNavItems = [
-      { id: 'dashboard',       label: 'Dashboard',               icon: '📊' },
-      { id: 'estagiarios',     label: 'Estagiários',             icon: '👤' },
-      { id: 'documentos',      label: 'Documentos',              icon: '🖨️' },
-      { id: 'frequencia',      label: 'Frequência',              icon: '📋' },
-      { id: 'admissional',     label: 'Documentos Admissionais', icon: '📁' },
-      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: '📈' },
-      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: '⚠️' },
-      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: '🔒' },
-      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: '💰' },
-      { id: 'rh',              label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'dashboard',       label: 'Dashboard',               icon: LayoutDashboard },
+      { id: 'estagiarios',     label: 'Estagiários',             icon: GraduationCap },
+      { id: 'documentos',      label: 'Documentos',              icon: Printer },
+      { id: 'frequencia',      label: 'Frequência',              icon: ClipboardList },
+      { id: 'admissional',     label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: TrendingUp },
+      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: AlertTriangle },
+      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: Lock },
+      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: Wallet },
+      { id: 'rh',              label: 'Alertas & Pendências',    icon: Bell },
     ];
 
     const professionalLabels = BRANDING.professionalLabels || { plural: 'Profissionais PJ' };
     const professionalNavItems = [
-      { id: 'pj_dashboard',     label: 'Dashboard', icon: '📊' },
-      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: '👥' },
-      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: '🗓️' },
-      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: '🧾' },
-      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: '📄' },
+      { id: 'pj_dashboard',     label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: Users },
+      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: CalendarCheck },
+      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: Receipt },
+      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: FileText },
     ];
 
     const employeeLabels = BRANDING.employeeLabels || { plural: 'Funcionários CLT' };
     const employeeNavItems = [
-      { id: 'clt_dashboard',     label: 'Dashboard', icon: '📊' },
-      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: '🧑‍💼' },
-      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: '📁' },
-      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: '📄' },
-      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: '⏱️' },
-      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: '🧾' },
-      { id: 'clt_ferias',        label: 'Férias',                  icon: '🏖️' },
-      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: '🩺' },
-      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: '⚠️' },
-      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: '🔒' },
-      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'clt_dashboard',     label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: Briefcase },
+      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: FileText },
+      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: Timer },
+      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: Calculator },
+      { id: 'clt_ferias',        label: 'Férias',                  icon: Palmtree },
+      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: Stethoscope },
+      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: AlertTriangle },
+      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: UserMinus },
+      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: Bell },
     ];
 
     const freelanceLabels = BRANDING.freelanceLabels || { plural: 'Freelancers', jobs: 'Trabalhos (OS)' };
     const freelanceNavItems = [
-      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: '🧑‍🎨' },
-      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: '📝' },
-      { id: 'freelance_conformidade',  label: 'Conformidade', icon: '⚖️' },
+      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: Users },
+      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: FileText },
+      { id: 'freelance_conformidade',  label: 'Conformidade', icon: Scale },
     ];
 
     const showTalentBank = WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule;
     const commonNavItems = [
-      { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
-      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: '🧑‍💼' }] : []),
-      { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
+      { id: 'aniversariantes', label: 'Aniversariantes', icon: Cake },
+      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: UserSearch }] : []),
+      { id: 'configuracoes',   label: 'Configurações',   icon: Settings },
     ];
 
     // Módulos PJ, CLT e Freelance só aparecem para quem tem
@@ -8620,43 +8694,111 @@ export default function App() {
       violet: 'bg-violet-50 text-violet-700 border-violet-200/80',
     }[moduleAccent];
 
+    const c = sidebarCollapsed;
+    // Sigla para o modo recolhido (ex.: "Profissionais PJ" -> "PP", "Estagiários" -> "E").
+    const railInitials = (label) => {
+      const words = String(label || '').split(/\s+/).filter(Boolean);
+      return (words.length > 1 ? words.slice(0, 2).map((w) => w[0]).join('') : words[0]?.slice(0, 2) || '?').toUpperCase();
+    };
+    const moduleButtons = [
+      { id: 'interns', label: 'Estagiários', firstTab: 'dashboard', activeClass: 'bg-blue-600 text-white border-blue-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-blue-400' },
+      ...(showProfessionalsModule ? [{ id: 'professionals', label: BRANDING.professionalLabels?.plural || 'Profissionais PJ', firstTab: 'pj_dashboard', activeClass: 'bg-teal-600 text-white border-teal-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-teal-400' }] : []),
+      ...(showEmployeesModule ? [{ id: 'employees', label: BRANDING.employeeLabels?.plural || 'Funcionários CLT', firstTab: 'clt_dashboard', activeClass: 'bg-indigo-600 text-white border-indigo-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400' }] : []),
+      ...(showFreelanceModule ? [{ id: 'freelance', label: BRANDING.freelanceLabels?.plural || 'Freelancers', firstTab: 'freelance_freelancers', activeClass: 'bg-violet-600 text-white border-violet-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-violet-400' }] : []),
+    ];
+    const isCommonTab = commonNavItems.some((t) => t.id === activeAdminTab);
+    const currentNavItem = [...adminNavItems, ...commonNavItems].find((t) => t.id === activeAdminTab);
+    const breadcrumbModule = isCommonTab
+      ? 'Geral'
+      : (moduleButtons.find((m) => m.id === adminModule)?.label || 'Estagiários');
+    const breadcrumbUnit = filterUnit === 'all'
+      ? 'Todas as unidades'
+      : (visibleUnits.find((u) => u.id === filterUnit)?.name || filterUnit);
+    const accentIconClass = { blue: 'bg-blue-50 text-blue-700', teal: 'bg-teal-50 text-teal-700', indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700' }[moduleAccent];
+    const renderNavButton = (tab) => {
+      const isActive = activeAdminTab === tab.id;
+      const badge = tab.id === 'rh' && pendingChatCount > 0 ? pendingChatCount : 0;
+      return (
+        <button
+          key={tab.id}
+          onClick={() => setActiveAdminTab(tab.id)}
+          title={c ? tab.label : undefined}
+          aria-current={isActive ? 'page' : undefined}
+          className={`relative w-full flex items-center justify-between ${c ? 'md:justify-center md:px-0' : ''} px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+            isActive
+              ? `${navActiveClass} font-bold border shadow-xs`
+              : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <tab.icon size={18} className="shrink-0" aria-hidden="true" />
+            <span className={c ? 'md:hidden' : ''}>{tab.label}</span>
+          </div>
+          {badge > 0 && (
+            <span className={`bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${c ? 'md:absolute md:top-0.5 md:right-1 md:px-1 md:min-w-[16px] md:text-[9px]' : ''}`}>
+              {badge}
+            </span>
+          )}
+        </button>
+      );
+    };
+
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
-        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) ── */}
-        <aside className="w-full md:w-64 bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:min-h-screen sticky top-0 z-30">
+        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) — retrátil no desktop (Ctrl+B) ── */}
+        <aside className={`w-full ${c ? 'md:w-16' : 'md:w-64'} bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:h-screen sticky top-0 z-30 md:transition-[width] md:duration-200`}>
           {/* Header da Sidebar */}
-          <div className="p-4 border-b border-slate-200/80 bg-white/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />}
-              <div>
-                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">{BRANDING.displayName}</h1>
-                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">
+          <div className={`p-4 ${c ? 'md:px-0 md:py-3' : ''} border-b border-slate-200/80 bg-white/60 flex items-center justify-between shrink-0`}>
+            <div className={`flex items-center gap-3 min-w-0 ${c ? 'md:w-full md:justify-center' : ''}`}>
+              {BRANDING.logoPath && (
+                <img
+                  src={BRANDING.logoPath}
+                  alt={BRANDING.logoAlt}
+                  title={c ? BRANDING.displayName : undefined}
+                  className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200 shrink-0"
+                />
+              )}
+              <div className={`min-w-0 ${c ? 'md:hidden' : ''}`}>
+                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight truncate">{BRANDING.displayName}</h1>
+                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide truncate">
                   {BRANDING.subtitle || 'Gestão de Pessoas'}
                 </p>
               </div>
             </div>
+            {!c && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="hidden md:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                title="Recolher menu (Ctrl+B)"
+                aria-label="Recolher menu lateral"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            )}
           </div>
 
           {/* Filtro de Unidade & Ações Rápidas */}
-          <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
+          <div className={`p-3 ${c ? 'md:px-2' : ''} bg-white/40 border-b border-slate-200/80 space-y-2 shrink-0`}>
             {canSwitchWorkspace && (
               <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                   Grupo de Unidades
                 </label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className={`grid grid-cols-2 gap-1.5 ${c ? 'md:grid-cols-1' : ''}`}>
                   {Object.values(WORKSPACES).map((ws) => (
                     <button
                       key={ws.id}
                       type="button"
                       onClick={() => { setAdminWorkspace(ws.id); setFilterUnit('all'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                      title={ws.displayName}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors truncate ${
                         adminWorkspace === ws.id
                           ? 'bg-blue-600 text-white border-blue-600'
                           : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
                       }`}
                     >
-                      {ws.displayName}
+                      {c ? (<><span className="md:hidden">{ws.displayName}</span><span className="hidden md:inline">{railInitials(ws.displayName)}</span></>) : ws.displayName}
                     </button>
                   ))}
                 </div>
@@ -8664,72 +8806,46 @@ export default function App() {
             )}
             {showModuleToggle && (
               <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                   Módulo
                 </label>
-                <div className={`grid ${moduleToggleGridClass} gap-1.5`}>
-                  <button
-                    type="button"
-                    onClick={() => { setAdminModule('interns'); setActiveAdminTab('dashboard'); }}
-                    className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                      adminModule === 'interns'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
-                    }`}
-                  >
-                    Estagiários
-                  </button>
-                  {showProfessionalsModule && (
+                <div className={`grid ${moduleToggleGridClass} ${c ? 'md:grid-cols-1' : ''} gap-1.5`}>
+                  {moduleButtons.map((m) => (
                     <button
+                      key={m.id}
                       type="button"
-                      onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_dashboard'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'professionals'
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-teal-400'
+                      onClick={() => { setAdminModule(m.id); setActiveAdminTab(m.firstTab); }}
+                      title={m.label}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors truncate ${
+                        adminModule === m.id ? m.activeClass : m.idleClass
                       }`}
                     >
-                      {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                      {c ? (<><span className="md:hidden">{m.label}</span><span className="hidden md:inline">{railInitials(m.label)}</span></>) : m.label}
                     </button>
-                  )}
-                  {showEmployeesModule && (
-                    <button
-                      type="button"
-                      onClick={() => { setAdminModule('employees'); setActiveAdminTab('clt_dashboard'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'employees'
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'
-                      }`}
-                    >
-                      {BRANDING.employeeLabels?.plural || 'Funcionários CLT'}
-                    </button>
-                  )}
-                  {showFreelanceModule && (
-                    <button
-                      type="button"
-                      onClick={() => { setAdminModule('freelance'); setActiveAdminTab('freelance_freelancers'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'freelance'
-                          ? 'bg-violet-600 text-white border-violet-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-violet-400'
-                      }`}
-                    >
-                      {BRANDING.freelanceLabels?.plural || 'Freelancers'}
-                    </button>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
             <div>
-              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+              <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                 Unidade Selecionada
               </label>
+              {c && (
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  title={`Unidade: ${filterUnit === 'all' ? 'Todas as unidades' : (visibleUnits.find((u) => u.id === filterUnit)?.name || filterUnit)} — clique para alterar`}
+                  className="relative hidden md:flex w-full items-center justify-center py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-400 transition-colors"
+                >
+                  <Building2 size={16} />
+                  {filterUnit !== 'all' && <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-blue-600" />}
+                </button>
+              )}
               <select
                 value={filterUnit}
                 onChange={(e) => setFilterUnit(e.target.value)}
                 title="Filtrar por unidade"
-                className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
+                className={`w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm ${c ? 'md:hidden' : ''}`}
               >
                 <option value="all">Todas as unidades</option>
                 {visibleUnits.map((u) => (
@@ -8738,86 +8854,59 @@ export default function App() {
               </select>
             </div>
 
-            <div className="flex gap-2 pt-1">
+            <div className={`flex gap-2 pt-1 ${c ? 'md:flex-col' : ''}`}>
               <button
                 onClick={() => setIsOmnibarOpen(true)}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-2 rounded-lg font-medium transition-colors text-xs shadow-xs"
                 title="Abrir busca rápida (Ctrl+K)"
+                aria-label="Buscar"
               >
-                <Search size={13} />
-                <span>Buscar (Ctrl+K)</span>
+                <Search size={c ? 15 : 13} />
+                <span className={c ? 'md:hidden' : ''}>Buscar (Ctrl+K)</span>
               </button>
               <button
                 onClick={() => setCurrentView('kiosk')}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 py-1.5 px-2 rounded-lg font-medium transition-colors text-xs border border-slate-200 shadow-xs"
                 title="Sair do Painel da Supervisão"
+                aria-label="Sair"
               >
-                <ArrowLeft size={13} />
-                <span>Sair</span>
+                <ArrowLeft size={c ? 15 : 13} />
+                <span className={c ? 'md:hidden' : ''}>Sair</span>
               </button>
             </div>
           </div>
 
           {/* Menus / Links */}
-          <nav className="flex-1 p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
-            {adminNavItems.map(tab => {
-              const isActive = activeAdminTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveAdminTab(tab.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
-                    isActive
-                      ? `${navActiveClass} font-bold border shadow-xs`
-                      : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-base leading-none">{tab.icon}</span>
-                    <span>{tab.label}</span>
-                  </div>
-                  {tab.id === 'rh' && pendingChatCount > 0 && (
-                    <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {pendingChatCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <nav className={`flex-1 p-3 ${c ? 'md:px-2' : ''} space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none md:min-h-0 flex flex-row md:flex-col overflow-x-auto md:overflow-x-hidden`}>
+            {adminNavItems.map(renderNavButton)}
 
             {/* Seção comum aos 3 módulos — sempre visível, independente do módulo ativo */}
             <div className="pt-2 mt-2 border-t border-slate-200/80 flex flex-row md:flex-col gap-1 md:gap-0 space-y-0 md:space-y-1">
-              {commonNavItems.map(tab => {
-                const isActive = activeAdminTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveAdminTab(tab.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
-                      isActive
-                        ? `${navActiveClass} font-bold border shadow-xs`
-                        : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-base leading-none">{tab.icon}</span>
-                      <span>{tab.label}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              {commonNavItems.map(renderNavButton)}
             </div>
           </nav>
 
           {/* Rodapé da Sidebar */}
-          <div className="hidden md:block p-3 border-t border-slate-200/80 text-[11px] text-slate-400 text-center bg-white/40">
-            Controle Integrado • v2.5
+          <div className="hidden md:flex shrink-0 items-center justify-between gap-2 p-2 border-t border-slate-200/80 text-[11px] text-slate-400 bg-white/40">
+            {c ? (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="mx-auto p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors"
+                title="Expandir menu (Ctrl+B)"
+                aria-label="Expandir menu lateral"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            ) : (
+              <span className="px-1">Controle Integrado • v2.5</span>
+            )}
           </div>
         </aside>
 
         {/* ── ÁREA DE CONTEÚDO PRINCIPAL ── */}
         <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6">
 
             {adminModule === 'interns' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
@@ -8835,6 +8924,33 @@ export default function App() {
               </div>
             )}
 
+            {currentNavItem && (
+              <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accentIconClass}`}>
+                    <currentNavItem.icon size={20} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                      <span className="truncate">{BRANDING.displayName}</span>
+                      <ChevronRight size={12} aria-hidden="true" />
+                      <span className="truncate">{breadcrumbModule}</span>
+                    </nav>
+                    <h2 className="text-xl font-bold text-slate-800 leading-tight truncate">{currentNavItem.label}</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { if (c) toggleSidebar(); }}
+                  title="Unidade selecionada (altere no menu lateral)"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-slate-300"
+                >
+                  <Building2 size={13} aria-hidden="true" />
+                  {breadcrumbUnit}
+                </button>
+              </header>
+            )}
+
             {/* ── CONTEÚDO DAS ABAS ── */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6">
               <ErrorBoundary>
@@ -8843,104 +8959,166 @@ export default function App() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 }>
+                  {(visitedAdminTabs.has('dashboard') || activeAdminTab === 'dashboard') && (
                   <div style={{ display: activeAdminTab === 'dashboard' ? 'block' : 'none' }}>
                     <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('frequencia') || activeAdminTab === 'frequencia') && (
                   <div style={{ display: activeAdminTab === 'frequencia' ? 'block' : 'none' }}>
                     <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('estagiarios') || activeAdminTab === 'estagiarios') && (
                   <div style={{ display: activeAdminTab === 'estagiarios' ? 'block' : 'none' }}>
                     <EstagiariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('acompanhamento') || activeAdminTab === 'acompanhamento') && (
                   <div style={{ display: activeAdminTab === 'acompanhamento' ? 'block' : 'none' }}>
                     <AcompanhamentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('financeiro') || activeAdminTab === 'financeiro') && (
                   <div style={{ display: activeAdminTab === 'financeiro' ? 'block' : 'none' }}>
                     <FinanceiroTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('ocorrencias') || activeAdminTab === 'ocorrencias') && (
                   <div style={{ display: activeAdminTab === 'ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('finalizacao') || activeAdminTab === 'finalizacao') && (
                   <div style={{ display: activeAdminTab === 'finalizacao' ? 'block' : 'none' }}>
                     <EncerramentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('documentos') || activeAdminTab === 'documentos') && (
                   <div style={{ display: activeAdminTab === 'documentos' ? 'block' : 'none' }}>
                     <DocumentosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('admissional') || activeAdminTab === 'admissional') && (
                   <div style={{ display: activeAdminTab === 'admissional' ? 'block' : 'none' }}>
                     <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('rh') || activeAdminTab === 'rh') && (
                   <div style={{ display: activeAdminTab === 'rh' ? 'block' : 'none' }}>
                     <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('aniversariantes') || activeAdminTab === 'aniversariantes') && (
                   <div style={{ display: activeAdminTab === 'aniversariantes' ? 'block' : 'none' }}>
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
-                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (
+                  )}
+                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (visitedAdminTabs.has('banco_talentos') || activeAdminTab === 'banco_talentos') && (
                     <div style={{ display: activeAdminTab === 'banco_talentos' ? 'block' : 'none' }}>
                       <BancoTalentosTab units={visibleUnits} />
                     </div>
                   )}
+                  {(visitedAdminTabs.has('configuracoes') || activeAdminTab === 'configuracoes') && (
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
                     <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_dashboard') || activeAdminTab === 'pj_dashboard') && (
                   <div style={{ display: activeAdminTab === 'pj_dashboard' ? 'block' : 'none' }}>
                     <DashboardProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'pj_dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_profissionais') || activeAdminTab === 'pj_profissionais') && (
                   <div style={{ display: activeAdminTab === 'pj_profissionais' ? 'block' : 'none' }}>
                     <ProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_presenca') || activeAdminTab === 'pj_presenca') && (
                   <div style={{ display: activeAdminTab === 'pj_presenca' ? 'block' : 'none' }}>
                     <PresencaProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_producao') || activeAdminTab === 'pj_producao') && (
                   <div style={{ display: activeAdminTab === 'pj_producao' ? 'block' : 'none' }}>
                     <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_documentos') || activeAdminTab === 'pj_documentos') && (
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
                     <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={units} branding={BRANDING} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_dashboard') || activeAdminTab === 'clt_dashboard') && (
                   <div style={{ display: activeAdminTab === 'clt_dashboard' ? 'block' : 'none' }}>
                     <DashboardFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'clt_dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_funcionarios') || activeAdminTab === 'clt_funcionarios') && (
                   <div style={{ display: activeAdminTab === 'clt_funcionarios' ? 'block' : 'none' }}>
                     <FuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_dossie') || activeAdminTab === 'clt_dossie') && (
                   <div style={{ display: activeAdminTab === 'clt_dossie' ? 'block' : 'none' }}>
                     <DossieFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_documentos') || activeAdminTab === 'clt_documentos') && (
                   <div style={{ display: activeAdminTab === 'clt_documentos' ? 'block' : 'none' }}>
                     <DocumentosFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ponto') || activeAdminTab === 'clt_ponto') && (
                   <div style={{ display: activeAdminTab === 'clt_ponto' ? 'block' : 'none' }}>
                     <PontoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_apuracao') || activeAdminTab === 'clt_apuracao') && (
                   <div style={{ display: activeAdminTab === 'clt_apuracao' ? 'block' : 'none' }}>
                     <ApuracaoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ferias') || activeAdminTab === 'clt_ferias') && (
                   <div style={{ display: activeAdminTab === 'clt_ferias' ? 'block' : 'none' }}>
                     <FeriasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_saude') || activeAdminTab === 'clt_saude') && (
                   <div style={{ display: activeAdminTab === 'clt_saude' ? 'block' : 'none' }}>
                     <SaudeOcupacionalTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ocorrencias') || activeAdminTab === 'clt_ocorrencias') && (
                   <div style={{ display: activeAdminTab === 'clt_ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_encerramento') || activeAdminTab === 'clt_encerramento') && (
                   <div style={{ display: activeAdminTab === 'clt_encerramento' ? 'block' : 'none' }}>
                     <EncerramentoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_alertas') || activeAdminTab === 'clt_alertas') && (
                   <div style={{ display: activeAdminTab === 'clt_alertas' ? 'block' : 'none' }}>
                     <AlertasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_freelancers') || activeAdminTab === 'freelance_freelancers') && (
                   <div style={{ display: activeAdminTab === 'freelance_freelancers' ? 'block' : 'none' }}>
                     <FreelancersTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_trabalhos') || activeAdminTab === 'freelance_trabalhos') && (
                   <div style={{ display: activeAdminTab === 'freelance_trabalhos' ? 'block' : 'none' }}>
                     <FreelanceJobsTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_conformidade') || activeAdminTab === 'freelance_conformidade') && (
                   <div style={{ display: activeAdminTab === 'freelance_conformidade' ? 'block' : 'none' }}>
                     <ConformidadeFreelanceTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
                 </Suspense>
               </ErrorBoundary>
             </div>
