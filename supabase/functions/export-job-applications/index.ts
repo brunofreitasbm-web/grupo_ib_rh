@@ -58,18 +58,20 @@ Deno.serve(async (req: Request) => {
   const reqUrl = new URL(req.url);
   const status = reqUrl.searchParams.get("status");
   const limit = Math.min(Math.max(Number(reqUrl.searchParams.get("limit")) || 50, 1), 200);
+  const offset = Math.max(Math.floor(Number(reqUrl.searchParams.get("offset")) || 0), 0);
 
   let query = admin
     .from("fa_kiosk_job_applications")
-    .select("id, full_name, email, phone, course, desired_area, opportunity_type, resume_path, status, created_at_ms")
+    .select("id, full_name, email, phone, course, desired_area, opportunity_type, resume_path, status, created_at_ms", { count: "exact" })
     .order("created_at_ms", { ascending: false })
-    .limit(limit);
+    .order("id", { ascending: true }) // desempate estável entre páginas
+    .range(offset, offset + limit - 1);
 
   if (status && ALLOWED_STATUS.includes(status)) {
     query = query.eq("status", status);
   }
 
-  const { data, error } = await query;
+  const { data, count, error } = await query;
 
   if (error) {
     console.error("[export-job-applications] Erro ao consultar candidaturas:", error);
@@ -101,5 +103,5 @@ Deno.serve(async (req: Request) => {
     resume_url: r.resume_path ? signedUrlByPath[r.resume_path] ?? null : null,
   }));
 
-  return jsonResponse({ candidates });
+  return jsonResponse({ candidates, total: count ?? candidates.length, limit, offset });
 });
