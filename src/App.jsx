@@ -6,7 +6,9 @@ import {
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
   ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, ClipboardList, TrendingUp, Wallet, Bell,
+  CalendarCheck, Receipt, Calculator, Palmtree, Stethoscope, UserMinus, Scale, Cake, UserSearch,
+  Settings, ChevronRight
 } from 'lucide-react';
 import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
@@ -210,6 +212,12 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+  // Abas do painel admin já visitadas: cada aba só monta (e carrega seu chunk/dados)
+  // na primeira visita e depois fica montada, preservando filtros e rascunhos.
+  const [visitedAdminTabs, setVisitedAdminTabs] = useState(() => new Set(['dashboard']));
+  useEffect(() => {
+    setVisitedAdminTabs((prev) => (prev.has(activeAdminTab) ? prev : new Set(prev).add(activeAdminTab)));
+  }, [activeAdminTab]);
   // Sidebar do painel admin retrátil (só desktop). Preferência persistida; sem
   // preferência salva, começa recolhida em telas < 1280px para dar espaço às tabelas.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -8564,54 +8572,54 @@ export default function App() {
   // ============================================================
   const renderAdmin = () => {
     const internNavItems = [
-      { id: 'dashboard',       label: 'Dashboard',               icon: '📊' },
-      { id: 'estagiarios',     label: 'Estagiários',             icon: '👤' },
-      { id: 'documentos',      label: 'Documentos',              icon: '🖨️' },
-      { id: 'frequencia',      label: 'Frequência',              icon: '📋' },
-      { id: 'admissional',     label: 'Documentos Admissionais', icon: '📁' },
-      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: '📈' },
-      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: '⚠️' },
-      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: '🔒' },
-      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: '💰' },
-      { id: 'rh',              label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'dashboard',       label: 'Dashboard',               icon: LayoutDashboard },
+      { id: 'estagiarios',     label: 'Estagiários',             icon: GraduationCap },
+      { id: 'documentos',      label: 'Documentos',              icon: Printer },
+      { id: 'frequencia',      label: 'Frequência',              icon: ClipboardList },
+      { id: 'admissional',     label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: TrendingUp },
+      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: AlertTriangle },
+      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: Lock },
+      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: Wallet },
+      { id: 'rh',              label: 'Alertas & Pendências',    icon: Bell },
     ];
 
     const professionalLabels = BRANDING.professionalLabels || { plural: 'Profissionais PJ' };
     const professionalNavItems = [
-      { id: 'pj_dashboard',     label: 'Dashboard', icon: '📊' },
-      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: '👥' },
-      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: '🗓️' },
-      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: '🧾' },
-      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: '📄' },
+      { id: 'pj_dashboard',     label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: Users },
+      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: CalendarCheck },
+      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: Receipt },
+      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: FileText },
     ];
 
     const employeeLabels = BRANDING.employeeLabels || { plural: 'Funcionários CLT' };
     const employeeNavItems = [
-      { id: 'clt_dashboard',     label: 'Dashboard', icon: '📊' },
-      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: '🧑‍💼' },
-      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: '📁' },
-      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: '📄' },
-      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: '⏱️' },
-      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: '🧾' },
-      { id: 'clt_ferias',        label: 'Férias',                  icon: '🏖️' },
-      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: '🩺' },
-      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: '⚠️' },
-      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: '🔒' },
-      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'clt_dashboard',     label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: Briefcase },
+      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: FileText },
+      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: Timer },
+      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: Calculator },
+      { id: 'clt_ferias',        label: 'Férias',                  icon: Palmtree },
+      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: Stethoscope },
+      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: AlertTriangle },
+      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: UserMinus },
+      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: Bell },
     ];
 
     const freelanceLabels = BRANDING.freelanceLabels || { plural: 'Freelancers', jobs: 'Trabalhos (OS)' };
     const freelanceNavItems = [
-      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: '🧑‍🎨' },
-      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: '📝' },
-      { id: 'freelance_conformidade',  label: 'Conformidade', icon: '⚖️' },
+      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: Users },
+      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: FileText },
+      { id: 'freelance_conformidade',  label: 'Conformidade', icon: Scale },
     ];
 
     const showTalentBank = WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule;
     const commonNavItems = [
-      { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
-      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: '🧑‍💼' }] : []),
-      { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
+      { id: 'aniversariantes', label: 'Aniversariantes', icon: Cake },
+      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: UserSearch }] : []),
+      { id: 'configuracoes',   label: 'Configurações',   icon: Settings },
     ];
 
     // Módulos PJ, CLT e Freelance só aparecem para quem tem
@@ -8660,6 +8668,15 @@ export default function App() {
       ...(showEmployeesModule ? [{ id: 'employees', label: BRANDING.employeeLabels?.plural || 'Funcionários CLT', firstTab: 'clt_dashboard', activeClass: 'bg-indigo-600 text-white border-indigo-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400' }] : []),
       ...(showFreelanceModule ? [{ id: 'freelance', label: BRANDING.freelanceLabels?.plural || 'Freelancers', firstTab: 'freelance_freelancers', activeClass: 'bg-violet-600 text-white border-violet-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-violet-400' }] : []),
     ];
+    const isCommonTab = commonNavItems.some((t) => t.id === activeAdminTab);
+    const currentNavItem = [...adminNavItems, ...commonNavItems].find((t) => t.id === activeAdminTab);
+    const breadcrumbModule = isCommonTab
+      ? 'Geral'
+      : (moduleButtons.find((m) => m.id === adminModule)?.label || 'Estagiários');
+    const breadcrumbUnit = filterUnit === 'all'
+      ? 'Todas as unidades'
+      : (visibleUnits.find((u) => u.id === filterUnit)?.name || filterUnit);
+    const accentIconClass = { blue: 'bg-blue-50 text-blue-700', teal: 'bg-teal-50 text-teal-700', indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700' }[moduleAccent];
     const renderNavButton = (tab) => {
       const isActive = activeAdminTab === tab.id;
       const badge = tab.id === 'rh' && pendingChatCount > 0 ? pendingChatCount : 0;
@@ -8676,7 +8693,7 @@ export default function App() {
           }`}
         >
           <div className="flex items-center gap-3">
-            <span className="text-base leading-none">{tab.icon}</span>
+            <tab.icon size={18} className="shrink-0" aria-hidden="true" />
             <span className={c ? 'md:hidden' : ''}>{tab.label}</span>
           </div>
           {badge > 0 && (
@@ -8869,6 +8886,33 @@ export default function App() {
               </div>
             )}
 
+            {currentNavItem && (
+              <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accentIconClass}`}>
+                    <currentNavItem.icon size={20} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                      <span className="truncate">{BRANDING.displayName}</span>
+                      <ChevronRight size={12} aria-hidden="true" />
+                      <span className="truncate">{breadcrumbModule}</span>
+                    </nav>
+                    <h2 className="text-xl font-bold text-slate-800 leading-tight truncate">{currentNavItem.label}</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { if (c) toggleSidebar(); }}
+                  title="Unidade selecionada (altere no menu lateral)"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-slate-300"
+                >
+                  <Building2 size={13} aria-hidden="true" />
+                  {breadcrumbUnit}
+                </button>
+              </header>
+            )}
+
             {/* ── CONTEÚDO DAS ABAS ── */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6">
               <ErrorBoundary>
@@ -8877,104 +8921,166 @@ export default function App() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 }>
+                  {(visitedAdminTabs.has('dashboard') || activeAdminTab === 'dashboard') && (
                   <div style={{ display: activeAdminTab === 'dashboard' ? 'block' : 'none' }}>
                     <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('frequencia') || activeAdminTab === 'frequencia') && (
                   <div style={{ display: activeAdminTab === 'frequencia' ? 'block' : 'none' }}>
                     <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('estagiarios') || activeAdminTab === 'estagiarios') && (
                   <div style={{ display: activeAdminTab === 'estagiarios' ? 'block' : 'none' }}>
                     <EstagiariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('acompanhamento') || activeAdminTab === 'acompanhamento') && (
                   <div style={{ display: activeAdminTab === 'acompanhamento' ? 'block' : 'none' }}>
                     <AcompanhamentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('financeiro') || activeAdminTab === 'financeiro') && (
                   <div style={{ display: activeAdminTab === 'financeiro' ? 'block' : 'none' }}>
                     <FinanceiroTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('ocorrencias') || activeAdminTab === 'ocorrencias') && (
                   <div style={{ display: activeAdminTab === 'ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('finalizacao') || activeAdminTab === 'finalizacao') && (
                   <div style={{ display: activeAdminTab === 'finalizacao' ? 'block' : 'none' }}>
                     <EncerramentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('documentos') || activeAdminTab === 'documentos') && (
                   <div style={{ display: activeAdminTab === 'documentos' ? 'block' : 'none' }}>
                     <DocumentosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('admissional') || activeAdminTab === 'admissional') && (
                   <div style={{ display: activeAdminTab === 'admissional' ? 'block' : 'none' }}>
                     <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('rh') || activeAdminTab === 'rh') && (
                   <div style={{ display: activeAdminTab === 'rh' ? 'block' : 'none' }}>
                     <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('aniversariantes') || activeAdminTab === 'aniversariantes') && (
                   <div style={{ display: activeAdminTab === 'aniversariantes' ? 'block' : 'none' }}>
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
-                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (
+                  )}
+                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (visitedAdminTabs.has('banco_talentos') || activeAdminTab === 'banco_talentos') && (
                     <div style={{ display: activeAdminTab === 'banco_talentos' ? 'block' : 'none' }}>
                       <BancoTalentosTab units={visibleUnits} />
                     </div>
                   )}
+                  {(visitedAdminTabs.has('configuracoes') || activeAdminTab === 'configuracoes') && (
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
                     <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_dashboard') || activeAdminTab === 'pj_dashboard') && (
                   <div style={{ display: activeAdminTab === 'pj_dashboard' ? 'block' : 'none' }}>
                     <DashboardProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'pj_dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_profissionais') || activeAdminTab === 'pj_profissionais') && (
                   <div style={{ display: activeAdminTab === 'pj_profissionais' ? 'block' : 'none' }}>
                     <ProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_presenca') || activeAdminTab === 'pj_presenca') && (
                   <div style={{ display: activeAdminTab === 'pj_presenca' ? 'block' : 'none' }}>
                     <PresencaProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_producao') || activeAdminTab === 'pj_producao') && (
                   <div style={{ display: activeAdminTab === 'pj_producao' ? 'block' : 'none' }}>
                     <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_documentos') || activeAdminTab === 'pj_documentos') && (
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
                     <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={units} branding={BRANDING} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_dashboard') || activeAdminTab === 'clt_dashboard') && (
                   <div style={{ display: activeAdminTab === 'clt_dashboard' ? 'block' : 'none' }}>
                     <DashboardFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'clt_dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_funcionarios') || activeAdminTab === 'clt_funcionarios') && (
                   <div style={{ display: activeAdminTab === 'clt_funcionarios' ? 'block' : 'none' }}>
                     <FuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_dossie') || activeAdminTab === 'clt_dossie') && (
                   <div style={{ display: activeAdminTab === 'clt_dossie' ? 'block' : 'none' }}>
                     <DossieFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_documentos') || activeAdminTab === 'clt_documentos') && (
                   <div style={{ display: activeAdminTab === 'clt_documentos' ? 'block' : 'none' }}>
                     <DocumentosFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ponto') || activeAdminTab === 'clt_ponto') && (
                   <div style={{ display: activeAdminTab === 'clt_ponto' ? 'block' : 'none' }}>
                     <PontoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_apuracao') || activeAdminTab === 'clt_apuracao') && (
                   <div style={{ display: activeAdminTab === 'clt_apuracao' ? 'block' : 'none' }}>
                     <ApuracaoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ferias') || activeAdminTab === 'clt_ferias') && (
                   <div style={{ display: activeAdminTab === 'clt_ferias' ? 'block' : 'none' }}>
                     <FeriasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_saude') || activeAdminTab === 'clt_saude') && (
                   <div style={{ display: activeAdminTab === 'clt_saude' ? 'block' : 'none' }}>
                     <SaudeOcupacionalTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ocorrencias') || activeAdminTab === 'clt_ocorrencias') && (
                   <div style={{ display: activeAdminTab === 'clt_ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_encerramento') || activeAdminTab === 'clt_encerramento') && (
                   <div style={{ display: activeAdminTab === 'clt_encerramento' ? 'block' : 'none' }}>
                     <EncerramentoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_alertas') || activeAdminTab === 'clt_alertas') && (
                   <div style={{ display: activeAdminTab === 'clt_alertas' ? 'block' : 'none' }}>
                     <AlertasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_freelancers') || activeAdminTab === 'freelance_freelancers') && (
                   <div style={{ display: activeAdminTab === 'freelance_freelancers' ? 'block' : 'none' }}>
                     <FreelancersTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_trabalhos') || activeAdminTab === 'freelance_trabalhos') && (
                   <div style={{ display: activeAdminTab === 'freelance_trabalhos' ? 'block' : 'none' }}>
                     <FreelanceJobsTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_conformidade') || activeAdminTab === 'freelance_conformidade') && (
                   <div style={{ display: activeAdminTab === 'freelance_conformidade' ? 'block' : 'none' }}>
                     <ConformidadeFreelanceTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
                 </Suspense>
               </ErrorBoundary>
             </div>
