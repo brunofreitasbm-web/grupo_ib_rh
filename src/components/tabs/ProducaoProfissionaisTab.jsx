@@ -12,6 +12,7 @@ import {
 import { calculateProfessionalProduction } from '../../utils/hoursCalculations';
 import { BRANDING } from '../../config/branding';
 import NfseUploadModal from '../NfseUploadModal';
+import PjDispatchConfigModal from '../PjDispatchConfigModal';
 
 const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -40,6 +41,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   const [loading, setLoading] = useState(true);
   const [monthKey, setMonthKey] = useState(new Date().toISOString().substring(0, 7));
   const [showNfseModal, setShowNfseModal] = useState(false);
+  const [showDispatchConfigModal, setShowDispatchConfigModal] = useState(false);
   const [notifyingId, setNotifyingId] = useState(null);
   const [notifyingBulk, setNotifyingBulk] = useState(false);
   const [openingDocKey, setOpeningDocKey] = useState(null);
@@ -316,12 +318,19 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
             <Upload size={14} /> Anexar NFSe Manual
           </button>
           <button
+            onClick={() => setShowDispatchConfigModal(true)}
+            className="flex items-center gap-1.5 bg-[#F0196B] hover:bg-[#d6135c] text-white font-bold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm"
+            title="Configurar dia do mês para disparo automatizado e disparar e-mails FaçaAmigos aos PJ"
+          >
+            <Bell size={14} /> Disparo de E-mails PJ (FaçaAmigos)
+          </button>
+          <button
             onClick={handleNotifyPending}
             disabled={notifyingBulk}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm disabled:opacity-50"
             title="Avisar todos os prestadores pendentes de emissão de NF nesta competência com o template FaçaAmigos"
           >
-            {notifyingBulk ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />} Avisar Pendentes (FaçaAmigos)
+            {notifyingBulk ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />} Avisar Pendentes
           </button>
           <button onClick={handleExportCSV} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700" title="Exportar CSV">
             <Download size={14} />
@@ -505,6 +514,15 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
           fetchData();
         }}
         branding={branding}
+      />
+
+      <PjDispatchConfigModal
+        isOpen={showDispatchConfigModal}
+        onClose={() => setShowDispatchConfigModal(false)}
+        production={production}
+        monthKey={monthKey}
+        nfByProfessional={nfByProfessional}
+        onDispatched={fetchData}
       />
     </div>
   );
