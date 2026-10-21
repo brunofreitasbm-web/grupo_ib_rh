@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { FileText, Printer, Download, Upload, Bell, Loader2 } from 'lucide-react';
+import { FileText, Printer, Download, Upload, Bell, Loader2, CheckCircle2, XCircle, Eye, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../supabase';
 import {
@@ -7,6 +7,7 @@ import {
   mapProfessionalPresenceFromDb,
   PROFESSIONAL_SELECT_FIELDS,
   PROFESSIONAL_PRESENCE_SELECT_FIELDS,
+  getFriendlyDbErrorMessage,
 } from '../../utils/mappings';
 import { calculateProfessionalProduction } from '../../utils/hoursCalculations';
 import { BRANDING } from '../../config/branding';
@@ -14,15 +15,24 @@ import NfseUploadModal from '../NfseUploadModal';
 
 const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-// Apuração mensal de produção de Profissionais PJ: dias com presença, total de
-// horas e Módulos Assistenciais (matutino/vespertino) entregues na competência,
-// apresentado como base de conferência para a Nota Fiscal — nunca como "folha
-// de pagamento" (ver plano do módulo PJ, seção 1). Os honorários são o preço do
-// módulo multiplicado pelos módulos entregues (Cláusula 6ª do contrato-quadro).
-//
-// Vocabulário é blindagem: esta tela é impressa e exportada, então evita
-// "gratificação" (verba celetista, art. 457 §1º da CLT) e "turno" (unidade de
-// jornada). No código os campos seguem chamando shift* por compatibilidade.
+const openPdfInNewTab = (base64Content) => {
+  try {
+    const cleanBase64 = base64Content.replace(/^data:application\/pdf;base64,/, '');
+    const byteCharacters = atob(cleanBase64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, '_blank');
+  } catch (err) {
+    console.error('Erro ao abrir PDF:', err);
+    toast.error('Não foi possível abrir o arquivo PDF da nota.');
+  }
+};
+
 export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [], branding }) {
   const [professionals, setProfessionals] = useState([]);
   const [presence, setPresence] = useState([]);
@@ -32,6 +42,8 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   const [showNfseModal, setShowNfseModal] = useState(false);
   const [notifyingId, setNotifyingId] = useState(null);
   const [notifyingBulk, setNotifyingBulk] = useState(false);
+  const [openingDocKey, setOpeningDocKey] = useState(null);
+  const [actingDocKey, setActingDocKey] = useState(null);
 
   const labels = BRANDING.professionalLabels || { production: 'Apuração de Produção' };
 
@@ -45,7 +57,8 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
         .order('timestamp', { ascending: true });
       const { data: docsData } = await supabase
         .from('professional_documents')
-        .select('professional_id, doc_key, meta, created_at');
+        .select('professional_id, doc_key, meta, created_at')
+        .order('created_at', { ascending: false });
 
       if (profData) setProfessionals(profData.map(mapProfessionalFromDb).filter((p) => !restrictedUnitIds.includes(p.unitId)));
       if (presData) setPresence(presData.map(mapProfessionalPresenceFromDb).filter((r) => !restrictedUnitIds.includes(r.unitId)));
@@ -64,9 +77,6 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
     [presence, professionals, monthKey, filterUnit]
   );
 
-  // Aviso de emissão de NF e a própria NF são registrados em
-  // professional_documents (doc_key `aviso-nf-<mês>` e `nf-<mês>-*`,
-  // respectivamente) — deriva por prestador o estado da competência corrente.
   const noticeByProfessional = useMemo(() => {
     const map = new Map();
     nfDocs.forEach((doc) => {
@@ -77,20 +87,22 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
     return map;
   }, [nfDocs, monthKey]);
 
-  const hasNfForMonth = useMemo(() => {
-    const set = new Set();
+  // Documento de NFSe da competência corrente por profissional (pega o mais recente)
+  const nfByProfessional = useMemo(() => {
+    const map = new Map();
     nfDocs.forEach((doc) => {
-      if (doc.doc_key.startsWith(`nf-${monthKey}-`) || doc.meta?.competencia === monthKey) {
-        set.add(doc.professional_id);
+      const isCompMatch = doc.meta?.competencia === monthKey || doc.doc_key.startsWith(`nf-${monthKey}-`);
+      if (isCompMatch && !map.has(doc.professional_id)) {
+        map.set(doc.professional_id, doc);
       }
     });
-    return set;
+    return map;
   }, [nfDocs, monthKey]);
 
-  const notifyProfessionals = async (professionalIds) => {
+  const notifyProfessionals = async (items) => {
     try {
       const { data, error } = await supabase.functions.invoke('notify-professional-nfse', {
-        body: { competencia: monthKey, professionalIds },
+        body: { competencia: monthKey, items },
       });
       if (error) throw error;
 
@@ -99,7 +111,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
       const semEmail = results.filter((r) => r.status === 'sem_email').length;
       const erros = results.filter((r) => r.status === 'erro').length;
 
-      if (sent > 0) toast.success(`Aviso enviado para ${sent} prestador(es).`);
+      if (sent > 0) toast.success(`Aviso FaçaAmigos com link enviado para ${sent} prestador(es).`);
       if (semEmail > 0) toast.warning(`${semEmail} prestador(es) sem e-mail cadastrado.`);
       if (erros > 0) toast.error(`Falha ao avisar ${erros} prestador(es).`);
       if (results.length === 0) toast.error('Nenhum resultado retornado pelo envio de aviso.');
@@ -114,31 +126,130 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   const handleNotifyOne = async (professionalId) => {
     setNotifyingId(professionalId);
     try {
-      await notifyProfessionals([professionalId]);
+      const row = production.find((r) => r.professional.id === professionalId);
+      await notifyProfessionals([
+        {
+          professionalId,
+          calculatedAmount: row?.totalPayable || 0,
+        },
+      ]);
     } finally {
       setNotifyingId(null);
     }
   };
 
   const handleNotifyPending = async () => {
-    const pendingIds = production
-      .filter((row) => !hasNfForMonth.has(row.professional.id) && !noticeByProfessional.has(row.professional.id))
-      .map((row) => row.professional.id);
+    const pendingRows = production.filter(
+      (row) => !nfByProfessional.has(row.professional.id) && !noticeByProfessional.has(row.professional.id)
+    );
 
-    if (pendingIds.length === 0) {
+    if (pendingRows.length === 0) {
       toast.info('Nenhum prestador pendente de aviso nesta competência.');
       return;
     }
 
-    if (!window.confirm(`Enviar aviso de emissão de NF para ${pendingIds.length} prestador(es) sem NF nem aviso nesta competência?`)) {
+    if (!window.confirm(`Enviar aviso FaçaAmigos com link e valor apurado para ${pendingRows.length} prestador(es) pendentes?`)) {
       return;
     }
 
     setNotifyingBulk(true);
     try {
-      await notifyProfessionals(pendingIds);
+      const items = pendingRows.map((r) => ({
+        professionalId: r.professional.id,
+        calculatedAmount: r.totalPayable || 0,
+      }));
+      await notifyProfessionals(items);
     } finally {
       setNotifyingBulk(false);
+    }
+  };
+
+  const handleViewPdf = async (professionalId, docKey) => {
+    setOpeningDocKey(docKey);
+    try {
+      const { data, error } = await supabase
+        .from('professional_documents')
+        .select('content')
+        .eq('professional_id', professionalId)
+        .eq('doc_key', docKey)
+        .single();
+
+      if (error) throw error;
+      if (!data?.content) {
+        toast.error('Conteúdo do arquivo não encontrado.');
+        return;
+      }
+      openPdfInNewTab(data.content);
+    } catch (err) {
+      console.error('Erro ao buscar PDF da NF:', err);
+      toast.error('Não foi possível carregar o arquivo da Nota Fiscal.');
+    } finally {
+      setOpeningDocKey(null);
+    }
+  };
+
+  const handleApproveNf = async (professionalId, docKey, currentMeta) => {
+    const valorFormatted = currentMeta?.valor ? fmtBRL(currentMeta.valor) : 'R$ 0,00';
+    if (!window.confirm(`Confirmar validação e aprovar a NFSe (Valor: ${valorFormatted})? O registro será encaminhado ao Financeiro para liquidação.`)) {
+      return;
+    }
+
+    setActingDocKey(docKey);
+    try {
+      const updatedMeta = {
+        ...currentMeta,
+        status: 'aprovado',
+        validatedAt: new Date().toISOString(),
+        validatedBy: 'RH',
+      };
+      const { error } = await supabase
+        .from('professional_documents')
+        .update({ meta: updatedMeta })
+        .eq('professional_id', professionalId)
+        .eq('doc_key', docKey);
+
+      if (error) throw error;
+      toast.success('NFSe APROVADA pelo RH! Encaminhada para o Financeiro com sucesso.');
+      await fetchData();
+    } catch (err) {
+      console.error('Erro ao aprovar NFSe:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setActingDocKey(null);
+    }
+  };
+
+  const handleRejectNf = async (professionalId, docKey, currentMeta) => {
+    const reason = window.prompt('Informe a justificativa/motivo para a rejeição da NFSe (o prestador precisará reenviar):');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      toast.error('A justificativa de rejeição é obrigatória.');
+      return;
+    }
+
+    setActingDocKey(docKey);
+    try {
+      const updatedMeta = {
+        ...currentMeta,
+        status: 'rejeitado',
+        rejectionReason: reason.trim(),
+        validatedAt: new Date().toISOString(),
+        validatedBy: 'RH',
+      };
+      const { error } = await supabase
+        .from('professional_documents')
+        .update({ meta: updatedMeta })
+        .eq('professional_id', professionalId)
+        .eq('doc_key', docKey);
+
+      if (error) throw error;
+      toast.warning(`NFSe rejeitada pelo RH. Motivo: ${reason}`);
+      await fetchData();
+    } catch (err) {
+      console.error('Erro ao rejeitar NFSe:', err);
+      toast.error(getFriendlyDbErrorMessage(err));
+    } finally {
+      setActingDocKey(null);
     }
   };
 
@@ -147,20 +258,27 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   };
 
   const handleExportCSV = () => {
-    const headers = 'Prestador,Dias com Presença,Total de Horas,Módulos Matutinos,Módulos Vespertinos,Módulos Entregues,Preço do Módulo,Módulos em Domingo,Diária Extra de Domingo,Honorários\n';
+    const headers = 'Prestador,Dias com Presença,Total de Horas,Módulos Matutinos,Módulos Vespertinos,Módulos Entregues,Preço do Módulo,Módulos em Domingo,Diária Extra de Domingo,Honorários,Status NF,Valor NF\n';
     const rows = production
-      .map((row) => [
-        `"${row.professional.name}"`,
-        row.daysPresent,
-        row.totalHours.toFixed(2),
-        row.morningShifts,
-        row.afternoonShifts,
-        row.shiftsPresent,
-        row.shiftValue.toFixed(2),
-        row.sundayShiftsPresent,
-        row.sundayBonusTotal.toFixed(2),
-        row.totalPayable.toFixed(2),
-      ].join(','))
+      .map((row) => {
+        const nfDoc = nfByProfessional.get(row.professional.id);
+        const nfStatus = nfDoc?.meta?.status || 'pendente_envio';
+        const nfValor = nfDoc?.meta?.valor ? Number(nfDoc.meta.valor).toFixed(2) : '0.00';
+        return [
+          `"${row.professional.name}"`,
+          row.daysPresent,
+          row.totalHours.toFixed(2),
+          row.morningShifts,
+          row.afternoonShifts,
+          row.shiftsPresent,
+          row.shiftValue.toFixed(2),
+          row.sundayShiftsPresent,
+          row.sundayBonusTotal.toFixed(2),
+          row.totalPayable.toFixed(2),
+          `"${nfStatus}"`,
+          nfValor,
+        ].join(',');
+      })
       .join('\n');
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -189,21 +307,21 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
             type="month"
             value={monthKey}
             onChange={(e) => setMonthKey(e.target.value)}
-            className="p-2 border border-gray-300 rounded-lg text-xs bg-white"
+            className="p-2 border border-gray-300 rounded-lg text-xs bg-white font-medium"
           />
           <button
             onClick={() => setShowNfseModal(true)}
             className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm"
           >
-            <Upload size={14} /> Enviar NFSe (PDF)
+            <Upload size={14} /> Anexar NFSe Manual
           </button>
           <button
             onClick={handleNotifyPending}
             disabled={notifyingBulk}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors shadow-sm disabled:opacity-50"
-            title="Avisar todos os prestadores pendentes de emissão de NF nesta competência"
+            title="Avisar todos os prestadores pendentes de emissão de NF nesta competência com o template FaçaAmigos"
           >
-            {notifyingBulk ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />} Avisar Pendentes de NF
+            {notifyingBulk ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />} Avisar Pendentes (FaçaAmigos)
           </button>
           <button onClick={handleExportCSV} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700" title="Exportar CSV">
             <Download size={14} />
@@ -215,13 +333,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
       </div>
 
       <p className="px-4 pt-3 text-[11px] text-gray-500">
-        Base de conferência para as Notas Fiscais da competência. Não representa folha de pagamento nem controle de jornada.
-        Os honorários são o preço do Módulo Assistencial multiplicado pelos módulos entregues na competência
-        (corte matutino/vespertino às 12h); um mesmo dia rende dois módulos quando há execução antes e depois do corte.
-        Módulos entregues aos domingos rendem, cada um, uma diária extra no mesmo valor do Módulo Assistencial,
-        somada aos honorários da competência.
-        Os registros de execução têm finalidade fiscal e não constituem controle de ponto ou de jornada
-        (art. 74 da CLT) — ver Cláusula 6ª do contrato-quadro PJ.
+        Base de conferência para as Notas Fiscais da competência. As notas enviadas pelos prestadores via link seguro do FaçaAmigos aparecem diretamente nesta tabela para validação do Administrador do RH. Ao aprovar, o registro segue automaticamente para a programação de pagamento do Financeiro.
       </p>
 
       <div className="overflow-x-auto p-4">
@@ -229,29 +341,41 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
           <thead>
             <tr className="bg-gray-50 text-gray-600 border-b border-gray-100">
               <th className="p-3 font-semibold">Prestador</th>
-              <th className="p-3 font-semibold">Dias com Presença</th>
-              <th className="p-3 font-semibold">Total de Horas</th>
-              <th className="p-3 font-semibold">Módulos (Mat. / Vesp.)</th>
-              <th className="p-3 font-semibold">Módulos Entregues</th>
-              <th className="p-3 font-semibold">Preço do Módulo</th>
-              <th className="p-3 font-semibold">Módulos em Domingo</th>
-              <th className="p-3 font-semibold text-right">Diária Extra de Domingo</th>
-              <th className="p-3 font-semibold text-right">Honorários</th>
-              <th className="p-3 font-semibold text-right">Ações</th>
+              <th className="p-3 font-semibold">Dias</th>
+              <th className="p-3 font-semibold">Horas</th>
+              <th className="p-3 font-semibold">Módulos (M/V)</th>
+              <th className="p-3 font-semibold">Entregues</th>
+              <th className="p-3 font-semibold">Preço Módulo</th>
+              <th className="p-3 font-semibold">Módulos Dom.</th>
+              <th className="p-3 font-semibold text-right">Extra Domingo</th>
+              <th className="p-3 font-semibold text-right">Apurado Sistema</th>
+              <th className="p-3 font-semibold text-center">Nota Fiscal (NFSe)</th>
+              <th className="p-3 font-semibold text-right">Ações do RH</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {production.length === 0 ? (
-              <tr><td colSpan={10} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
+              <tr><td colSpan={11} className="p-8 text-center text-gray-400">Nenhum prestador nesta unidade.</td></tr>
             ) : (
               production.map((row) => {
                 const notice = noticeByProfessional.get(row.professional.id);
-                const hasNf = hasNfForMonth.has(row.professional.id);
+                const nfDoc = nfByProfessional.get(row.professional.id);
                 const isNotifying = notifyingId === row.professional.id;
+
+                const nfMeta = nfDoc?.meta || null;
+                const nfStatus = nfMeta?.status || 'pendente';
+                const nfValor = Number(nfMeta?.valor) || 0;
+                const valorApurado = Number(row.totalPayable) || 0;
+                const temDivergencia = nfDoc && nfValor > 0 && Math.abs(nfValor - valorApurado) > 0.05;
+                const isActing = actingDocKey === nfDoc?.doc_key;
+                const isOpening = openingDocKey === nfDoc?.doc_key;
 
                 return (
                   <tr key={row.professional.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-3 font-semibold text-gray-800">{row.professional.name}</td>
+                    <td className="p-3 font-semibold text-gray-800">
+                      <div>{row.professional.name}</div>
+                      {row.professional.cnpj && <div className="text-[10px] text-gray-400 font-normal">{row.professional.cnpj}</div>}
+                    </td>
                     <td className="p-3 text-gray-600">{row.daysPresent}</td>
                     <td className="p-3 text-gray-600">{row.totalHours.toFixed(1)}h</td>
                     <td className="p-3 text-gray-600">{row.morningShifts} / {row.afternoonShifts}</td>
@@ -261,21 +385,90 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
                     </td>
                     <td className="p-3 text-gray-600">{row.sundayShiftsPresent}</td>
                     <td className="p-3 text-right text-gray-600">{fmtBRL(row.sundayBonusTotal)}</td>
-                    <td className="p-3 text-right font-bold text-gray-800">{fmtBRL(row.totalPayable)}</td>
+                    <td className="p-3 text-right font-extrabold text-teal-800">{fmtBRL(row.totalPayable)}</td>
+
+                    {/* Coluna da Nota Fiscal */}
+                    <td className="p-3 text-center">
+                      {nfDoc ? (
+                        <div className="flex flex-col items-center gap-1">
+                          {/* Badge de Status */}
+                          {nfStatus === 'aprovado' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                              <CheckCircle2 size={11} /> Aprovada p/ Financeiro
+                            </span>
+                          ) : nfStatus === 'rejeitado' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800" title={nfMeta?.rejectionReason || 'Rejeitada'}>
+                              <XCircle size={11} /> Rejeitada
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                              Pendente RH
+                            </span>
+                          )}
+
+                          {/* Valor da Nota e divergência se houver */}
+                          <div className="text-[11px] font-semibold text-gray-700">
+                            {nfValor > 0 ? fmtBRL(nfValor) : '—'}
+                            {nfMeta?.numeroNf && <span className="text-[10px] text-gray-400 ml-1">#{nfMeta.numeroNf}</span>}
+                          </div>
+
+                          {temDivergencia && (
+                            <div className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              <AlertTriangle size={10} /> Dif: {fmtBRL(nfValor - valorApurado)}
+                            </div>
+                          )}
+
+                          {/* Botão para ver PDF */}
+                          <button
+                            onClick={() => handleViewPdf(row.professional.id, nfDoc.doc_key)}
+                            disabled={isOpening}
+                            className="inline-flex items-center gap-1 text-[10px] text-teal-700 hover:text-teal-900 underline font-medium mt-0.5 disabled:opacity-50"
+                          >
+                            {isOpening ? <Loader2 size={10} className="animate-spin" /> : <Eye size={10} />} Ver PDF
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">Pendente envio</span>
+                      )}
+                    </td>
+
+                    {/* Coluna de Ações do RH */}
                     <td className="p-3 text-right">
-                      {hasNf ? (
-                        <span className="text-[10px] text-emerald-700 font-semibold">NF recebida</span>
+                      {nfDoc ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {nfStatus !== 'aprovado' && (
+                            <button
+                              onClick={() => handleApproveNf(row.professional.id, nfDoc.doc_key, nfMeta)}
+                              disabled={isActing}
+                              className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                              title="Aprovar NFSe e liberar para o Financeiro"
+                            >
+                              {isActing ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />} Aprovar
+                            </button>
+                          )}
+
+                          {nfStatus !== 'rejeitado' && (
+                            <button
+                              onClick={() => handleRejectNf(row.professional.id, nfDoc.doc_key, nfMeta)}
+                              disabled={isActing}
+                              className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
+                              title="Rejeitar NFSe com justificativa"
+                            >
+                              <XCircle size={11} /> Rejeitar
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <button
                           onClick={() => handleNotifyOne(row.professional.id)}
                           disabled={isNotifying}
-                          title={notice ? `Aviso enviado em ${new Date(notice.sentAt).toLocaleDateString('pt-BR')} — clique para reenviar` : 'Emitir aviso de NF ao prestador'}
-                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded transition-colors disabled:opacity-50 ${
-                            notice ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                          title={notice ? `Aviso enviado em ${new Date(notice.sentAt).toLocaleDateString('pt-BR')} — clique para reenviar` : 'Emitir aviso FaçaAmigos com link e valor apurado'}
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors shadow-sm disabled:opacity-50 ${
+                            notice ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-[#F0196B] hover:bg-[#d6135c] text-white'
                           }`}
                         >
-                          {isNotifying ? <Loader2 size={12} className="animate-spin" /> : <Bell size={12} />}
-                          {notice ? 'Reenviar aviso' : 'Emitir aviso de NF'}
+                          {isNotifying ? <Loader2 size={11} className="animate-spin" /> : <Bell size={11} />}
+                          {notice ? 'Reenviar link' : 'Avisar PJ'}
                         </button>
                       )}
                     </td>
@@ -292,7 +485,12 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
                 <td className="p-3"></td>
                 <td className="p-3">{production.reduce((acc, r) => acc + r.sundayShiftsPresent, 0)}</td>
                 <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.sundayBonusTotal, 0))}</td>
-                <td className="p-3 text-right">{fmtBRL(production.reduce((acc, r) => acc + r.totalPayable, 0))}</td>
+                <td className="p-3 text-right text-teal-900 font-extrabold">{fmtBRL(production.reduce((acc, r) => acc + r.totalPayable, 0))}</td>
+                <td className="p-3 text-center">
+                  <span className="text-[10px] text-gray-500">
+                    {production.filter((r) => nfByProfessional.get(r.professional.id)?.meta?.status === 'aprovado').length} aprovada(s)
+                  </span>
+                </td>
                 <td className="p-3"></td>
               </tr>
             </tfoot>

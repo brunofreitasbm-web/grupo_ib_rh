@@ -121,6 +121,10 @@ export default function UnitBasketBoard({
   const [teamDetail, setTeamDetail] = useState(null); // membro da equipe em detalhe (DiscResultModal)
   const [draggingId, setDraggingId] = useState(null); // ex: 'candidate:123' ou 'staff:employee:45'
   const [hoverKey, setHoverKey] = useState(null);
+  const [activeUnitId, setActiveUnitId] = useState(SIMULATION_UNITS[0]?.id);
+  const [hideAssigned, setHideAssigned] = useState(false);
+  const [tabHoverId, setTabHoverId] = useState(null);
+  const tabHoverTimer = useRef(null);
 
   const { allStaff, loading: staffLoading } = useHiredTeam();
 
@@ -167,17 +171,19 @@ export default function UnitBasketBoard({
   const poolCandidates = useMemo(() => {
     const q = search.trim().toLowerCase();
     return candidates.filter((c) => {
+      if (hideAssigned && assignmentsById[c.id]) return false;
       if (!q) return true;
       return [c.full_name, c.email, c.course, c.desired_area]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [candidates, search]);
+  }, [candidates, search, hideAssigned, assignmentsById]);
 
   // Colaboradores filtrados
   const poolStaff = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allStaff.filter((s) => {
+      if (hideAssigned && staffSimulations[s.key]) return false;
       if (!q) return true;
       const unit = unitsById[s.originalUnitId]?.label || s.originalUnitId;
       const role = ROLE_BY_ID[s.originalRoleId]?.label || s.originalRoleId;
@@ -185,7 +191,7 @@ export default function UnitBasketBoard({
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [allStaff, search, unitsById]);
+  }, [allStaff, search, unitsById, hideAssigned, staffSimulations]);
 
   // Candidatos alocados por quadrante
   const placedCandidates = useMemo(() => {
@@ -230,6 +236,39 @@ export default function UnitBasketBoard({
 
   const placedCandidatesCount = useMemo(() => Object.keys(assignmentsById).length, [assignmentsById]);
 
+  // Pessoas (equipe + candidatos em teste) por unidade, para os contadores das abas
+  const countByUnit = useMemo(() => {
+    const map = {};
+    for (const [key, list] of Object.entries(staffByQuadrant)) {
+      const uid = key.split('::')[0];
+      map[uid] = (map[uid] || 0) + list.length;
+    }
+    for (const a of Object.values(assignmentsById)) {
+      map[a.unit_id] = (map[a.unit_id] || 0) + 1;
+    }
+    return map;
+  }, [staffByQuadrant, assignmentsById]);
+
+  // Arrastar sobre a aba de uma unidade por ~0,4s troca para ela: dá para
+  // levar a pessoa a qualquer unidade sem soltar nem rolar a página.
+  const handleTabDragOver = (e, unitId) => {
+    e.preventDefault();
+    if (unitId === activeUnitId || tabHoverId === unitId) return;
+    setTabHoverId(unitId);
+    clearTimeout(tabHoverTimer.current);
+    tabHoverTimer.current = setTimeout(() => {
+      setActiveUnitId(unitId);
+      setTabHoverId(null);
+    }, 400);
+  };
+
+  const handleTabDragLeave = () => {
+    clearTimeout(tabHoverTimer.current);
+    setTabHoverId(null);
+  };
+
+  useEffect(() => () => clearTimeout(tabHoverTimer.current), []);
+
   const handleDragStart = (e, type, id) => {
     const payload = `${type}:${id}`;
     e.dataTransfer.setData(DRAG_MIME, payload);
@@ -238,6 +277,8 @@ export default function UnitBasketBoard({
   };
 
   const handleDragEnd = () => {
+    clearTimeout(tabHoverTimer.current);
+    setTabHoverId(null);
     setDraggingId(null);
     setHoverKey(null);
   };
@@ -299,10 +340,12 @@ export default function UnitBasketBoard({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      {/* Mesa de trabalho com altura da tela: a lista de pessoas e as colunas rolam por dentro,
+          então origem e destino do arrastar ficam sempre visíveis juntos. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-1 gap-5 lg:h-[calc(100vh-12rem)] lg:min-h-[560px]">
         {/* Coluna Esquerda: Banco de Pessoas para Simulação (Candidatos ou Colaboradores) */}
-        <div className="lg:col-span-3 space-y-3">
-          <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm space-y-3">
+        <div className="lg:col-span-3 min-h-0">
+          <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm h-full flex flex-col gap-3 max-lg:max-h-[60vh]">
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <Users className="w-4 h-4 text-blue-600" /> Pessoas para Simulação
@@ -359,7 +402,17 @@ export default function UnitBasketBoard({
             </div>
 
             {/* Conteúdo da Lista */}
-            <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
+            <label className="flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={hideAssigned}
+                onChange={(e) => setHideAssigned(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Ocultar quem já está alocado
+            </label>
+
+            <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
               {activeSideTab === 'candidatos' ? (
                 poolCandidates.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6">
@@ -410,11 +463,43 @@ export default function UnitBasketBoard({
           </div>
         </div>
 
-        {/* Coluna Direita: Baskets por Unidade */}
-        <div className="lg:col-span-9 space-y-4">
-          {units.map((unit) => (
-            <div key={unit.id} className={`rounded-2xl border-2 ${unit.accent.border} bg-white overflow-hidden shadow-xs`}>
-              <div className={`px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 ${unit.accent.header}`}>
+        {/* Coluna Direita: uma unidade por vez, com abas */}
+        <div className="lg:col-span-9 min-h-0 flex flex-col gap-3 max-lg:min-h-[70vh]">
+          <div className="flex flex-wrap gap-2 shrink-0">
+            {units.map((u) => {
+              const isActive = u.id === activeUnitId;
+              const isDropHint = tabHoverId === u.id;
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => setActiveUnitId(u.id)}
+                  onDragOver={(e) => handleTabDragOver(e, u.id)}
+                  onDragLeave={handleTabDragLeave}
+                  onDrop={(e) => { e.preventDefault(); handleTabDragLeave(); setActiveUnitId(u.id); }}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                    isActive
+                      ? `${u.accent.border} ${u.accent.header} shadow-sm`
+                      : isDropHint
+                      ? 'border-blue-400 bg-blue-50 text-blue-700 ring-2 ring-blue-300'
+                      : draggingId
+                      ? 'border-dashed border-slate-400 bg-white text-slate-600'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full ${u.accent.dot}`} />
+                  {u.label}
+                  <span className="px-1.5 text-[10px] rounded-full bg-white/80 border border-slate-200 text-slate-600">
+                    {countByUnit[u.id] || 0}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {units.filter((u) => u.id === activeUnitId).map((unit) => (
+            <div key={unit.id} className={`rounded-2xl border-2 ${unit.accent.border} bg-white overflow-hidden shadow-xs flex-1 min-h-0 flex flex-col`}>
+              <div className={`px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 ${unit.accent.header}`}>
                 <div className="flex items-center gap-2">
                   <span className={`w-2.5 h-2.5 rounded-full ${unit.accent.dot}`} />
                   <h3 className="text-sm font-bold">{unit.label}</h3>
@@ -427,7 +512,7 @@ export default function UnitBasketBoard({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-rows-1 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 flex-1 min-h-0 max-lg:overflow-y-auto">
                 {ROLE_PROFILES.map((role) => {
                   const key = `${unit.id}::${role.id}`;
                   const cItems = placedCandidates[key] || [];
@@ -449,7 +534,7 @@ export default function UnitBasketBoard({
                       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (hoverKey !== key) setHoverKey(key); }}
                       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHoverKey((k) => (k === key ? null : k)); }}
                       onDrop={(e) => handleDrop(e, unit.id, role.id)}
-                      className={`p-3 min-h-[160px] transition-all flex flex-col justify-between ${
+                      className={`p-3 min-h-[160px] lg:min-h-0 lg:overflow-y-auto transition-all flex flex-col justify-between ${
                         isHover
                           ? 'bg-blue-50/80 ring-2 ring-inset ring-blue-400'
                           : draggingId

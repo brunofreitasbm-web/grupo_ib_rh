@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Timer, Printer, Download, FileText, Building2, Upload, Eye, Trash2, CheckCircle2, Plus, DollarSign, Calendar, Tag, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS, mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
 import { dailyPayRate, absenceDeduction, payAfterAbsences, sundayBonus } from '../../utils/cltCalculations';
 import { pairPresenceRecords } from '../../utils/hoursCalculations';
@@ -18,6 +18,10 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [filterFinanceMonth, setFilterFinanceMonth] = useState(new Date().toISOString().substring(0, 7));
   const [activeSubTab, setActiveSubTab] = useState('estagiarios'); // 'estagiarios' | 'folhas_unidades'
   const [payrolls, setPayrolls] = useState([]);
+  const [professionals, setProfessionals] = useState([]);
+  const [pjDocs, setPjDocs] = useState([]);
+  const [markingPjPaidDocKey, setMarkingPjPaidDocKey] = useState(null);
+  const [viewingPjPdfDocKey, setViewingPjPdfDocKey] = useState(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [viewingPayrollDoc, setViewingPayrollDoc] = useState(null);
   const [uploadUnitTarget, setUploadUnitTarget] = useState('');
@@ -94,6 +98,19 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
       if (recordsData) setRecords(recordsData.map(mapRecordFromDb));
 
+      if (BRANDING.showProfessionalsModule) {
+        const { data: profsData } = await supabase
+          .from('professionals')
+          .select(PROFESSIONAL_SELECT_FIELDS);
+        const { data: pjDocsData } = await supabase
+          .from('professional_documents')
+          .select('professional_id, doc_key, meta, created_at')
+          .order('created_at', { ascending: false });
+
+        if (profsData) setProfessionals(profsData.map(mapProfessionalFromDb).filter(p => !restrictedUnitIds.includes(p.unitId)));
+        if (pjDocsData) setPjDocs(pjDocsData || []);
+      }
+
       await fetchPayrolls();
     } catch (err) {
       console.error('Erro ao carregar dados do financeiro:', err);
@@ -119,9 +136,17 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       })
       .subscribe();
 
+    const pjDocsChannel = supabase
+      .channel('financeiro-pj-docs-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professional_documents' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(internsChannel);
       supabase.removeChannel(recordsChannel);
+      supabase.removeChannel(pjDocsChannel);
     };
   }, [fetchData]);
 
@@ -446,6 +471,101 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
     }
   };
 
+  const pjApprovedPayrolls = useMemo(() => {
+    if (!BRANDING.showProfessionalsModule) return [];
+    const profMap = new Map(professionals.map((p) => [p.id, p]));
+    const list = [];
+    pjDocs.forEach((doc) => {
+      const isComp = doc.meta?.competencia === filterFinanceMonth || doc.doc_key.startsWith(`nf-${filterFinanceMonth}-`);
+      const isApproved = doc.meta?.status === 'aprovado';
+      if (isComp && isApproved) {
+        const prof = profMap.get(doc.professional_id);
+        if (prof && (filterUnit === 'all' || !filterUnit || prof.unitId === filterUnit)) {
+          list.push({
+            docKey: doc.doc_key,
+            professionalId: doc.professional_id,
+            professional: prof,
+            meta: doc.meta,
+            valor: Number(doc.meta?.valor) || 0,
+            pago: Boolean(doc.meta?.pago),
+            pagoAt: doc.meta?.pagoAt,
+            pagoBy: doc.meta?.pagoBy,
+          });
+        }
+      }
+    });
+    return list;
+  }, [professionals, pjDocs, filterFinanceMonth, filterUnit]);
+
+  const handleTogglePjPaid = async (item) => {
+    const isPaying = !item.pago;
+    const valorFmt = Number(item.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const confirmMsg = isPaying
+      ? `Confirmar que o pagamento da NFSe de ${item.professional.name} (Valor: ${valorFmt}) foi EFETUADO pelo Financeiro?`
+      : `Deseja desfazer a baixa e estornar o status de pagamento desta NFSe?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setMarkingPjPaidDocKey(item.docKey);
+    try {
+      const updatedMeta = {
+        ...item.meta,
+        pago: isPaying,
+        pagoAt: isPaying ? new Date().toISOString() : null,
+        pagoBy: isPaying ? 'Financeiro' : null,
+      };
+
+      const { error } = await supabase
+        .from('professional_documents')
+        .update({ meta: updatedMeta })
+        .eq('professional_id', item.professionalId)
+        .eq('doc_key', item.docKey);
+
+      if (error) throw error;
+      toast.success(isPaying ? 'Pagamento registrado com sucesso no Financeiro!' : 'Status de pagamento revertido.');
+      await fetchData();
+    } catch (err) {
+      console.error('Erro ao atualizar pagamento PJ:', err);
+      toast.error('Erro ao registrar baixa de pagamento.');
+    } finally {
+      setMarkingPjPaidDocKey(null);
+    }
+  };
+
+  const handleViewPjPdf = async (item) => {
+    setViewingPjPdfDocKey(item.docKey);
+    try {
+      const { data, error } = await supabase
+        .from('professional_documents')
+        .select('content')
+        .eq('professional_id', item.professionalId)
+        .eq('doc_key', item.docKey)
+        .single();
+
+      if (error) throw error;
+      if (!data?.content) {
+        toast.error('Conteúdo do arquivo não encontrado.');
+        return;
+      }
+
+      const cleanBase64 = data.content.replace(/^data:application\/pdf;base64,/, '');
+      const byteCharacters = atob(cleanBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (err) {
+      console.error('Erro ao abrir PDF de NF PJ:', err);
+      toast.error('Não foi possível carregar o PDF da Nota Fiscal.');
+    } finally {
+      setViewingPjPdfDocKey(null);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-md overflow-hidden space-y-0">
       {/* Sub-Navegação do Financeiro */}
@@ -455,12 +575,12 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
             <Timer size={22} className="text-indigo-400" /> Gestão Financeira & Folhas de Pagamento
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Controle de bolsas de estagiários e upload de folhas de pagamento em PDF por unidade ({BRANDING.shortName})
+            Controle de bolsas de estagiários, repasses PJ ({BRANDING.shortName}) e upload de folhas por unidade
           </p>
         </div>
 
         {/* Botoes de Sub-Aba */}
-        <div className="flex items-center gap-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700">
+        <div className="flex items-center gap-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700 flex-wrap">
           <button
             onClick={() => setActiveSubTab('estagiarios')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
@@ -472,6 +592,26 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
             <Timer size={15} />
             Folha de Estagiários
           </button>
+
+          {BRANDING.showProfessionalsModule && (
+            <button
+              onClick={() => setActiveSubTab('repasses_pj')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
+                activeSubTab === 'repasses_pj'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <DollarSign size={15} />
+              Repasses PJ (FaçaAmigos)
+              {pjApprovedPayrolls.filter((p) => !p.pago).length > 0 && (
+                <span className="bg-emerald-400 text-slate-950 font-extrabold text-[10px] px-1.5 py-0.2 rounded-full">
+                  {pjApprovedPayrolls.filter((p) => !p.pago).length}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             onClick={() => setActiveSubTab('folhas_unidades')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
@@ -815,6 +955,160 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
                       </td>
                     </tr>
                   ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-ABA 3: REPASSES A PROFISSIONAIS PJ (FAÇAAMIGOS / GRUPO IB) */}
+      {activeSubTab === 'repasses_pj' && (
+        <div className="p-4 space-y-4">
+          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-600">Competência:</span>
+              <input
+                type="month"
+                value={filterFinanceMonth}
+                onChange={(e) => setFilterFinanceMonth(e.target.value)}
+                className="p-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-4 text-xs">
+              <div className="bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                <span className="text-slate-500 mr-1.5">Total Aprovado RH:</span>
+                <strong className="text-slate-800">
+                  {pjApprovedPayrolls.reduce((acc, p) => acc + p.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </strong>
+              </div>
+              <div className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm">
+                <span className="text-emerald-700 mr-1.5">Liquidado:</span>
+                <strong className="text-emerald-800">
+                  {pjApprovedPayrolls.filter(p => p.pago).reduce((acc, p) => acc + p.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </strong>
+              </div>
+              <div className="bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 shadow-sm">
+                <span className="text-amber-700 mr-1.5">A Pagar:</span>
+                <strong className="text-amber-800">
+                  {pjApprovedPayrolls.filter(p => !p.pago).reduce((acc, p) => acc + p.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                  <th className="p-3 font-semibold">Prestador / Razão Social</th>
+                  <th className="p-3 font-semibold">Unidade</th>
+                  <th className="p-3 font-semibold">NFSe</th>
+                  <th className="p-3 font-semibold">Dados Bancários / Chave PIX</th>
+                  <th className="p-3 font-semibold text-right">Valor Aprovado</th>
+                  <th className="p-3 font-semibold text-center">Status Financeiro</th>
+                  <th className="p-3 font-semibold text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pjApprovedPayrolls.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-slate-400">
+                      Nenhuma Nota Fiscal de prestador PJ aprovada pelo RH nesta competência ({filterFinanceMonth}).
+                    </td>
+                  </tr>
+                ) : (
+                  pjApprovedPayrolls.map((item) => {
+                    const isMarking = markingPjPaidDocKey === item.docKey;
+                    const isViewing = viewingPjPdfDocKey === item.docKey;
+                    const p = item.professional;
+
+                    return (
+                      <tr key={item.docKey} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-medium text-slate-800">
+                          <div className="font-bold">{p.name}</div>
+                          {p.razaoSocial && p.razaoSocial !== p.name && (
+                            <div className="text-[11px] text-slate-500 font-normal">{p.razaoSocial}</div>
+                          )}
+                          <div className="text-[10px] text-slate-400">{p.cnpj || p.cpf || '—'}</div>
+                        </td>
+
+                        <td className="p-3 text-slate-600 font-medium">
+                          {unitName(p.unitId)}
+                        </td>
+
+                        <td className="p-3">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] font-semibold text-slate-700">
+                              {item.meta?.numeroNf ? `NF #${item.meta.numeroNf}` : 'NFSe (PDF)'}
+                            </span>
+                            <button
+                              onClick={() => handleViewPjPdf(item)}
+                              disabled={isViewing}
+                              className="inline-flex items-center gap-1 text-[10px] text-teal-700 hover:text-teal-900 underline font-semibold disabled:opacity-50"
+                            >
+                              <Eye size={11} /> {isViewing ? 'Abrindo...' : 'Visualizar NF'}
+                            </button>
+                          </div>
+                        </td>
+
+                        <td className="p-3 text-slate-600 text-[11px]">
+                          {p.pixKey ? (
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-semibold uppercase">PIX: </span>
+                              <span className="font-mono font-bold text-slate-700 select-all">{p.pixKey}</span>
+                            </div>
+                          ) : (
+                            <div className="text-slate-400 italic">PIX não informado</div>
+                          )}
+                          {p.bankName && (
+                            <div className="text-[10px] text-slate-500">
+                              {p.bankName} • Ag: {p.bankAgency || '—'} • CC: {p.bankAccount || '—'}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-right font-extrabold text-teal-800 text-sm">
+                          {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+
+                        <td className="p-3 text-center">
+                          {item.pago ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                              <CheckCircle2 size={12} /> Pago {item.pagoAt ? `em ${new Date(item.pagoAt).toLocaleDateString('pt-BR')}` : ''}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                              Aguardando Pagamento
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleTogglePjPaid(item)}
+                            disabled={isMarking}
+                            className={`inline-flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-50 ${
+                              item.pago
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            }`}
+                          >
+                            {isMarking ? (
+                              'Salvando...'
+                            ) : item.pago ? (
+                              'Estornar'
+                            ) : (
+                              <>
+                                <CheckCircle2 size={13} /> Confirmar Pagamento
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

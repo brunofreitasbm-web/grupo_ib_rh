@@ -13,6 +13,7 @@ import { consumeHubSsoTicket } from './utils/hubSso';
 // continua navegando por estado (App.jsx), sem react-router — ver
 // src/components/tabs/BancoTalentosTab.jsx e src/components/DiscAssessmentPage.jsx.
 const DiscAssessmentPage = lazyWithRetry(() => import('./components/DiscAssessmentPage.jsx'));
+const PjInvoiceUploadPage = lazyWithRetry(() => import('./components/PjInvoiceUploadPage.jsx'));
 
 import { registerSW } from 'virtual:pwa-register';
 
@@ -66,6 +67,14 @@ consumeHubSsoTicket().finally(() => ReactDOM.createRoot(document.getElementById(
           element={(
             <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
               <DiscAssessmentPage />
+            </Suspense>
+          )}
+        />
+        <Route
+          path="/pj/nf/:token"
+          element={(
+            <Suspense fallback={<div className="min-h-screen bg-[#f4f1ea]" />}>
+              <PjInvoiceUploadPage />
             </Suspense>
           )}
         />
