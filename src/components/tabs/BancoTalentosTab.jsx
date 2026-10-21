@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useBackLayers } from '../../hooks/useBackHandler';
 import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle, Archive, Send, MessageCircle, Trash2, GitMerge, Eye, X, Bookmark, Clock } from 'lucide-react';
 import { supabase } from '../../supabase';
@@ -131,8 +131,11 @@ export default function BancoTalentosTab({ units = [] }) {
   const [convertServiceArea, setConvertServiceArea] = useState('');
   const [convertingId, setConvertingId] = useState(null);
 
+  const candidatesRef = useRef(candidates);
+  candidatesRef.current = candidates;
+
   const loadOverlay = useCallback(async (ids) => {
-    const targetIds = (ids && ids.length > 0) ? ids : candidates.map((c) => c.id).filter(Boolean);
+    const targetIds = (ids && ids.length > 0) ? ids : candidatesRef.current.map((c) => c.id).filter(Boolean);
     if (targetIds.length === 0) {
       setMetaById({});
       setTokensById({});
@@ -176,7 +179,7 @@ export default function BancoTalentosTab({ units = [] }) {
       // continua funcional, só sem status próprio/notas/perfil.
       console.error('Erro ao carregar dados locais do Banco de Talentos:', err);
     }
-  }, [candidates]);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -847,9 +850,9 @@ export default function BancoTalentosTab({ units = [] }) {
             >
               <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} />
               {t.label}
-              {t.id === 'simulacao' && enriched.length > 0 && (
+              {t.id === 'simulacao' && withProfile.length > 0 && (
                 <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                  {enriched.length}
+                  {withProfile.length}
                 </span>
               )}
             </button>
@@ -867,7 +870,7 @@ export default function BancoTalentosTab({ units = [] }) {
           </div>
         ) : (
           <UnitBasketBoard
-            candidates={enriched}
+            candidates={withProfile}
             assignmentsById={basketById}
             busyId={busyId}
             onAssign={assignToBasket}

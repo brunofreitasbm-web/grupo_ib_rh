@@ -175,16 +175,18 @@ export default function UnitBasketBoard({
   const candidatesById = useMemo(() => Object.fromEntries(candidates.map((c) => [c.id, c])), [candidates]);
   const staffByKey = useMemo(() => Object.fromEntries(allStaff.map((s) => [s.key, s])), [allStaff]);
 
-  // Candidatos filtrados
+  // Candidatos filtrados: EXCLUSIVAMENTE quem tem levantamento DISC concluído
   const poolCandidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return candidates.filter((c) => {
-      if (hideAssigned && assignmentsById[c.id]) return false;
-      if (!q) return true;
-      return [c.full_name, c.email, c.course, c.desired_area]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q));
-    });
+    return candidates
+      .filter((c) => Boolean(c.discAssessment))
+      .filter((c) => {
+        if (hideAssigned && assignmentsById[c.id]) return false;
+        if (!q) return true;
+        return [c.full_name, c.email, c.course, c.desired_area]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q));
+      });
   }, [candidates, search, hideAssigned, assignmentsById]);
 
   const sortedCandidates = useMemo(() => {
@@ -208,12 +210,12 @@ export default function UnitBasketBoard({
     });
   }, [allStaff, search, unitsById, hideAssigned, staffSimulations]);
 
-  // Candidatos alocados por quadrante
+  // Candidatos alocados por quadrante (apenas com DISC)
   const placedCandidates = useMemo(() => {
     const map = {};
     for (const [cid, a] of Object.entries(assignmentsById)) {
       const c = candidatesById[cid];
-      if (!c) continue;
+      if (!c || !c.discAssessment) continue;
       const key = `${a.unit_id}::${a.role_id}`;
       (map[key] ||= []).push(c);
     }
@@ -390,7 +392,7 @@ export default function UnitBasketBoard({
                 <Users className="w-3.5 h-3.5 text-blue-600" />
                 <span>Candidatos</span>
                 <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-slate-100 text-slate-600">
-                  {candidates.length}
+                  {candidates.filter((c) => Boolean(c.discAssessment)).length}
                 </span>
               </button>
 
