@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Lock, Save, FileText, Printer, Upload, Eye, Trash, Loader2, X, Download } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { createDebounced } from '../../utils/debounce';
+import { mapInternFromDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function EncerramentoTab({ filterUnit, onPrintDocument, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -15,6 +17,11 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument, restricte
 
   // Modal State
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
 
@@ -34,16 +41,16 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument, restricte
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('encerramento-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);
@@ -157,7 +164,7 @@ export default function EncerramentoTab({ filterUnit, onPrintDocument, restricte
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

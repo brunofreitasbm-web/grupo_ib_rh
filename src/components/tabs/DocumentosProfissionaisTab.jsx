@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { FileText, Eye, Trash, Upload, Loader2, X, Download, Plus, ScrollText, Printer, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFriendlyDbErrorMessage } from '../../utils/mappings';
@@ -31,6 +32,13 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
 
   const [viewDoc, setViewDoc] = useState(null); // { base64, name, type }
   const [contractPreview, setContractPreview] = useState(null); // { html } | null
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!contractPreview, back: () => setContractPreview(null) },
+    { active: !!viewDoc, back: () => setViewDoc(null) },
+    { active: showNfseModal, back: () => setShowNfseModal(false) }
+  ]);
   const [savingContract, setSavingContract] = useState(false);
 
   const fetchProfessionals = useCallback(async () => {

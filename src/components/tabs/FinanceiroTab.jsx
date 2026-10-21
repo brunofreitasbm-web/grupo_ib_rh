@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Timer, Printer, Download, FileText, Building2, Upload, Eye, Trash2, CheckCircle2, Plus, DollarSign, Calendar, Tag, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
 import { mapInternFromDb, mapRecordFromDb, mapUnitFromDb, INTERN_SELECT_FIELDS, mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS } from '../../utils/mappings';
 import { BRANDING } from '../../config/branding';
 import { dailyPayRate, absenceDeduction, payAfterAbsences, sundayBonus } from '../../utils/cltCalculations';
@@ -24,6 +26,13 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [viewingPjPdfDocKey, setViewingPjPdfDocKey] = useState(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [viewingPayrollDoc, setViewingPayrollDoc] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewingPayrollDoc, back: () => setViewingPayrollDoc(null) },
+    { active: isUploadModalOpen, back: () => setIsUploadModalOpen(false) },
+    { active: activeSubTab !== 'estagiarios', back: () => setActiveSubTab('estagiarios') }
+  ]);
   const [uploadUnitTarget, setUploadUnitTarget] = useState('');
 
   const fetchPayrolls = useCallback(async () => {
@@ -120,19 +129,19 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   }, [filterFinanceMonth, restrictedUnitIds, fetchPayrolls]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('financeiro-interns-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     const recordsChannel = supabase
       .channel('financeiro-records-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
-        fetchData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isAuditRecordEvent(payload)) return;
+        onRealtimeChange();
       })
       .subscribe();
 
@@ -144,6 +153,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
       supabase.removeChannel(recordsChannel);
       supabase.removeChannel(pjDocsChannel);

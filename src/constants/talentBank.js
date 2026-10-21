@@ -25,6 +25,25 @@ export const STATUS_BADGE = {
   ARQUIVADO: 'bg-rose-100 text-rose-700 border-rose-200',
 };
 
+// Cor da linha da tabela por status efetivo: fundo suave + faixa à esquerda.
+// O badge da coluna Status continua sendo o sinal textual (a cor não é o único).
+export const STATUS_ROW = {
+  NOVO: 'bg-blue-50/40 border-l-4 border-l-blue-400 hover:bg-blue-50',
+  LIDO: 'border-l-4 border-l-slate-200 hover:bg-slate-50',
+  ESPERA: 'bg-amber-50/60 border-l-4 border-l-amber-400 hover:bg-amber-50',
+  ENTREVISTA: 'bg-indigo-50/60 border-l-4 border-l-indigo-500 hover:bg-indigo-50',
+  EM_ANALISE: 'bg-purple-50/60 border-l-4 border-l-purple-500 hover:bg-purple-50',
+  CONTATADO: 'bg-emerald-50/60 border-l-4 border-l-emerald-500 hover:bg-emerald-50',
+  ARQUIVADO: 'bg-rose-50/40 border-l-4 border-l-rose-300 opacity-70 hover:opacity-100',
+};
+
+// Retenção: arquivado há 7 dias e link do DISC sem resposta há 10 dias saem do banco.
+export const ARCHIVE_RETENTION_DAYS = 7;
+export const DISC_DEADLINE_DAYS = 10;
+
+// Status de processo ativo: nunca são excluídos automaticamente.
+export const PROTECTED_STATUSES = ['ENTREVISTA', 'EM_ANALISE', 'CONTATADO'];
+
 export const OPPORTUNITY_LABEL = {
   REMUNERADO: 'CLT',
   VOLUNTARIO: 'Voluntário',

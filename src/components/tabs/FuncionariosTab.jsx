@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Users, Plus, Pencil, Trash2, Save, X, Loader2, ShieldCheck, Upload, UserPlus, Trash, ScanFace, Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapEmployeeFromDb, mapEmployeeToDb, EMPLOYEE_SELECT_FIELDS,
   mapDependentFromDb, mapDependentToDb,
-  compressImage, getFriendlyDbErrorMessage,
+  compressImage, canvasToDataUrl, IMAGE_PRESETS, getFriendlyDbErrorMessage,
 } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { getFaceDescriptor } from '../../utils/faceBiometrics';
@@ -50,6 +52,12 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
 
   // Modal de Biometria e Reset Biométrico para CLT
   const [bioModalEmployee, setBioModalEmployee] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!bioModalEmployee, back: () => handleCloseBiometricsModal() },
+    { active: showManage, back: () => setShowManage(false) }
+  ]);
   const [bioPhoto, setBioPhoto] = useState('');
   const [bioDescriptor, setBioDescriptor] = useState('');
   const [bioStatusMsg, setBioStatusMsg] = useState('');
@@ -112,7 +120,7 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, vWidth, vHeight);
-      const base64 = canvas.toDataURL('image/jpeg', 0.85);
+      const base64 = canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality);
       setBioPhoto(base64);
 
       const descriptor = await getFaceDescriptor(base64);
@@ -222,12 +230,16 @@ export default function FuncionariosTab({ filterUnit, restrictedUnitIds = [], un
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const channel = supabase
       .channel('clt-funcionarios-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const filteredEmployees = employees.filter((e) => filterUnit === 'all' || e.unitId === filterUnit);

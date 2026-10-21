@@ -10,3 +10,29 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* Painel admin em desktop/notebook: tabelas devem caber na largura útil sem
+   barra de rolagem horizontal. As colunas de texto podem quebrar linha (e-mails,
+   nomes, descrições longas); colunas alinhadas à direita/centro (valores, ações)
+   e células marcadas como nowrap mantêm o conteúdo íntegro. */
+@media (min-width: 768px) {
+  main table {
+    width: 100%;
+  }
+  main table td:not(.text-right):not(.text-center):not(.whitespace-nowrap) {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Notebooks 13–14" (< 1536px): células mais compactas para ganhar largura. */
+@media (min-width: 768px) and (max-width: 1535px) {
+  /* `[class]` sobe a especificidade acima das utilities (p-3, tracking-wider). */
+  main table td[class],
+  main table th[class] {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  main table th[class] {
+    letter-spacing: 0;
+  }
+}

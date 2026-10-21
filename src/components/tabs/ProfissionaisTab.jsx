@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Users, Plus, Pencil, Trash2, Save, X, KeyRound, ShieldCheck, Loader2, Copy, Check } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapProfessionalFromDb,
   mapProfessionalToDb,
@@ -42,6 +44,12 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
 
   const [pinModalId, setPinModalId] = useState(null);
 
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!pinModalId, back: () => setPinModalId(null) },
+    { active: showManage, back: () => setShowManage(false) }
+  ]);
+
   const labels = BRANDING.professionalLabels || { singular: 'Prestador(a)', plural: 'Profissionais PJ' };
 
   const defaultUnitId = filterUnit !== 'all' ? filterUnit : (units?.[0]?.id || '');
@@ -63,12 +71,16 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const channel = supabase
       .channel('pj-profissionais-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const filteredProfessionals = professionals.filter((p) => filterUnit === 'all' || p.unitId === filterUnit);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import {
   Users,
   UserPlus,
@@ -94,6 +95,13 @@ export default function UsuariosSistema({ units = [], currentUserId = null }) {
 
   const [form, setForm] = useState(null);           // null = modal fechado
   const [resetTarget, setResetTarget] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!resetTarget, back: () => setResetTarget(null) },
+    { active: !!form, back: () => setForm(null) },
+    { active: showAudit, back: () => setShowAudit(false) }
+  ]);
   const [resetPassword, setResetPassword] = useState('');
   const [revealPassword, setRevealPassword] = useState(false);
   const [copied, setCopied] = useState(false);

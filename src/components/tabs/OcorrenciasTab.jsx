@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Plus, Upload, Calendar, X, FileText, Download, Trash, Eye } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
+import { mapInternFromDb, mapRecordFromDb, mapRecordToDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate } from '../../utils/helpers';
 
 export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
@@ -21,6 +23,11 @@ export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
 
   // Modal State
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
 
@@ -55,23 +62,24 @@ export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('ocorrencias-interns-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     const recordsChannel = supabase
       .channel('ocorrencias-records-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
-        fetchData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isAuditRecordEvent(payload)) return;
+        onRealtimeChange();
       })
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
       supabase.removeChannel(recordsChannel);
     };
@@ -269,7 +277,7 @@ export default function OcorrenciasTab({ filterUnit, restrictedUnitIds = [] }) {
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

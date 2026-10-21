@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { FileText, Printer, Download, Upload, Bell, Loader2, CheckCircle2, XCircle, Eye, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../supabase';
@@ -42,6 +43,12 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   const [monthKey, setMonthKey] = useState(new Date().toISOString().substring(0, 7));
   const [showNfseModal, setShowNfseModal] = useState(false);
   const [showDispatchConfigModal, setShowDispatchConfigModal] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showDispatchConfigModal, back: () => setShowDispatchConfigModal(false) },
+    { active: showNfseModal, back: () => setShowNfseModal(false) }
+  ]);
   const [notifyingId, setNotifyingId] = useState(null);
   const [notifyingBulk, setNotifyingBulk] = useState(false);
   const [openingDocKey, setOpeningDocKey] = useState(null);

@@ -5,14 +5,20 @@ import {
   Download, Lock, AlertTriangle, X, MapPin, Navigation, MessageSquare,
   Users, Plus, Pencil, Trash2, Save, Crosshair, Building2, Timer,
   Camera, Video, Check, Eye, Trash, Upload, Printer, Calendar, FolderOpen, Search,
-  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck
+  ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, ClipboardList, TrendingUp, Wallet, Bell,
+  CalendarCheck, Receipt, Calculator, Palmtree, Stethoscope, UserMinus, Scale, Cake, UserSearch,
+  Settings, ChevronRight
 } from 'lucide-react';
-import { getFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
+import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
 import {
   getFriendlyDbErrorMessage,
   INTERN_SELECT_FIELDS,
   fileToBase64,
   compressImage,
+  canvasToDataUrl,
+  IMAGE_PRESETS,
+  downloadNameForDataUrl,
   generateUsername,
   mapInternFromDb,
   mapInternToDb,
@@ -85,6 +91,12 @@ import ProfessionalKiosk from './components/ProfessionalKiosk';
 import EmployeeKiosk from './components/EmployeeKiosk';
 import NfseUploadModal from './components/NfseUploadModal';
 import PublicPayrollUploadModal from './components/PublicPayrollUploadModal';
+import { createDebounced, isAuditRecordEvent } from './utils/debounce';
+import { classifySession, SESSION_LOST_MESSAGE, SESSION_TRANSIENT_MESSAGE } from './utils/sessionGuard';
+import { fetchInternBiometry } from './utils/internBiometry';
+import useInternPhotos from './hooks/useInternPhotos';
+import { useBackHandler } from './hooks/useBackHandler';
+import { withAppClaims } from './utils/sessionClaims';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
@@ -200,6 +212,39 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+  // Abas do painel admin já visitadas: cada aba só monta (e carrega seu chunk/dados)
+  // na primeira visita e depois fica montada, preservando filtros e rascunhos.
+  const [visitedAdminTabs, setVisitedAdminTabs] = useState(() => new Set(['dashboard']));
+  useEffect(() => {
+    setVisitedAdminTabs((prev) => (prev.has(activeAdminTab) ? prev : new Set(prev).add(activeAdminTab)));
+  }, [activeAdminTab]);
+  // Sidebar do painel admin retrátil (só desktop). Preferência persistida; sem
+  // preferência salva, começa recolhida em telas < 1280px para dar espaço às tabelas.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin_sidebar_collapsed');
+      if (saved !== null) return saved === '1';
+    } catch { /* localStorage indisponível */ }
+    return typeof window !== 'undefined' && window.innerWidth < 1280;
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('admin_sidebar_collapsed', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (currentView !== 'admin') return undefined;
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentView, toggleSidebar]);
   const [showGlobalNfseModal, setShowGlobalNfseModal] = useState(false);
 
   // Pré-carrega os modelos de biometria facial assim que o app monta, para que
@@ -407,6 +452,8 @@ export default function App() {
 
   // Visualização de foto de ponto histórico
   const [selectedRecordPhoto, setSelectedRecordPhoto] = useState(null);
+  // Foto de cadastro (3x4) só é buscada quando o modal de comparação abre.
+  const recordModalInternPhotos = useInternPhotos(selectedRecordPhoto ? [selectedRecordPhoto.internId] : []);
   const [showOccurrenceModal, setShowOccurrenceModal] = useState(false);
 
   // Modal de confirmação genérico (substitui window.confirm, que é bloqueante e inconsistente com o resto da UI)
@@ -498,8 +545,12 @@ export default function App() {
   // CPF não é segredo forte, então limitamos tentativas de força bruta contra o campo).
   const [autogestaoCpfAttempts, setAutogestaoCpfAttempts] = useState(0);
   const [autogestaoLockedUntil, setAutogestaoLockedUntil] = useState(0);
+  // Resultado da verificação de CPF no servidor (RPC verify_intern_cpf). status: 'checking' | 'ok' | 'fail'.
+  // O navegador nunca recebe o CPF do estagiário: só sabe se o CPF digitado confere.
+  const [autogestaoCpfCheck, setAutogestaoCpfCheck] = useState({ key: '', status: '' });
   const [publicInterns, setPublicInterns] = useState([]);
   const [loadingPublicInterns, setLoadingPublicInterns] = useState(false);
+  const [publicInternsError, setPublicInternsError] = useState('');
 
   // Autogestão de Biometria Facial (Funcionários CLT)
   const [cltAutogestaoUnitId, setCltAutogestaoUnitId] = useState('');
@@ -591,10 +642,48 @@ export default function App() {
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [viewingMinutaIntern, setViewingMinutaIntern] = useState(null);
 
+  // Botão/gesto "voltar" do celular: cada passo interno abaixo vira uma entrada
+  // no histórico (ver hooks/useBackHandler). Ordem do onBack, da camada mais
+  // interna à mais externa: modais → painel admin (aba, módulo) → telas cheias
+  // abertas a partir do quiosque → seleção do quiosque. Na raiz (quiosque sem
+  // seleção / painel admin no módulo e aba iniciais) não bloqueia: sai do site.
+  const ADMIN_MODULE_HOME_TAB = {
+    interns: 'dashboard',
+    professionals: 'pj_dashboard',
+    employees: 'clt_dashboard',
+    freelance: 'freelance_freelancers',
+  };
+  const adminHomeTab = ADMIN_MODULE_HOME_TAB[adminModule] || 'dashboard';
+  const backLayers = [
+    { active: !!confirmModalState, back: () => { confirmModalState.resolve(false); setConfirmModalState(null); } },
+    { active: !!(activeTemplate || viewingMinutaIntern), back: () => { setActiveTemplate(null); setViewingMinutaIntern(null); } },
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) },
+    { active: !!selectedRecordPhoto, back: () => setSelectedRecordPhoto(null) },
+    { active: showOccurrenceModal, back: () => setShowOccurrenceModal(false) },
+    { active: showGlobalNfseModal, back: () => setShowGlobalNfseModal(false) },
+    { active: showPublicPayrollModal, back: () => setShowPublicPayrollModal(false) },
+    { active: currentView === 'admin' && isOmnibarOpen, back: () => setIsOmnibarOpen(false) },
+    { active: currentView === 'admin' && activeAdminTab !== adminHomeTab, back: () => setActiveAdminTab(adminHomeTab) },
+    {
+      active: currentView === 'admin' && adminModule !== 'interns',
+      back: () => { setAdminModule('interns'); setActiveAdminTab('dashboard'); },
+    },
+    {
+      active: ['recadastro', 'autogestao_biometria', 'pj_autocadastro', 'clt_autocadastro', 'clt_biometria_autogestao'].includes(currentView),
+      back: () => setCurrentView('kiosk'),
+    },
+    {
+      active: !user && !!selectedLoginOption,
+      back: () => { setSelectedLoginOption(null); setLoginError(''); setLoginPassword(''); setLoginAdminName(''); },
+    },
+    { active: !user && !!kioskCategory, back: () => setKioskCategory(null) },
+  ].filter((layer) => layer.active);
+  useBackHandler(backLayers.length, () => backLayers[0]?.back());
+
   // 1. Autenticação e Sessão do Supabase
   const handleSession = useCallback(async (session) => {
     if (session) {
-      const userObj = session.user;
+      const userObj = withAppClaims(session.user);
       setUser(userObj);
       const role = userObj.user_metadata?.role;
       if (role === 'supervisor') {
@@ -696,6 +785,44 @@ export default function App() {
 
 
 
+  // Persiste módulo/aba/workspace do painel admin (por usuário) para sobreviver ao F5.
+  // Os valores salvos são revalidados na leitura: módulo precisa estar habilitado
+  // e a aba precisa pertencer a ele, senão cai no padrão.
+  const navRestoredForRef = useRef(null);
+  const adminNavKey = user?.id ? `admin_nav_${user.id}` : null;
+  useEffect(() => {
+    if (!adminNavKey || user?.user_metadata?.role !== 'supervisor') return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(adminNavKey) || 'null');
+      if (!saved) return;
+      const moduleEnabled = {
+        interns: true,
+        professionals: !!BRANDING.showProfessionalsModule,
+        employees: !!BRANDING.showEmployeesModule,
+        freelance: !!BRANDING.showFreelanceModule,
+      };
+      const prefix = { interns: '', professionals: 'pj_', employees: 'clt_', freelance: 'freelance_' };
+      const commonTabs = ['aniversariantes', 'banco_talentos', 'configuracoes'];
+      const internTabs = ['dashboard', 'estagiarios', 'documentos', 'frequencia', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'financeiro', 'rh'];
+      const mod = moduleEnabled[saved.module] ? saved.module : null;
+      if (!mod) return;
+      const tabOk = commonTabs.includes(saved.tab)
+        || (mod === 'interns' ? internTabs.includes(saved.tab) : String(saved.tab).startsWith(prefix[mod]));
+      if (saved.workspace && canSwitchWorkspace && WORKSPACES[saved.workspace]) setAdminWorkspace(saved.workspace);
+      setAdminModule(mod);
+      if (tabOk) setActiveAdminTab(saved.tab);
+    } catch { /* storage indisponível ou JSON inválido: mantém o padrão */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminNavKey]);
+  useEffect(() => {
+    if (!adminNavKey || navRestoredForRef.current !== adminNavKey) return;
+    try {
+      localStorage.setItem(adminNavKey, JSON.stringify({ module: adminModule, tab: activeAdminTab, workspace: adminWorkspace }));
+    } catch { /* ignore */ }
+  }, [adminNavKey, adminModule, activeAdminTab, adminWorkspace]);
+  // Declarado depois do restore/save: libera a gravação só após a restauração aplicada.
+  useEffect(() => { navRestoredForRef.current = adminNavKey; }, [adminNavKey]);
+
   // Sincroniza campos de Acompanhamento ao selecionar o estagiário
   useEffect(() => {
     const intern = interns.find(i => i.id === selectedActivityIntern);
@@ -745,14 +872,16 @@ export default function App() {
   const fetchPendingChatCount = useCallback(async () => {
     if (!BRANDING.showSupervisionChat) return;
     if (!user || user.user_metadata?.role !== 'supervisor') return;
-    const { data, error } = await supabase
+    // Contagem no servidor (HEAD + count exact): evita baixar todas as linhas de
+    // supervisor_chat. `geo->>status` = 'pending' só casa se geo existir e status for 'pending'.
+    const { count, error } = await supabase
       .from('records')
-      .select('id, geo')
-      .eq('action', 'supervisor_chat');
-    
-    if (!error && data) {
-      const pending = data.filter(r => r.geo && r.geo.status === 'pending');
-      setPendingChatCount(pending.length);
+      .select('id', { count: 'exact', head: true })
+      .eq('action', 'supervisor_chat')
+      .eq('geo->>status', 'pending');
+
+    if (!error && typeof count === 'number') {
+      setPendingChatCount(count);
     }
   }, [user]);
 
@@ -821,20 +950,27 @@ export default function App() {
     if (!user) return;
     fetchRecords();
     const isSupervisor = user.user_metadata?.role === 'supervisor';
+    // Refetch agrupado (trailing 3s): rajadas de eventos disparam uma única busca.
+    const refetchRecords = createDebounced(() => {
+      fetchRecords();
+      if (BRANDING.showSupervisionChat && isSupervisor) fetchPendingChatCount();
+    });
     const channel = supabase
       .channel('records-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        // Escritas do motor de auditoria não devem causar refetch (evita loop).
+        if (isAuditRecordEvent(payload)) return;
         if (BRANDING.showSupervisionChat && isSupervisor && payload.eventType === 'INSERT' && payload.new?.action === 'supervisor_chat') {
           toast.info(`Novo chamado recebido de ${payload.new.intern_name}: "${payload.new.justification?.substring(0, 30)}..."`, {
             onClick: () => setActiveAdminTab('rh'),
             autoClose: 8000
           });
         }
-        fetchRecords();
-        if (BRANDING.showSupervisionChat && isSupervisor) fetchPendingChatCount();
+        refetchRecords();
       })
       .subscribe();
     return () => {
+      refetchRecords.cancel();
       supabase.removeChannel(channel);
     };
   }, [user, fetchRecords, fetchPendingChatCount]);
@@ -845,6 +981,20 @@ export default function App() {
     const role = user.user_metadata?.role;
     if (role !== 'supervisor' && role !== 'intern_unit') return;
     try {
+      // Sem sessão o supabase-js consulta como anônimo e o PostgREST nega
+      // (401). Confirma o login antes; só desloga se a sessão realmente se
+      // perdeu, nunca por falha de rede ao renovar o token.
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const sessionState = classifySession({ session: sessionData?.session, error: sessionError });
+      if (sessionState === 'lost') {
+        handleSession(null);
+        setLoginError(SESSION_LOST_MESSAGE);
+        return;
+      }
+      if (sessionState === 'transient') {
+        toast.error(SESSION_TRANSIENT_MESSAGE);
+        return;
+      }
       const { data, error } = await supabase
         .from('interns')
         .select(INTERN_SELECT_FIELDS)
@@ -860,20 +1010,20 @@ export default function App() {
     } finally {
       setInternsLoaded(true);
     }
-  }, [user]);
+  }, [user, handleSession, setLoginError]);
 
   useEffect(() => {
     if (!user) return;
     const role = user.user_metadata?.role;
     if (role !== 'supervisor' && role !== 'intern_unit') return;
     fetchInterns();
+    const refetchInterns = createDebounced(() => fetchInterns());
     const channel = supabase
       .channel('interns-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchInterns();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, refetchInterns)
       .subscribe();
     return () => {
+      refetchInterns.cancel();
       supabase.removeChannel(channel);
     };
   }, [user, fetchInterns]);
@@ -933,13 +1083,13 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     fetchUnits();
+    const refetchUnits = createDebounced(() => fetchUnits());
     const channel = supabase
       .channel('units-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, () => {
-        fetchUnits();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, refetchUnits)
       .subscribe();
     return () => {
+      refetchUnits.cancel();
       supabase.removeChannel(channel);
     };
   }, [user, fetchUnits]);
@@ -1001,6 +1151,22 @@ export default function App() {
   // Cache do descritor facial de referência calculado a partir da foto (evita reprocessar o mesmo rosto a cada iteração do loop)
   const referenceDescriptorCacheRef = useRef({});
 
+  // Biometria (photo + face_descriptor) do estagiário selecionado no quiosque.
+  // A lista `interns` não traz esses campos (pesados): busca-se 1x por estagiário,
+  // sob demanda, e fica em cache para o loop de reconhecimento e o registro de ponto.
+  const kioskBiometryRef = useRef({});
+  const ensureKioskBiometry = useCallback(async (id) => {
+    if (!id) return null;
+    if (kioskBiometryRef.current[id]) return kioskBiometryRef.current[id];
+    const bio = await fetchInternBiometry(id);
+    if (bio) kioskBiometryRef.current[id] = bio;
+    return bio;
+  }, []);
+
+  useEffect(() => {
+    if (currentView === 'kiosk' && selectedIntern) ensureKioskBiometry(selectedIntern);
+  }, [currentView, selectedIntern, ensureKioskBiometry]);
+
   useEffect(() => {
     let active = true;
     if (!isCameraActive || !selectedIntern || forceManualPoint || showSuccess || currentView !== 'kiosk') {
@@ -1026,14 +1192,16 @@ export default function App() {
         return;
       }
 
-      let targetDescriptor = intern.faceDescriptor;
-      if ((!targetDescriptor || targetDescriptor === '[]') && intern.photo) {
+      const kioskBio = kioskBiometryRef.current[intern.id];
+      const internPhoto = intern.photo || kioskBio?.photo;
+      let targetDescriptor = intern.faceDescriptor || kioskBio?.faceDescriptor;
+      if ((!targetDescriptor || targetDescriptor === '[]') && internPhoto) {
         const cached = referenceDescriptorCacheRef.current[intern.id];
         if (cached) {
           targetDescriptor = cached;
         } else {
           try {
-            const refDesc = await getFaceDescriptor(intern.photo);
+            const refDesc = await getFaceDescriptor(internPhoto);
             if (refDesc) {
               targetDescriptor = JSON.stringify(refDesc);
               referenceDescriptorCacheRef.current[intern.id] = targetDescriptor;
@@ -1355,26 +1523,47 @@ export default function App() {
 
   // Motor de Auditoria de Ponto Retroativo de 30 dias com Sincronização
   const auditRunningRef = useRef(false);
+  // Throttle: a auditoria roda uma vez ao carregar e, no máximo, a cada 30 min.
+  // Antes rodava a cada mudança de records/interns e, como ela própria grava em
+  // 'records', realimentava o Realtime em loop (refetch completo em ~16 canais).
+  const lastAuditAtRef = useRef(0);
+  const AUDIT_MIN_INTERVAL_MS = 30 * 60 * 1000;
   const runPointAudit = useCallback(async () => {
     if (!user || user.user_metadata?.role !== 'supervisor') return;
     // Evita execuções concorrentes (ex.: múltiplas mudanças em 'records' disparando
     // o useEffect quase ao mesmo tempo), que causavam inserção duplicada do mesmo
     // alerta ao checar 'já existe?' contra um snapshot desatualizado do banco.
     if (auditRunningRef.current) return;
+    if (Date.now() - lastAuditAtRef.current < AUDIT_MIN_INTERVAL_MS) return;
     auditRunningRef.current = true;
+    lastAuditAtRef.current = Date.now();
     try {
 
     // Obter data de 30 dias atrás
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-    // Buscar todos os registros dos últimos 30 dias para auditoria completa
-    const { data: recentRecords, error: recordsError } = await supabase
-      .from('records')
-      .select('*')
-      .gte('timestamp', `${thirtyDaysAgoStr}T00:00:00Z`);
+    // Buscar todos os registros dos últimos 30 dias para auditoria completa.
+    // Colunas explícitas (sem photo/justification_doc em base64) e paginado em
+    // blocos de 1000 (limite do PostgREST) para nunca auditar um conjunto truncado
+    // — o que levaria a apagar alertas válidos e reinseri-los depois.
+    const AUDIT_PAGE = 1000;
+    const recentRecords = [];
+    let recordsError = null;
+    for (let from = 0; ; from += AUDIT_PAGE) {
+      const { data: page, error: pageError } = await supabase
+        .from('records')
+        .select('id, intern_id, intern_name, action, justification, timestamp')
+        .gte('timestamp', `${thirtyDaysAgoStr}T00:00:00Z`)
+        .order('timestamp', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + AUDIT_PAGE - 1);
+      if (pageError || !page) { recordsError = pageError || new Error('sem dados'); break; }
+      recentRecords.push(...page);
+      if (page.length < AUDIT_PAGE) break;
+    }
 
-    if (recordsError || !recentRecords) {
+    if (recordsError) {
       console.error("Erro ao carregar registros para auditoria:", recordsError?.code, recordsError?.message || "sem dados");
       return;
     }
@@ -1550,22 +1739,44 @@ export default function App() {
     }
   }, [user, interns]);
 
+  // Executa após o primeiro carregamento de estagiários (o throttle interno
+  // impede reexecução a cada mudança de records/interns) ...
   useEffect(() => {
+    if (!internsLoaded) return;
     runPointAudit();
-  }, [records, interns, runPointAudit]);
+  }, [internsLoaded, runPointAudit]);
+
+  // ... e a cada 30 min enquanto a sessão estiver aberta.
+  const runPointAuditRef = useRef(runPointAudit);
+  useEffect(() => { runPointAuditRef.current = runPointAudit; }, [runPointAudit]);
+  useEffect(() => {
+    const id = setInterval(() => { runPointAuditRef.current(); }, AUDIT_MIN_INTERVAL_MS + 60 * 1000);
+    return () => clearInterval(id);
+  }, [AUDIT_MIN_INTERVAL_MS]);
 
   // Rotina de Backup de Registros e Cadastros
   const handleManualBackup = useCallback(async () => {
     try {
-      const [
-        { data: internsData },
-        { data: recordsData },
-        { data: unitsData }
-      ] = await Promise.all([
-        supabase.from('interns').select('*'),
-        supabase.from('records').select('*'),
-        supabase.from('units').select('*')
-      ]);
+      // Busca paginada (500 por vez) para não sobrecarregar o banco com um único
+      // select gigante (records e interns trazem colunas base64 pesadas).
+      const fetchAllPaged = async (table, orderCol) => {
+        const PAGE = 500;
+        const all = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await supabase
+            .from(table)
+            .select('*')
+            .order(orderCol, { ascending: true })
+            .range(from, from + PAGE - 1);
+          if (error) throw error;
+          all.push(...(data || []));
+          if (!data || data.length < PAGE) break;
+        }
+        return all;
+      };
+      const internsData = await fetchAllPaged('interns', 'id');
+      const recordsData = await fetchAllPaged('records', 'id');
+      const { data: unitsData } = await supabase.from('units').select('*');
 
       const backupObj = {
         exportedAt: new Date().toISOString(),
@@ -1836,15 +2047,20 @@ export default function App() {
       if (videoRef.current) {
         try {
           const canvas = document.createElement('canvas');
-          canvas.width = 400;
-          canvas.height = 300;
+          // Mantém a proporção nativa do vídeo (celulares em retrato) e limita a 640px:
+          // um canvas fixo 400x300 achatava o rosto e inflava a distância biométrica.
+          const vw = videoRef.current.videoWidth || 640;
+          const vh = videoRef.current.videoHeight || 480;
+          const scale = Math.min(1, 640 / Math.max(vw, vh));
+          canvas.width = Math.round(vw * scale);
+          canvas.height = Math.round(vh * scale);
           const ctx = canvas.getContext('2d');
           // Inverte horizontalmente para o snapshot coincidir com o espelho do preview
           ctx.translate(canvas.width, 0);
           ctx.scale(-1, 1);
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
           ctx.setTransform(1, 0, 0, 1, 0, 0); // limpa transformações
-          photoBase64 = canvas.toDataURL('image/jpeg', 0.6); // ~15kb
+          photoBase64 = canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality);
         } catch (e) {
           console.error("Erro ao capturar foto:", e);
         }
@@ -1855,13 +2071,18 @@ export default function App() {
       }
 
       // Validação facial automática em tempo real
-      let targetDescriptor = intern.faceDescriptor;
+      // Biometria não vem na lista de estagiários: busca sob demanda (cache do quiosque).
+      const registerBio = intern.faceDescriptor !== undefined && intern.photo !== undefined
+        ? { photo: intern.photo, faceDescriptor: intern.faceDescriptor }
+        : await ensureKioskBiometry(intern.id);
+      const registerPhoto = intern.photo || registerBio?.photo;
+      let targetDescriptor = intern.faceDescriptor || registerBio?.faceDescriptor;
 
       // Se não tem faceDescriptor salvo mas possui foto cadastrada, tenta extrair em tempo real
-      if ((!targetDescriptor || targetDescriptor === '[]') && intern.photo) {
+      if ((!targetDescriptor || targetDescriptor === '[]') && registerPhoto) {
         setGeoError('Extraindo biometria de referência da foto do cadastro...');
         try {
-          const refDesc = await getFaceDescriptor(intern.photo);
+          const refDesc = await getFaceDescriptor(registerPhoto);
           if (refDesc) {
             targetDescriptor = JSON.stringify(refDesc);
           }
@@ -1882,7 +2103,15 @@ export default function App() {
           setGeoError('Não foi possível identificar seu rosto na imagem capturada. Centralize seu rosto na câmera e garanta boa iluminação.');
           return;
         }
-        const { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+        let { isMatch, distance } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+        if (!isMatch) {
+          // Referência pode estar em orientação oposta (upload x câmera): tenta a captura espelhada.
+          const mirroredDescriptor = await getMirroredFaceDescriptor(photoBase64);
+          if (mirroredDescriptor) {
+            const mirrored = compareFaces(targetDescriptor, mirroredDescriptor, 0.45);
+            if (mirrored.distance < distance) ({ isMatch, distance } = mirrored);
+          }
+        }
         console.log(`[BIOMETRIA] Comparação realizada. Distância: ${distance.toFixed(3)}, Match: ${isMatch}`);
         if (!isMatch) {
           setGeoError(`Acesso negado por divergência biométrica facial (Diferença: ${distance.toFixed(2)}).`);
@@ -2072,6 +2301,12 @@ export default function App() {
 
   const handleEditIntern = (intern) => {
     setEditingId(intern.id);
+    // Foto não vem na lista: carrega sob demanda e preenche o formulário.
+    if (intern.photo === undefined) {
+      fetchInternBiometry(intern.id).then((bio) => {
+        if (bio) setForm((f) => ({ ...f, photo: bio.photo || '' }));
+      });
+    }
     setForm({
       name: intern.name || '',
       course: intern.course || '',
@@ -2083,7 +2318,7 @@ export default function App() {
       active: intern.active !== false,
       startDate: intern.startDate || new Date().toISOString().split('T')[0],
       endDate: intern.endDate || new Date(Date.now() + 365 * 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      photo: intern.photo || '',
+      photo: intern.photo === undefined ? undefined : (intern.photo || ''),
       cpf: intern.cpf || '',
       email: intern.email || '',
       rg: intern.rg || '',
@@ -3595,44 +3830,43 @@ export default function App() {
 
   const loadPublicInterns = async () => {
     setLoadingPublicInterns(true);
+    setPublicInternsError('');
     try {
       // Restringe à lista de unidades deste workspace (BRANDING.kioskUnits) —
       // esta tela é pública/sem sessão, então nunca deve misturar estagiários
       // do outro grupo (ver UNITS_DEFAULT acima).
       const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
 
-      // 1. Tenta via RPC get_public_interns (funciona com ou sem sessão JWT ativa)
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_public_interns', {
-        p_workspace_unit_ids: workspaceUnitIds
-      });
-
-      if (!rpcError && rpcData && rpcData.length > 0) {
-        setPublicInterns(rpcData.map(mapInternFromDb));
-        return;
+      // RPC get_public_interns_basic (funciona com ou sem sessão JWT ativa). Devolve só
+      // id, nome, unidade e um indicador de biometria: nunca CPF nem a assinatura facial (LGPD).
+      // Sem fallback para select('*') em public.interns: a leitura direta por anon expõe
+      // CPF, dados bancários e documentos (e é negada pelo banco). Em falha, tenta de novo
+      // (2 retentativas) e, se persistir, mostra erro visível em vez de lista vazia.
+      let lastError = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt));
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_public_interns_basic', {
+          p_workspace_unit_ids: workspaceUnitIds
+        });
+        if (!rpcError) {
+          setPublicInterns((rpcData || []).map((r) => ({
+            id: r.id,
+            name: r.name,
+            unitId: r.unit_id,
+            active: r.active !== false,
+            hasBiometria: !!r.has_biometria,
+            cpf: '',
+            faceDescriptor: ''
+          })));
+          return;
+        }
+        lastError = rpcError;
+        console.error(`Erro ao carregar estagiários públicos (tentativa ${attempt + 1}/3):`, rpcError);
       }
-
-      // 2. Consulta direta à tabela interns
-      const { data, error } = await supabase
-        .from('interns')
-        .select('*')
-        .eq('active', true)
-        .in('unit_id', workspaceUnitIds)
-        .order('name', { ascending: true });
-
-      if (!error && data && data.length > 0) {
-        setPublicInterns(data.map(mapInternFromDb));
-      } else if (interns && interns.length > 0) {
-        // 3. Fallback para estagiários pré-carregados no estado local
-        const filtered = interns.filter(i => i.active !== false && workspaceUnitIds.includes(i.unitId));
-        if (filtered.length > 0) setPublicInterns(filtered);
-      }
+      if (lastError) setPublicInternsError('Não foi possível carregar a lista de estagiários. Verifique a conexão e tente novamente.');
     } catch (e) {
       console.error("Erro público ao carregar estagiários:", e);
-      if (interns && interns.length > 0) {
-        const workspaceUnitIds = BRANDING.kioskUnits.map((ku) => ku.id);
-        const filtered = interns.filter(i => i.active !== false && workspaceUnitIds.includes(i.unitId));
-        if (filtered.length > 0) setPublicInterns(filtered);
-      }
+      setPublicInternsError('Não foi possível carregar a lista de estagiários. Verifique a conexão e tente novamente.');
     } finally {
       setLoadingPublicInterns(false);
     }
@@ -3641,21 +3875,46 @@ export default function App() {
   const renderAutogestaoBiometria = () => {
     const selectedInternObj = publicInterns.find(i => i.id === autogestaoInternId);
     const cleanInputCpf = autogestaoCpf.replace(/\D/g, '');
-    const cleanInternCpf = selectedInternObj ? selectedInternObj.cpf.replace(/\D/g, '') : '';
     const isAutogestaoLocked = Date.now() < autogestaoLockedUntil;
-    const isCpfValid = !isAutogestaoLocked && selectedInternObj && cleanInputCpf && cleanInputCpf === cleanInternCpf;
+    const currentCpfKey = selectedInternObj ? `${selectedInternObj.id}|${cleanInputCpf}` : '';
+    const cpfCheckForCurrent = autogestaoCpfCheck.key && autogestaoCpfCheck.key === currentCpfKey ? autogestaoCpfCheck.status : '';
+    const isCpfValid = !isAutogestaoLocked && !!selectedInternObj && cleanInputCpf.length === 11 && cpfCheckForCurrent === 'ok';
     const AUTOGESTAO_MAX_ATTEMPTS = 5;
     const AUTOGESTAO_LOCK_MS = 60000;
 
-    const handleCpfBlur = () => {
-      if (isAutogestaoLocked || !selectedInternObj || cleanInputCpf.length !== 11 || cleanInputCpf === cleanInternCpf) return;
-      const nextAttempts = autogestaoCpfAttempts + 1;
-      setAutogestaoCpfAttempts(nextAttempts);
-      if (nextAttempts >= AUTOGESTAO_MAX_ATTEMPTS) {
-        setAutogestaoLockedUntil(Date.now() + AUTOGESTAO_LOCK_MS);
-        toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+    // Verifica o CPF no servidor (verify_intern_cpf, com limite de tentativas por estagiário).
+    const verifyCpf = async (internId, digits) => {
+      if (isAutogestaoLocked || !internId || digits.length !== 11) return;
+      const key = `${internId}|${digits}`;
+      if (autogestaoCpfCheck.key === key) return; // já verificado (ou em verificação) para este CPF
+      setAutogestaoCpfCheck({ key, status: 'checking' });
+      try {
+        const { data, error } = await supabase.rpc('verify_intern_cpf', { p_intern_id: internId, p_cpf: digits });
+        if (error) {
+          setAutogestaoCpfCheck({ key: '', status: '' });
+          toast.error(/tentativas/i.test(error.message || '') ? error.message : 'Não foi possível verificar o CPF. Tente novamente.');
+          return;
+        }
+        if (data) {
+          setAutogestaoCpfCheck({ key, status: 'ok' });
+          setAutogestaoCpfAttempts(0);
+          return;
+        }
+        setAutogestaoCpfCheck({ key, status: 'fail' });
+        const nextAttempts = autogestaoCpfAttempts + 1;
+        setAutogestaoCpfAttempts(nextAttempts);
+        if (nextAttempts >= AUTOGESTAO_MAX_ATTEMPTS) {
+          setAutogestaoLockedUntil(Date.now() + AUTOGESTAO_LOCK_MS);
+          toast.error('Muitas tentativas de CPF incorretas. Aguarde 1 minuto antes de tentar novamente.');
+        }
+      } catch (e) {
+        console.error('Erro ao verificar CPF:', e);
+        setAutogestaoCpfCheck({ key: '', status: '' });
+        toast.error('Não foi possível verificar o CPF. Tente novamente.');
       }
     };
+
+    const handleCpfBlur = () => verifyCpf(selectedInternObj?.id, cleanInputCpf);
 
     const handleAutogestaoComplete = async (payload) => {
       if (!selectedInternObj) return;
@@ -3669,15 +3928,10 @@ export default function App() {
           p_cpf: autogestaoCpf
         });
 
+        // Sem fallback de update direto: sem sessão a RLS bloqueia em silêncio (0 linhas,
+        // sem erro) e a tela mostrava sucesso mesmo com CPF errado ou RPC falhando.
         if (rpcErr || !rpcSuccess) {
-          // 2. Fallback para update direto via tabela
-          const { error: directErr } = await supabase
-            .from('interns')
-            .update({
-              face_descriptor: descriptorStr
-            })
-            .eq('id', selectedInternObj.id);
-          if (directErr) throw (rpcErr || directErr);
+          throw (rpcErr || new Error('CPF não confere ou muitas tentativas. Verifique o CPF e tente novamente.'));
         }
 
         // Log de auditoria (LGPD): registra quem/quando a biometria foi cadastrada via autogestão.
@@ -3697,7 +3951,7 @@ export default function App() {
       }
     };
 
-    const hasBiometria = selectedInternObj && selectedInternObj.faceDescriptor && selectedInternObj.faceDescriptor !== '[]';
+    const hasBiometria = !!selectedInternObj && (selectedInternObj.hasBiometria ?? (!!selectedInternObj.faceDescriptor && selectedInternObj.faceDescriptor !== '[]'));
 
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
@@ -3760,6 +4014,13 @@ export default function App() {
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Selecione o seu nome na lista:
                     </label>
+                    {loadingPublicInterns && <p className="text-xs text-slate-500 mb-1">Carregando lista...</p>}
+                    {publicInternsError && (
+                      <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 flex items-center justify-between gap-2">
+                        <span>{publicInternsError}</span>
+                        <button type="button" onClick={loadPublicInterns} className="font-bold underline shrink-0">Tentar novamente</button>
+                      </div>
+                    )}
                     <select
                       value={autogestaoInternId}
                       onChange={(e) => {
@@ -3799,13 +4060,21 @@ export default function App() {
                           type="text"
                           placeholder="Apenas números ou formatado"
                           value={autogestaoCpf}
-                          onChange={(e) => setAutogestaoCpf(e.target.value)}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setAutogestaoCpf(value);
+                            verifyCpf(selectedInternObj?.id, value.replace(/\D/g, ''));
+                          }}
                           onBlur={handleCpfBlur}
                           className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs"
                         />
                       </div>
 
-                      {autogestaoCpf && !isCpfValid && (
+                      {cpfCheckForCurrent === 'checking' && (
+                        <p className="text-slate-500 text-[11px] font-semibold">Verificando CPF...</p>
+                      )}
+
+                      {cpfCheckForCurrent === 'fail' && !isCpfValid && (
                         <p className="text-red-500 text-[11px] font-semibold">
                           ❌ O CPF informado não coincide com o do estagiário selecionado.
                         </p>
@@ -3822,7 +4091,7 @@ export default function App() {
 
                           <BiometricEnrollment
                             internName={selectedInternObj.name}
-                            internCpf={selectedInternObj.cpf}
+                            internCpf={autogestaoCpf}
                             onEnrollmentComplete={handleAutogestaoComplete}
                             onCancel={() => setCurrentView('kiosk')}
                           />
@@ -4094,21 +4363,14 @@ export default function App() {
       setIsSubmittingCadastro(true);
       try {
         const cleanCpf = cadastroForm.cpf.replace(/\D/g, '');
-        let formattedCpf = cleanCpf;
-        if (cleanCpf.length === 11) {
-          formattedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9)}`;
-        }
-        const { data: existingCpfUsers, error: cpfError } = await supabase
-          .from('interns')
-          .select('id, name, cpf')
-          .or(`cpf.eq.${cleanCpf},cpf.eq.${formattedCpf},cpf.eq.${cadastroForm.cpf.trim()}`);
+        // Cadastro público (sem sessão): a checagem de CPF duplicado usa uma função
+        // SECURITY DEFINER que devolve só true/false. Nunca consultar public.interns
+        // direto aqui, nem expor o nome do estagiário dono do CPF (LGPD).
+        const { data: cpfAlreadyExists, error: cpfError } = await supabase
+          .rpc('intern_cpf_exists', { p_cpf: cleanCpf });
         if (cpfError) throw cpfError;
-        const duplicate = existingCpfUsers?.find(intern => {
-          const cleanDbCpf = (intern.cpf || '').replace(/\D/g, '');
-          return cleanDbCpf === cleanCpf;
-        });
-        if (duplicate) {
-          toast.error(`Duplicidade de Cadastro: Já existe um estagiário cadastrado com este CPF (${duplicate.name}).`);
+        if (cpfAlreadyExists) {
+          toast.error('Duplicidade de Cadastro: já existe um estagiário cadastrado com este CPF.');
           setIsSubmittingCadastro(false);
           return;
         }
@@ -6143,12 +6405,22 @@ export default function App() {
     return '';
   };
 
-  const handlePrintDocument = (type, intern = null) => {
+  // A lista de estagiários não traz mais a foto (peso): o relatório individual
+  // busca a foto 3x4 sob demanda, só no momento de imprimir/baixar.
+  const withInternPhotoForDocument = async (type, intern) => {
+    if (type !== 'relatorio_individual' || !intern?.id || intern.photo) return intern;
+    const bio = await fetchInternBiometry(intern.id);
+    return bio?.photo ? { ...intern, photo: bio.photo } : intern;
+  };
+
+  const handlePrintDocument = async (type, internArg = null) => {
     if (type.startsWith('download_')) {
-      handleDownloadPDF(type.replace('download_', ''), intern);
+      handleDownloadPDF(type.replace('download_', ''), internArg);
       return;
     }
+    // Abre a janela de forma síncrona (evita bloqueio de pop-up) antes do fetch.
     const printWindow = window.open('', '_blank');
+    const intern = await withInternPhotoForDocument(type, internArg);
     printWindow.document.write(`
       <html>
         <head>
@@ -6178,7 +6450,8 @@ export default function App() {
     };
   };
 
-  const handleDownloadPDF = (type, intern = null) => {
+  const handleDownloadPDF = async (type, internArg = null) => {
+    const intern = await withInternPhotoForDocument(type, internArg);
     const element = document.createElement('div');
     element.innerHTML = sanitizeHtml(getDocumentHtml(type, intern));
     
@@ -7744,7 +8017,8 @@ export default function App() {
   const renderRecordPhotoModal = () => {
     if (!selectedRecordPhoto) return null;
     const intern = interns.find((i) => i.id === selectedRecordPhoto.internId);
-    const hasComparison = !!(intern && intern.photo);
+    const internRegPhoto = recordModalInternPhotos[selectedRecordPhoto.internId];
+    const hasComparison = !!(intern && internRegPhoto);
 
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -7770,7 +8044,7 @@ export default function App() {
                 <span className="text-[11px] font-semibold text-slate-500 mb-1.5">Foto do Cadastro (Inicial 3x4)</span>
                 <div className="aspect-[3/4] w-36 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 shadow-sm flex items-center justify-center">
                   <img
-                    src={intern.photo}
+                    src={internRegPhoto}
                     alt={`Cadastro de ${selectedRecordPhoto.internName}`}
                     className="w-full h-full object-cover"
                   />
@@ -7823,7 +8097,7 @@ export default function App() {
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -8336,54 +8610,54 @@ export default function App() {
   // ============================================================
   const renderAdmin = () => {
     const internNavItems = [
-      { id: 'dashboard',       label: 'Dashboard',               icon: '📊' },
-      { id: 'estagiarios',     label: 'Estagiários',             icon: '👤' },
-      { id: 'documentos',      label: 'Documentos',              icon: '🖨️' },
-      { id: 'frequencia',      label: 'Frequência',              icon: '📋' },
-      { id: 'admissional',     label: 'Documentos Admissionais', icon: '📁' },
-      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: '📈' },
-      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: '⚠️' },
-      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: '🔒' },
-      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: '💰' },
-      { id: 'rh',              label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'dashboard',       label: 'Dashboard',               icon: LayoutDashboard },
+      { id: 'estagiarios',     label: 'Estagiários',             icon: GraduationCap },
+      { id: 'documentos',      label: 'Documentos',              icon: Printer },
+      { id: 'frequencia',      label: 'Frequência',              icon: ClipboardList },
+      { id: 'admissional',     label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: TrendingUp },
+      { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: AlertTriangle },
+      { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: Lock },
+      { id: 'financeiro',      label: 'Folha de Pagamento',      icon: Wallet },
+      { id: 'rh',              label: 'Alertas & Pendências',    icon: Bell },
     ];
 
     const professionalLabels = BRANDING.professionalLabels || { plural: 'Profissionais PJ' };
     const professionalNavItems = [
-      { id: 'pj_dashboard',     label: 'Dashboard', icon: '📊' },
-      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: '👥' },
-      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: '🗓️' },
-      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: '🧾' },
-      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: '📄' },
+      { id: 'pj_dashboard',     label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'pj_profissionais', label: professionalLabels.plural || 'Profissionais PJ', icon: Users },
+      { id: 'pj_presenca',      label: professionalLabels.presence || 'Registro de Presença', icon: CalendarCheck },
+      { id: 'pj_producao',      label: professionalLabels.production || 'Apuração de Produção', icon: Receipt },
+      { id: 'pj_documentos',    label: 'Contratos & Notas Fiscais', icon: FileText },
     ];
 
     const employeeLabels = BRANDING.employeeLabels || { plural: 'Funcionários CLT' };
     const employeeNavItems = [
-      { id: 'clt_dashboard',     label: 'Dashboard', icon: '📊' },
-      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: '🧑‍💼' },
-      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: '📁' },
-      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: '📄' },
-      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: '⏱️' },
-      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: '🧾' },
-      { id: 'clt_ferias',        label: 'Férias',                  icon: '🏖️' },
-      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: '🩺' },
-      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: '⚠️' },
-      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: '🔒' },
-      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: '🔔' },
+      { id: 'clt_dashboard',     label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'clt_funcionarios',  label: employeeLabels.plural || 'Funcionários CLT', icon: Briefcase },
+      { id: 'clt_dossie',        label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'clt_documentos',    label: 'Contratos & Termos',      icon: FileText },
+      { id: 'clt_ponto',         label: employeeLabels.timesheet || 'Ponto Eletrônico', icon: Timer },
+      { id: 'clt_apuracao',      label: 'Apuração Mensal',         icon: Calculator },
+      { id: 'clt_ferias',        label: 'Férias',                  icon: Palmtree },
+      { id: 'clt_saude',         label: 'Saúde Ocupacional',       icon: Stethoscope },
+      { id: 'clt_ocorrencias',   label: 'Ocorrências',             icon: AlertTriangle },
+      { id: 'clt_encerramento',  label: 'Desligamento / Rescisão', icon: UserMinus },
+      { id: 'clt_alertas',       label: 'Alertas & Pendências',    icon: Bell },
     ];
 
     const freelanceLabels = BRANDING.freelanceLabels || { plural: 'Freelancers', jobs: 'Trabalhos (OS)' };
     const freelanceNavItems = [
-      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: '🧑‍🎨' },
-      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: '📝' },
-      { id: 'freelance_conformidade',  label: 'Conformidade', icon: '⚖️' },
+      { id: 'freelance_freelancers',   label: freelanceLabels.plural || 'Freelancers', icon: Users },
+      { id: 'freelance_trabalhos',     label: freelanceLabels.jobs || 'Trabalhos (OS)', icon: FileText },
+      { id: 'freelance_conformidade',  label: 'Conformidade', icon: Scale },
     ];
 
     const showTalentBank = WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule;
     const commonNavItems = [
-      { id: 'aniversariantes', label: 'Aniversariantes', icon: '🎂' },
-      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: '🧑‍💼' }] : []),
-      { id: 'configuracoes',   label: 'Configurações',   icon: '⚙️' },
+      { id: 'aniversariantes', label: 'Aniversariantes', icon: Cake },
+      ...(showTalentBank ? [{ id: 'banco_talentos', label: 'Banco de Talentos', icon: UserSearch }] : []),
+      { id: 'configuracoes',   label: 'Configurações',   icon: Settings },
     ];
 
     // Módulos PJ, CLT e Freelance só aparecem para quem tem
@@ -8420,43 +8694,111 @@ export default function App() {
       violet: 'bg-violet-50 text-violet-700 border-violet-200/80',
     }[moduleAccent];
 
+    const c = sidebarCollapsed;
+    // Sigla para o modo recolhido (ex.: "Profissionais PJ" -> "PP", "Estagiários" -> "E").
+    const railInitials = (label) => {
+      const words = String(label || '').split(/\s+/).filter(Boolean);
+      return (words.length > 1 ? words.slice(0, 2).map((w) => w[0]).join('') : words[0]?.slice(0, 2) || '?').toUpperCase();
+    };
+    const moduleButtons = [
+      { id: 'interns', label: 'Estagiários', firstTab: 'dashboard', activeClass: 'bg-blue-600 text-white border-blue-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-blue-400' },
+      ...(showProfessionalsModule ? [{ id: 'professionals', label: BRANDING.professionalLabels?.plural || 'Profissionais PJ', firstTab: 'pj_dashboard', activeClass: 'bg-teal-600 text-white border-teal-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-teal-400' }] : []),
+      ...(showEmployeesModule ? [{ id: 'employees', label: BRANDING.employeeLabels?.plural || 'Funcionários CLT', firstTab: 'clt_dashboard', activeClass: 'bg-indigo-600 text-white border-indigo-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400' }] : []),
+      ...(showFreelanceModule ? [{ id: 'freelance', label: BRANDING.freelanceLabels?.plural || 'Freelancers', firstTab: 'freelance_freelancers', activeClass: 'bg-violet-600 text-white border-violet-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-violet-400' }] : []),
+    ];
+    const isCommonTab = commonNavItems.some((t) => t.id === activeAdminTab);
+    const currentNavItem = [...adminNavItems, ...commonNavItems].find((t) => t.id === activeAdminTab);
+    const breadcrumbModule = isCommonTab
+      ? 'Geral'
+      : (moduleButtons.find((m) => m.id === adminModule)?.label || 'Estagiários');
+    const breadcrumbUnit = filterUnit === 'all'
+      ? 'Todas as unidades'
+      : (visibleUnits.find((u) => u.id === filterUnit)?.name || filterUnit);
+    const accentIconClass = { blue: 'bg-blue-50 text-blue-700', teal: 'bg-teal-50 text-teal-700', indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700' }[moduleAccent];
+    const renderNavButton = (tab) => {
+      const isActive = activeAdminTab === tab.id;
+      const badge = tab.id === 'rh' && pendingChatCount > 0 ? pendingChatCount : 0;
+      return (
+        <button
+          key={tab.id}
+          onClick={() => setActiveAdminTab(tab.id)}
+          title={c ? tab.label : undefined}
+          aria-current={isActive ? 'page' : undefined}
+          className={`relative w-full flex items-center justify-between ${c ? 'md:justify-center md:px-0' : ''} px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+            isActive
+              ? `${navActiveClass} font-bold border shadow-xs`
+              : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <tab.icon size={18} className="shrink-0" aria-hidden="true" />
+            <span className={c ? 'md:hidden' : ''}>{tab.label}</span>
+          </div>
+          {badge > 0 && (
+            <span className={`bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${c ? 'md:absolute md:top-0.5 md:right-1 md:px-1 md:min-w-[16px] md:text-[9px]' : ''}`}>
+              {badge}
+            </span>
+          )}
+        </button>
+      );
+    };
+
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
-        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) ── */}
-        <aside className="w-full md:w-64 bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:min-h-screen sticky top-0 z-30">
+        {/* ── SIDEBAR DE NAVEGAÇÃO LATERAL (ESQUERDA) — retrátil no desktop (Ctrl+B) ── */}
+        <aside className={`w-full ${c ? 'md:w-16' : 'md:w-64'} bg-slate-50 border-r border-slate-200 text-slate-700 flex-shrink-0 flex flex-col shadow-sm md:h-screen sticky top-0 z-30 md:transition-[width] md:duration-200`}>
           {/* Header da Sidebar */}
-          <div className="p-4 border-b border-slate-200/80 bg-white/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200" />}
-              <div>
-                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight">{BRANDING.displayName}</h1>
-                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">
+          <div className={`p-4 ${c ? 'md:px-0 md:py-3' : ''} border-b border-slate-200/80 bg-white/60 flex items-center justify-between shrink-0`}>
+            <div className={`flex items-center gap-3 min-w-0 ${c ? 'md:w-full md:justify-center' : ''}`}>
+              {BRANDING.logoPath && (
+                <img
+                  src={BRANDING.logoPath}
+                  alt={BRANDING.logoAlt}
+                  title={c ? BRANDING.displayName : undefined}
+                  className="h-10 w-10 rounded-lg shadow-sm object-cover border border-slate-200 shrink-0"
+                />
+              )}
+              <div className={`min-w-0 ${c ? 'md:hidden' : ''}`}>
+                <h1 className="text-base font-bold text-slate-800 font-serif leading-tight truncate">{BRANDING.displayName}</h1>
+                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide truncate">
                   {BRANDING.subtitle || 'Gestão de Pessoas'}
                 </p>
               </div>
             </div>
+            {!c && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="hidden md:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                title="Recolher menu (Ctrl+B)"
+                aria-label="Recolher menu lateral"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            )}
           </div>
 
           {/* Filtro de Unidade & Ações Rápidas */}
-          <div className="p-3 bg-white/40 border-b border-slate-200/80 space-y-2">
+          <div className={`p-3 ${c ? 'md:px-2' : ''} bg-white/40 border-b border-slate-200/80 space-y-2 shrink-0`}>
             {canSwitchWorkspace && (
               <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                   Grupo de Unidades
                 </label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className={`grid grid-cols-2 gap-1.5 ${c ? 'md:grid-cols-1' : ''}`}>
                   {Object.values(WORKSPACES).map((ws) => (
                     <button
                       key={ws.id}
                       type="button"
                       onClick={() => { setAdminWorkspace(ws.id); setFilterUnit('all'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+                      title={ws.displayName}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors truncate ${
                         adminWorkspace === ws.id
                           ? 'bg-blue-600 text-white border-blue-600'
                           : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
                       }`}
                     >
-                      {ws.displayName}
+                      {c ? (<><span className="md:hidden">{ws.displayName}</span><span className="hidden md:inline">{railInitials(ws.displayName)}</span></>) : ws.displayName}
                     </button>
                   ))}
                 </div>
@@ -8464,72 +8806,46 @@ export default function App() {
             )}
             {showModuleToggle && (
               <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                   Módulo
                 </label>
-                <div className={`grid ${moduleToggleGridClass} gap-1.5`}>
-                  <button
-                    type="button"
-                    onClick={() => { setAdminModule('interns'); setActiveAdminTab('dashboard'); }}
-                    className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                      adminModule === 'interns'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
-                    }`}
-                  >
-                    Estagiários
-                  </button>
-                  {showProfessionalsModule && (
+                <div className={`grid ${moduleToggleGridClass} ${c ? 'md:grid-cols-1' : ''} gap-1.5`}>
+                  {moduleButtons.map((m) => (
                     <button
+                      key={m.id}
                       type="button"
-                      onClick={() => { setAdminModule('professionals'); setActiveAdminTab('pj_dashboard'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'professionals'
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-teal-400'
+                      onClick={() => { setAdminModule(m.id); setActiveAdminTab(m.firstTab); }}
+                      title={m.label}
+                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors truncate ${
+                        adminModule === m.id ? m.activeClass : m.idleClass
                       }`}
                     >
-                      {BRANDING.professionalLabels?.plural || 'Profissionais PJ'}
+                      {c ? (<><span className="md:hidden">{m.label}</span><span className="hidden md:inline">{railInitials(m.label)}</span></>) : m.label}
                     </button>
-                  )}
-                  {showEmployeesModule && (
-                    <button
-                      type="button"
-                      onClick={() => { setAdminModule('employees'); setActiveAdminTab('clt_dashboard'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'employees'
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'
-                      }`}
-                    >
-                      {BRANDING.employeeLabels?.plural || 'Funcionários CLT'}
-                    </button>
-                  )}
-                  {showFreelanceModule && (
-                    <button
-                      type="button"
-                      onClick={() => { setAdminModule('freelance'); setActiveAdminTab('freelance_freelancers'); }}
-                      className={`text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
-                        adminModule === 'freelance'
-                          ? 'bg-violet-600 text-white border-violet-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-violet-400'
-                      }`}
-                    >
-                      {BRANDING.freelanceLabels?.plural || 'Freelancers'}
-                    </button>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
             <div>
-              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+              <label className={`text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1 ${c ? 'md:hidden' : ''}`}>
                 Unidade Selecionada
               </label>
+              {c && (
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  title={`Unidade: ${filterUnit === 'all' ? 'Todas as unidades' : (visibleUnits.find((u) => u.id === filterUnit)?.name || filterUnit)} — clique para alterar`}
+                  className="relative hidden md:flex w-full items-center justify-center py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-400 transition-colors"
+                >
+                  <Building2 size={16} />
+                  {filterUnit !== 'all' && <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-blue-600" />}
+                </button>
+              )}
               <select
                 value={filterUnit}
                 onChange={(e) => setFilterUnit(e.target.value)}
                 title="Filtrar por unidade"
-                className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm"
+                className={`w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm ${c ? 'md:hidden' : ''}`}
               >
                 <option value="all">Todas as unidades</option>
                 {visibleUnits.map((u) => (
@@ -8538,86 +8854,59 @@ export default function App() {
               </select>
             </div>
 
-            <div className="flex gap-2 pt-1">
+            <div className={`flex gap-2 pt-1 ${c ? 'md:flex-col' : ''}`}>
               <button
                 onClick={() => setIsOmnibarOpen(true)}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-2 rounded-lg font-medium transition-colors text-xs shadow-xs"
                 title="Abrir busca rápida (Ctrl+K)"
+                aria-label="Buscar"
               >
-                <Search size={13} />
-                <span>Buscar (Ctrl+K)</span>
+                <Search size={c ? 15 : 13} />
+                <span className={c ? 'md:hidden' : ''}>Buscar (Ctrl+K)</span>
               </button>
               <button
                 onClick={() => setCurrentView('kiosk')}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 py-1.5 px-2 rounded-lg font-medium transition-colors text-xs border border-slate-200 shadow-xs"
                 title="Sair do Painel da Supervisão"
+                aria-label="Sair"
               >
-                <ArrowLeft size={13} />
-                <span>Sair</span>
+                <ArrowLeft size={c ? 15 : 13} />
+                <span className={c ? 'md:hidden' : ''}>Sair</span>
               </button>
             </div>
           </div>
 
           {/* Menus / Links */}
-          <nav className="flex-1 p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
-            {adminNavItems.map(tab => {
-              const isActive = activeAdminTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveAdminTab(tab.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
-                    isActive
-                      ? `${navActiveClass} font-bold border shadow-xs`
-                      : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-base leading-none">{tab.icon}</span>
-                    <span>{tab.label}</span>
-                  </div>
-                  {tab.id === 'rh' && pendingChatCount > 0 && (
-                    <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {pendingChatCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <nav className={`flex-1 p-3 ${c ? 'md:px-2' : ''} space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] md:max-h-none md:min-h-0 flex flex-row md:flex-col overflow-x-auto md:overflow-x-hidden`}>
+            {adminNavItems.map(renderNavButton)}
 
             {/* Seção comum aos 3 módulos — sempre visível, independente do módulo ativo */}
             <div className="pt-2 mt-2 border-t border-slate-200/80 flex flex-row md:flex-col gap-1 md:gap-0 space-y-0 md:space-y-1">
-              {commonNavItems.map(tab => {
-                const isActive = activeAdminTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveAdminTab(tab.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
-                      isActive
-                        ? `${navActiveClass} font-bold border shadow-xs`
-                        : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-base leading-none">{tab.icon}</span>
-                      <span>{tab.label}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              {commonNavItems.map(renderNavButton)}
             </div>
           </nav>
 
           {/* Rodapé da Sidebar */}
-          <div className="hidden md:block p-3 border-t border-slate-200/80 text-[11px] text-slate-400 text-center bg-white/40">
-            Controle Integrado • v2.5
+          <div className="hidden md:flex shrink-0 items-center justify-between gap-2 p-2 border-t border-slate-200/80 text-[11px] text-slate-400 bg-white/40">
+            {c ? (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="mx-auto p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors"
+                title="Expandir menu (Ctrl+B)"
+                aria-label="Expandir menu lateral"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            ) : (
+              <span className="px-1">Controle Integrado • v2.5</span>
+            )}
           </div>
         </aside>
 
         {/* ── ÁREA DE CONTEÚDO PRINCIPAL ── */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <main className="flex-1 p-4 md:p-5 xl:p-8 overflow-y-auto min-w-0">
+          <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6">
 
             {adminModule === 'interns' && activeAdminTab === 'dashboard' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
@@ -8635,6 +8924,33 @@ export default function App() {
               </div>
             )}
 
+            {currentNavItem && (
+              <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accentIconClass}`}>
+                    <currentNavItem.icon size={20} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                      <span className="truncate">{BRANDING.displayName}</span>
+                      <ChevronRight size={12} aria-hidden="true" />
+                      <span className="truncate">{breadcrumbModule}</span>
+                    </nav>
+                    <h2 className="text-xl font-bold text-slate-800 leading-tight truncate">{currentNavItem.label}</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { if (c) toggleSidebar(); }}
+                  title="Unidade selecionada (altere no menu lateral)"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-slate-300"
+                >
+                  <Building2 size={13} aria-hidden="true" />
+                  {breadcrumbUnit}
+                </button>
+              </header>
+            )}
+
             {/* ── CONTEÚDO DAS ABAS ── */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6">
               <ErrorBoundary>
@@ -8643,104 +8959,166 @@ export default function App() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 }>
+                  {(visitedAdminTabs.has('dashboard') || activeAdminTab === 'dashboard') && (
                   <div style={{ display: activeAdminTab === 'dashboard' ? 'block' : 'none' }}>
                     <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('frequencia') || activeAdminTab === 'frequencia') && (
                   <div style={{ display: activeAdminTab === 'frequencia' ? 'block' : 'none' }}>
                     <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('estagiarios') || activeAdminTab === 'estagiarios') && (
                   <div style={{ display: activeAdminTab === 'estagiarios' ? 'block' : 'none' }}>
                     <EstagiariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('acompanhamento') || activeAdminTab === 'acompanhamento') && (
                   <div style={{ display: activeAdminTab === 'acompanhamento' ? 'block' : 'none' }}>
                     <AcompanhamentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('financeiro') || activeAdminTab === 'financeiro') && (
                   <div style={{ display: activeAdminTab === 'financeiro' ? 'block' : 'none' }}>
                     <FinanceiroTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('ocorrencias') || activeAdminTab === 'ocorrencias') && (
                   <div style={{ display: activeAdminTab === 'ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('finalizacao') || activeAdminTab === 'finalizacao') && (
                   <div style={{ display: activeAdminTab === 'finalizacao' ? 'block' : 'none' }}>
                     <EncerramentoTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('documentos') || activeAdminTab === 'documentos') && (
                   <div style={{ display: activeAdminTab === 'documentos' ? 'block' : 'none' }}>
                     <DocumentosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onPrintDocument={handlePrintDocument} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('admissional') || activeAdminTab === 'admissional') && (
                   <div style={{ display: activeAdminTab === 'admissional' ? 'block' : 'none' }}>
                     <DossieTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('rh') || activeAdminTab === 'rh') && (
                   <div style={{ display: activeAdminTab === 'rh' ? 'block' : 'none' }}>
                     <AlertasRhTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} onGenerateMinuta={setViewingMinutaIntern} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('aniversariantes') || activeAdminTab === 'aniversariantes') && (
                   <div style={{ display: activeAdminTab === 'aniversariantes' ? 'block' : 'none' }}>
                     <AniversariantesTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
-                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (
+                  )}
+                  {(WORKSPACES[adminWorkspace]?.showTalentBankModule ?? BRANDING.showTalentBankModule) && (visitedAdminTabs.has('banco_talentos') || activeAdminTab === 'banco_talentos') && (
                     <div style={{ display: activeAdminTab === 'banco_talentos' ? 'block' : 'none' }}>
                       <BancoTalentosTab units={visibleUnits} />
                     </div>
                   )}
+                  {(visitedAdminTabs.has('configuracoes') || activeAdminTab === 'configuracoes') && (
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
                     <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_dashboard') || activeAdminTab === 'pj_dashboard') && (
                   <div style={{ display: activeAdminTab === 'pj_dashboard' ? 'block' : 'none' }}>
                     <DashboardProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'pj_dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_profissionais') || activeAdminTab === 'pj_profissionais') && (
                   <div style={{ display: activeAdminTab === 'pj_profissionais' ? 'block' : 'none' }}>
                     <ProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_presenca') || activeAdminTab === 'pj_presenca') && (
                   <div style={{ display: activeAdminTab === 'pj_presenca' ? 'block' : 'none' }}>
                     <PresencaProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_producao') || activeAdminTab === 'pj_producao') && (
                   <div style={{ display: activeAdminTab === 'pj_producao' ? 'block' : 'none' }}>
                     <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('pj_documentos') || activeAdminTab === 'pj_documentos') && (
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
                     <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={units} branding={BRANDING} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_dashboard') || activeAdminTab === 'clt_dashboard') && (
                   <div style={{ display: activeAdminTab === 'clt_dashboard' ? 'block' : 'none' }}>
                     <DashboardFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'clt_dashboard'} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_funcionarios') || activeAdminTab === 'clt_funcionarios') && (
                   <div style={{ display: activeAdminTab === 'clt_funcionarios' ? 'block' : 'none' }}>
                     <FuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_dossie') || activeAdminTab === 'clt_dossie') && (
                   <div style={{ display: activeAdminTab === 'clt_dossie' ? 'block' : 'none' }}>
                     <DossieFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_documentos') || activeAdminTab === 'clt_documentos') && (
                   <div style={{ display: activeAdminTab === 'clt_documentos' ? 'block' : 'none' }}>
                     <DocumentosFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ponto') || activeAdminTab === 'clt_ponto') && (
                   <div style={{ display: activeAdminTab === 'clt_ponto' ? 'block' : 'none' }}>
                     <PontoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_apuracao') || activeAdminTab === 'clt_apuracao') && (
                   <div style={{ display: activeAdminTab === 'clt_apuracao' ? 'block' : 'none' }}>
                     <ApuracaoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ferias') || activeAdminTab === 'clt_ferias') && (
                   <div style={{ display: activeAdminTab === 'clt_ferias' ? 'block' : 'none' }}>
                     <FeriasTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_saude') || activeAdminTab === 'clt_saude') && (
                   <div style={{ display: activeAdminTab === 'clt_saude' ? 'block' : 'none' }}>
                     <SaudeOcupacionalTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_ocorrencias') || activeAdminTab === 'clt_ocorrencias') && (
                   <div style={{ display: activeAdminTab === 'clt_ocorrencias' ? 'block' : 'none' }}>
                     <OcorrenciasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_encerramento') || activeAdminTab === 'clt_encerramento') && (
                   <div style={{ display: activeAdminTab === 'clt_encerramento' ? 'block' : 'none' }}>
                     <EncerramentoFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('clt_alertas') || activeAdminTab === 'clt_alertas') && (
                   <div style={{ display: activeAdminTab === 'clt_alertas' ? 'block' : 'none' }}>
                     <AlertasFuncionariosTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_freelancers') || activeAdminTab === 'freelance_freelancers') && (
                   <div style={{ display: activeAdminTab === 'freelance_freelancers' ? 'block' : 'none' }}>
                     <FreelancersTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_trabalhos') || activeAdminTab === 'freelance_trabalhos') && (
                   <div style={{ display: activeAdminTab === 'freelance_trabalhos' ? 'block' : 'none' }}>
                     <FreelanceJobsTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
+                  )}
+                  {(visitedAdminTabs.has('freelance_conformidade') || activeAdminTab === 'freelance_conformidade') && (
                   <div style={{ display: activeAdminTab === 'freelance_conformidade' ? 'block' : 'none' }}>
                     <ConformidadeFreelanceTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
+                  )}
                 </Suspense>
               </ErrorBoundary>
             </div>

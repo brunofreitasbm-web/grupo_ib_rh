@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Briefcase, Plus, X, Save, Loader2, Printer, ArrowRightLeft, AlertTriangle, FileText, Receipt, ScrollText } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced } from '../../utils/debounce';
 import {
   mapFreelancerFromDb,
   FREELANCER_SELECT_FIELDS,
@@ -55,6 +57,11 @@ export default function FreelanceJobsTab({ filterUnit, restrictedUnitIds = [], u
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showManage, setShowManage] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: showManage, back: () => setShowManage(false) }
+  ]);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -83,13 +90,17 @@ export default function FreelanceJobsTab({ filterUnit, restrictedUnitIds = [], u
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
     const channel = supabase
       .channel('freelance-jobs-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'freelance_jobs' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'freelancers' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'freelance_jobs' }, onRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'freelancers' }, onRealtimeChange)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      onRealtimeChange.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const freelancerById = useMemo(() => Object.fromEntries(freelancers.map((f) => [f.id, f])), [freelancers]);

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { ShieldAlert, FileText, MessageSquare } from 'lucide-react';
 import { supabase } from '../../supabase';
+import { createDebounced, isAuditRecordEvent } from '../../utils/debounce';
 import { mapInternFromDb, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { formatDate, getInternRhMetrics } from '../../utils/helpers';
 import { BRANDING } from '../../config/branding';
@@ -10,6 +12,11 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
   const [loading, setLoading] = useState(true);
   const [chatRecords, setChatRecords] = useState([]);
   const [replyingId, setReplyingId] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: replyingId !== null, back: () => setReplyingId(null) }
+  ]);
   const [replyText, setReplyText] = useState('');
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 
@@ -25,7 +32,7 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
       if (BRANDING.showSupervisionChat) {
         const { data: chatData } = await supabase
           .from('records')
-          .select('*')
+          .select('id, intern_id, intern_name, action, justification, timestamp, geo')
           .eq('action', 'supervisor_chat')
           .order('timestamp', { ascending: false })
           .limit(300);
@@ -75,19 +82,20 @@ export default function AlertasRhTab({ filterUnit, onGenerateMinuta, restrictedU
   };
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('rh-alerts-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, () => {
-        fetchData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records' }, (payload) => {
+        if (isAuditRecordEvent(payload)) return;
+        onRealtimeChange();
       })
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);

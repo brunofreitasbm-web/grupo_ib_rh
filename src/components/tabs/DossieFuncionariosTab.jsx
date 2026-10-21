@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { FolderOpen, Eye, Trash, Upload, Loader2, X, Download, Plus, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { mapEmployeeFromDb, EMPLOYEE_LIST_FIELDS, fileToBase64, getFriendlyDbErrorMessage } from '../../utils/mappings';
@@ -17,6 +18,11 @@ export default function DossieFuncionariosTab({ filterUnit, restrictedUnitIds = 
   const [uploading, setUploading] = useState(false);
   const [uploadDocKey, setUploadDocKey] = useState(ADMISSIONAL_DOCUMENTS[0].key);
   const [viewDoc, setViewDoc] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDoc, back: () => setViewDoc(null) }
+  ]);
 
   const fetchEmployees = useCallback(async () => {
     try {

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import {
   FileText, Save, Loader2, Upload, Eye, Trash, X, Download,
 } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapUnitFromDb, fileToBase64, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import { createDebounced } from '../../utils/debounce';
+import { mapInternFromDb, mapUnitFromDb, fileToBase64, downloadNameForDataUrl, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 
 export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
@@ -20,6 +22,11 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
 
   // Document View Modal State
   const [viewDocBase64, setViewDocBase64] = useState(null);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: !!viewDocBase64, back: () => setViewDocBase64(null) }
+  ]);
   const [viewDocName, setViewDocName] = useState('');
   const [viewDocType, setViewDocType] = useState('');
 
@@ -45,16 +52,16 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('acompanhamento-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);
@@ -210,7 +217,7 @@ export default function AcompanhamentoTab({ filterUnit, restrictedUnitIds = [] }
   const handleDownloadOrOpenDoc = (base64, filename) => {
     const link = document.createElement('a');
     link.href = base64;
-    link.download = filename;
+    link.download = downloadNameForDataUrl(filename, base64);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

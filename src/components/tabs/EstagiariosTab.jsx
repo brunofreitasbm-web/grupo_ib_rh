@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useBackLayers } from '../../hooks/useBackHandler';
 import { Users, Plus, Pencil, Trash2, Save, X, Building2, Upload, Camera, RefreshCw, CheckCircle2, AlertCircle, ScanFace } from 'lucide-react';
 import { supabase } from '../../supabase';
-import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
+import useInternPhotos from '../../hooks/useInternPhotos';
+import { fetchInternBiometry, fetchInternBiometryIds, invalidateInternPhoto } from '../../utils/internBiometry';
+import { createDebounced } from '../../utils/debounce';
+import { mapInternFromDb, mapInternToDb, mapUnitFromDb, generateUsername, compressImage, canvasToDataUrl, IMAGE_PRESETS, getFriendlyDbErrorMessage, INTERN_SELECT_FIELDS } from '../../utils/mappings';
 import { validateCPF } from '../../utils/helpers';
 import { BRANDING } from '../../config/branding';
 import { CourseSelect, InternshipTypeField } from '../CourseFields';
@@ -17,6 +21,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [photoVersion, setPhotoVersion] = useState(0);
 
   // Quando o workspace está travado numa única unidade (filterUnit !== 'all'),
   // todo novo/editado estagiário deve nascer preso a essa unidade.
@@ -43,8 +48,17 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   const [bioUploadMsg, setBioUploadMsg] = useState('');
 
   // State da Varredura em Lote de Biometria
+  const [onlyWithoutBio, setOnlyWithoutBio] = useState(false);
   const [isBatchScanOpen, setIsBatchScanOpen] = useState(false);
   const [batchScanRunning, setBatchScanRunning] = useState(false);
+
+  // Botão/gesto voltar do celular: fecha a subtela mais interna (ver hooks/useBackHandler).
+  useBackLayers([
+    { active: isBatchScanOpen, back: () => { if (!batchScanRunning) setIsBatchScanOpen(false); } },
+    { active: isBioUploadModalOpen, back: () => setIsBioUploadModalOpen(false) },
+    { active: !!bioModalIntern, back: () => handleCloseBiometricsModal() },
+    { active: showManage, back: () => resetForm() }
+  ]);
   const [batchScanTotal, setBatchScanTotal] = useState(0);
   const [batchScanCurrent, setBatchScanCurrent] = useState(0);
   const [batchScanCurrentName, setBatchScanCurrentName] = useState('');
@@ -87,6 +101,14 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
     setBioDescriptor(intern.faceDescriptor || '');
     setBioStatusMsg('');
     setIsBioCameraActive(false);
+    // Foto/descritor não vêm na lista: carrega sob demanda ao abrir o modal.
+    if (intern.photo === undefined || intern.faceDescriptor === undefined) {
+      fetchInternBiometry(intern.id).then((bio) => {
+        if (!bio) return;
+        setBioPhoto((p) => p || bio.photo || '');
+        setBioDescriptor((d) => d || bio.faceDescriptor || '');
+      });
+    }
   };
 
   const handleCloseBiometricsModal = () => {
@@ -114,7 +136,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, vWidth, vHeight);
-      const base64 = canvas.toDataURL('image/jpeg', 0.85);
+      const base64 = canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality);
       setBioPhoto(base64);
 
       const descriptor = await getFaceDescriptor(base64);
@@ -176,6 +198,8 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
 
       if (error) throw error;
       toast.success('Biometria salva com sucesso!');
+      invalidateInternPhoto(bioModalIntern.id);
+      setPhotoVersion((v) => v + 1);
       handleCloseBiometricsModal();
       fetchData();
     } catch (err) {
@@ -225,13 +249,15 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
         .from('interns')
         .select(INTERN_SELECT_FIELDS)
         .order('name', { ascending: true });
+      // Consulta leve (só ids) para o selo "Biometria Ok", sem baixar o descritor.
+      const bioIds = await fetchInternBiometryIds();
 
       const { data: unitsData } = await supabase
         .from('units')
         .select('*')
         .order('name', { ascending: true });
 
-      if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
+      if (internsData) setInterns(internsData.map((r) => ({ ...mapInternFromDb(r), hasBiometry: bioIds.has(r.id) })).filter(i => !restrictedUnitIds.includes(i.unitId)));
       if (unitsData) {
         const mappedUnits = unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id));
         setUnits(mappedUnits);
@@ -246,16 +272,16 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   }, [restrictedUnitIds]);
 
   useEffect(() => {
+    const onRealtimeChange = createDebounced(() => fetchData());
     fetchData();
 
     const internsChannel = supabase
       .channel('estagiarios-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interns' }, onRealtimeChange)
       .subscribe();
 
     return () => {
+      onRealtimeChange.cancel();
       supabase.removeChannel(internsChannel);
     };
   }, [fetchData]);
@@ -285,6 +311,10 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
 
   const handleEditIntern = (intern) => {
     setEditingId(intern.id);
+    // Foto/descritor não vêm na lista: carrega sob demanda e completa o formulário.
+    fetchInternBiometry(intern.id).then((bio) => {
+      if (bio) setForm((f) => ({ ...f, photo: f.photo || bio.photo || '', faceDescriptor: f.faceDescriptor || bio.faceDescriptor || '' }));
+    });
     setForm({
       name: intern.name || '',
       course: intern.course || '',
@@ -296,7 +326,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       active: intern.active !== false,
       startDate: intern.startDate || '',
       endDate: intern.endDate || '',
-      photo: intern.photo || '',
+      photo: intern.photo, // undefined até carregar: não sobrescreve a foto no update
       cpf: intern.cpf || '',
       email: intern.email || '',
       rg: intern.rg || '',
@@ -312,7 +342,7 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
       allowance: intern.allowance || 0,
       supervisorName: intern.supervisorName || '',
       birthdate: intern.birthdate || '',
-      faceDescriptor: intern.faceDescriptor || '',
+      faceDescriptor: intern.faceDescriptor, // idem
     });
     setShowManage(true);
   };
@@ -376,6 +406,8 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                 registration_status: 'biometria validada'
               })
               .eq('id', editingId);
+            invalidateInternPhoto(editingId);
+            setPhotoVersion((v) => v + 1);
           } catch (dbErr) {
             console.error("Erro ao persistir biometria no banco:", dbErr);
           }
@@ -461,6 +493,8 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
           .update(dbPayload)
           .eq('id', editingId);
         if (error) throw error;
+        invalidateInternPhoto(editingId);
+        setPhotoVersion((v) => v + 1);
         toast.success('Estagiário atualizado com sucesso!');
       } else {
         const email = payload.email || `${generateUsername(payload.name)}@${BRANDING.fallbackInternEmailDomain}`;
@@ -602,8 +636,22 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
   // VARREDURA EM LOTE — Extração biométrica de todas as fotos
   // ============================================================
   const handleBatchBioScan = async () => {
-    // Alvo: estagiários com foto 3x4 mas sem face_descriptor ainda
-    const targets = interns.filter(i => i.photo && !i.faceDescriptor);
+    // Alvo: estagiários com foto 3x4 mas sem face_descriptor ainda.
+    // A lista não traz photo: busca só os pendentes, sob demanda (clique do gestor).
+    let targets = [];
+    try {
+      const { data: pending, error: pendingError } = await supabase
+        .from('interns')
+        .select('id, name, photo')
+        .is('face_descriptor', null)
+        .not('photo', 'is', null);
+      if (pendingError) throw pendingError;
+      const allowedIds = new Set(interns.map(i => i.id));
+      targets = (pending || []).filter(i => i.photo && allowedIds.has(i.id));
+    } catch (err) {
+      toast.error('Erro ao buscar estagiários pendentes: ' + err.message);
+      return;
+    }
     if (targets.length === 0) {
       toast.info('Nenhum estagiário pendente de extração biométrica.');
       return;
@@ -661,11 +709,21 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
     toast.success(`Varredura concluída: ${successCount} de ${targets.length} biometria(s) extraída(s) com sucesso.`);
   };
 
-  const filteredInterns = useMemo(
+  const hasBio = (i) => !!i.hasBiometry;
+  const unitInterns = useMemo(
     () => interns.filter(i => filterUnit === 'all' || i.unitId === filterUnit),
     [interns, filterUnit]
   );
+  const withoutBioCount = useMemo(() => unitInterns.filter(i => i.active !== false && !hasBio(i)).length, [unitInterns]);
+  const filteredInterns = useMemo(
+    () => (onlyWithoutBio ? unitInterns.filter(i => !hasBio(i)) : unitInterns),
+    [unitInterns, onlyWithoutBio]
+  );
   const unitName = (id) => units.find(u => u.id === id)?.name || '—';
+
+  // Fotos (avatar) carregadas sob demanda, com cache; refaz após editar foto/biometria.
+  const filteredInternIdsForPhotos = useMemo(() => filteredInterns.map(i => i.id), [filteredInterns]);
+  const internPhotos = useInternPhotos(filteredInternIdsForPhotos, photoVersion);
 
   const internIds = useMemo(
     () => (BRANDING.showStaffDiscAssessment !== false ? filteredInterns.map((i) => i.id) : []),
@@ -980,6 +1038,22 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
           </form>
         ) : null}
 
+        {withoutBioCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+            <span>
+              <strong>{withoutBioCount}</strong> estagiário(s) sem biometria facial salva. A referência é gerada na hora
+              a partir da foto 3x4 e pode falhar no ponto. Refaça pela câmera (botão "Biometria" do cartão).
+            </span>
+            <button
+              type="button"
+              onClick={() => setOnlyWithoutBio(v => !v)}
+              className="rounded-lg border border-amber-400 bg-white px-2 py-1 font-semibold hover:bg-amber-100"
+            >
+              {onlyWithoutBio ? 'Mostrar todos' : 'Mostrar só sem biometria'}
+            </button>
+          </div>
+        )}
+
         {/* Interns List */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredInterns.length === 0 ? (
@@ -1016,8 +1090,8 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
 
                 <div className="flex gap-3">
                   <div className="w-12 h-16 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
-                    {intern.photo ? (
-                      <img src={intern.photo} alt={intern.name} className="w-full h-full object-cover" />
+                    {internPhotos[intern.id] ? (
+                      <img src={internPhotos[intern.id]} alt={intern.name} className="w-full h-full object-cover" />
                     ) : (
                       <Users size={20} className="text-slate-400" />
                     )}
@@ -1059,14 +1133,14 @@ export default function EstagiariosTab({ filterUnit, restrictedUnitIds = [] }) {
                     <button
                       onClick={() => handleOpenBiometricsModal(intern)}
                       className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 border shadow-2xs ${
-                        intern.faceDescriptor && intern.faceDescriptor !== '[]'
+                        intern.hasBiometry
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
                           : 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100'
                       }`}
                       title="Cadastrar / Editar Biometria Facial"
                     >
                       <ScanFace size={13} />
-                      <span>{intern.faceDescriptor && intern.faceDescriptor !== '[]' ? 'Biometria Ok' : 'Biometria'}</span>
+                      <span>{intern.hasBiometry ? 'Biometria Ok' : 'Biometria'}</span>
                     </button>
                     <button
                       onClick={() => handleEditIntern(intern)}
