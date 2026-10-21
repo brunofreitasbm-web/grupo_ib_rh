@@ -8,7 +8,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY") ?? "";
-const APP_PUBLIC_URL = (Deno.env.get("APP_PUBLIC_URL") ?? Deno.env.get("PORTAL_URL") ?? "").replace(/\/+$/, "");
+const DEFAULT_PUBLIC_URL = "https://rh.institutofacaamigos.com.br";
+const APP_PUBLIC_URL = (Deno.env.get("APP_PUBLIC_URL") ?? Deno.env.get("PORTAL_URL") ?? DEFAULT_PUBLIC_URL).replace(/\/+$/, "");
+
+// Gmail/Outlook ignoram web fonts; Apple Mail e iOS carregam. A pilha cai em
+// fontes arredondadas de sistema antes de Arial para manter o tom da marca.
+const FONT_DISPLAY = "'Fredoka','Fredoka One','Arial Rounded MT Bold','Trebuchet MS',Arial,Helvetica,sans-serif";
+const FONT_BODY = "'Nunito','Segoe UI',Arial,Helvetica,sans-serif";
 const BREVO_REPLY_TO = Deno.env.get("BREVO_REPLY_TO") ?? "institutofacaamigos@gmail.com";
 
 function parseSender() {
@@ -84,7 +90,7 @@ function buildFacaAmigosEmail(params: {
   const label = competenciaLabel(competencia);
   const firstName = escapeHtml(professionalName.split(/\s+/)[0] || "Prestador(a)");
   const company = "FaçaAmigos";
-  const logoUrl = APP_PUBLIC_URL ? `${APP_PUBLIC_URL}/brand/facaamigos-email-logo.png` : "";
+  const logoUrl = `${APP_PUBLIC_URL}/brand/facaamigos-email-logo.png`;
   const formattedValor = fmtBRL(calculatedAmount);
 
   const subject = `Apuração de Produção disponível (${label}) — FaçaAmigos`;
@@ -96,8 +102,9 @@ function buildFacaAmigosEmail(params: {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(subject)}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
   </head>
-  <body style="margin:0;padding:0;background-color:#f4f1ea;font-family:'Nunito',Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
+  <body style="margin:0;padding:0;background-color:#f4f1ea;font-family:${FONT_BODY};-webkit-font-smoothing:antialiased;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f1ea;padding:32px 12px;">
       <tr>
         <td align="center">
@@ -112,11 +119,11 @@ function buildFacaAmigosEmail(params: {
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td align="center" style="padding-bottom:24px;">
-                      ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="${company}" width="200" style="display:block;max-width:200px;height:auto;" />` : `<span style="font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:24px;color:#1A3F35;font-weight:bold;">${company}</span>`}
+                      ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="${company}" width="200" style="display:block;max-width:200px;height:auto;" />` : `<span style="font-family:${FONT_DISPLAY};font-size:24px;color:#1A3F35;font-weight:bold;">${company}</span>`}
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:22px;color:#F0196B;text-align:center;padding-bottom:14px;">
+                    <td style="font-family:${FONT_DISPLAY};font-size:22px;color:#F0196B;text-align:center;padding-bottom:14px;">
                       Olá, ${firstName}!
                     </td>
                   </tr>
@@ -153,7 +160,7 @@ function buildFacaAmigosEmail(params: {
                       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                         <tr>
                           <td align="center" style="border-radius:50px;background-color:#F0196B;">
-                            <a href="${escapeHtml(uploadLink)}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:'Fredoka One',Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;font-weight:bold;letter-spacing:0.3px;">
+                            <a href="${escapeHtml(uploadLink)}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:${FONT_DISPLAY};font-size:16px;color:#ffffff;text-decoration:none;font-weight:bold;letter-spacing:0.3px;">
                               Enviar Nota Fiscal (NFSe) &rarr;
                             </a>
                           </td>
@@ -330,7 +337,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // 2. Monta o link público com o token
-      const uploadLink = APP_PUBLIC_URL ? `${APP_PUBLIC_URL}/pj/nf/${rawToken}` : `https://rh.grupoib.com.br/pj/nf/${rawToken}`;
+      const uploadLink = `${APP_PUBLIC_URL}/pj/nf/${rawToken}`;
       const unitName = unitNameById.get(professional.unit_id) || "";
 
       // 3. Monta e envia o e-mail FaçaAmigos

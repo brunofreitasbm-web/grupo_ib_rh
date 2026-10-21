@@ -55,7 +55,7 @@ Deno.serve(async (req: Request) => {
     console.error("[send-disc-assessment] APP_PUBLIC_URL / PORTAL_URL não configurados");
     return jsonResponse({
       error: "APP_PUBLIC_URL_MISSING",
-      message: "Defina a secret APP_PUBLIC_URL com o endereço público do sistema (ex.: https://rh.grupoib.com.br).",
+      message: "Defina a secret APP_PUBLIC_URL com o endereço público do sistema (ex.: https://rh.institutofacaamigos.com.br).",
     }, 503);
   }
 
