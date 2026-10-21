@@ -34,7 +34,7 @@ const openPdfInNewTab = (base64Content) => {
   }
 };
 
-export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [], branding }) {
+export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [], branding, units = [] }) {
   const [professionals, setProfessionals] = useState([]);
   const [presence, setPresence] = useState([]);
   const [nfDocs, setNfDocs] = useState([]);
@@ -522,6 +522,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
         production={production}
         monthKey={monthKey}
         nfByProfessional={nfByProfessional}
+        units={units}
         onDispatched={fetchData}
       />
     </div>

@@ -1,16 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Bell, Calendar, Clock, Sliders, CheckCircle2, AlertCircle, Loader2, Send, Users, ShieldCheck, Mail } from 'lucide-react';
+import { X, Bell, Calendar, Clock, Sliders, CheckCircle2, AlertCircle, Loader2, Send, Building2, ShieldCheck, Filter } from 'lucide-react';
 import { supabase } from '../supabase';
 import { toast } from 'sonner';
+import { BRANDING } from '../config/branding';
 
 const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-const DEFAULT_SETTINGS = {
-  dayOfMonth: 20,
-  businessDayOnly: true, // Se cair em sábado/domingo, ajusta para o dia útil anterior
-  dispatchHour: '08:00',
-  autoNotifyEnabled: true,
-};
 
 export default function PjDispatchConfigModal({
   isOpen,
@@ -18,75 +12,179 @@ export default function PjDispatchConfigModal({
   production = [],
   monthKey,
   nfByProfessional,
+  units = [],
   onDispatched,
 }) {
   const [activeTab, setActiveTab] = useState('agendamento'); // 'agendamento' | 'disparo_imediato'
-  const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem('grupoib_pj_dispatch_settings');
-      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
-    } catch {
-      return DEFAULT_SETTINGS;
-    }
-  });
-
+  const [loadingUnits, setLoadingUnits] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [sendingBulk, setSendingBulk] = useState(false);
 
-  // Seleção de prestadores para disparo
+  // Lista de unidades com as regras de fechamento
+  const [unitConfigs, setUnitConfigs] = useState([]);
+  const [filterUnitId, setFilterUnitId] = useState('all');
+
+  // Seleção de prestadores para disparo imediato
   const [selectedIds, setSelectedIds] = useState([]);
 
-  // Lista de prestadores elegíveis (que não têm NF ou estão pendentes)
+  // Carrega configurações de fechamento das unidades do banco e fallback local
+  useEffect(() => {
+    if (!isOpen) return;
+
+    async function loadUnitSettings() {
+      setLoadingUnits(true);
+      try {
+        const { data: dbUnits, error: dbError } = await supabase
+          .from('units')
+          .select('id, name, pj_fechamento_dia, pj_fechamento_dia_util, pj_fechamento_hora, pj_fechamento_ativo')
+          .order('name', { ascending: true });
+
+        // Unidades base (do banco ou branding)
+        const baseList = (dbUnits && dbUnits.length > 0 ? dbUnits : BRANDING.kioskUnits || []).map((u) => ({
+          id: u.id,
+          name: u.name || u.buttonLabel || u.id,
+          dayOfMonth: Number(u.pj_fechamento_dia) || 20,
+          businessDayOnly: u.pj_fechamento_dia_util !== false,
+          dispatchHour: u.pj_fechamento_hora || '08:00',
+          enabled: u.pj_fechamento_ativo !== false,
+        }));
+
+        // Lê possíveis overrides do localStorage se houver
+        let localOverrides = {};
+        try {
+          const raw = localStorage.getItem('grupoib_pj_unit_dispatch_settings');
+          if (raw) localOverrides = JSON.parse(raw);
+        } catch (e) {
+          console.error('Erro ao ler overrides locais:', e);
+        }
+
+        const merged = baseList.map((item) => {
+          const override = localOverrides[item.id];
+          return override ? { ...item, ...override } : item;
+        });
+
+        setUnitConfigs(merged);
+      } catch (err) {
+        console.error('Erro ao carregar configurações de unidades:', err);
+      } finally {
+        setLoadingUnits(false);
+      }
+    }
+
+    loadUnitSettings();
+  }, [isOpen]);
+
+  // Lista de prestadores da competência
   const eligibleProfessionals = useMemo(() => {
     return production.map((row) => {
       const nfDoc = nfByProfessional?.get(row.professional.id);
       const hasNf = Boolean(nfDoc);
       const isApproved = nfDoc?.meta?.status === 'aprovado';
       const hasEmail = Boolean(row.professional.email || row.professional.repEmail);
+      const unitObj = unitConfigs.find((u) => u.id === row.professional.unitId);
       return {
         id: row.professional.id,
         name: row.professional.name,
         email: row.professional.email || row.professional.repEmail || '',
-        unitName: row.professional.unitName || row.professional.unitId,
+        unitId: row.professional.unitId,
+        unitName: unitObj?.name || row.professional.unitName || row.professional.unitId,
         totalPayable: row.totalPayable,
         hasNf,
         isApproved,
         hasEmail,
       };
     });
-  }, [production, nfByProfessional]);
+  }, [production, nfByProfessional, unitConfigs]);
 
-  // Ao abrir o modal, pré-seleciona todos que ainda NÃO têm NF e que POSSUEM e-mail
+  // Filtra prestadores na aba de disparo
+  const filteredProfessionals = useMemo(() => {
+    if (filterUnitId === 'all') return eligibleProfessionals;
+    return eligibleProfessionals.filter((p) => p.unitId === filterUnitId);
+  }, [eligibleProfessionals, filterUnitId]);
+
+  // Ao abrir ou trocar filtro, pré-seleciona os que não têm NF e possuem e-mail
   useEffect(() => {
     if (isOpen) {
-      const defaultIds = eligibleProfessionals
+      const defaultIds = filteredProfessionals
         .filter((p) => !p.hasNf && p.hasEmail)
         .map((p) => p.id);
       setSelectedIds(defaultIds);
     }
-  }, [isOpen, eligibleProfessionals]);
+  }, [isOpen, filteredProfessionals]);
 
   if (!isOpen) return null;
 
-  const handleSaveSettings = () => {
+  // Atualiza uma unidade específica no estado
+  const handleUpdateUnitConfig = (unitId, field, value) => {
+    setUnitConfigs((prev) =>
+      prev.map((u) => (u.id === unitId ? { ...u, [field]: value } : u))
+    );
+  };
+
+  // Aplica a regra de uma unidade para todas
+  const handleApplyToAll = (baseUnit) => {
+    if (!window.confirm(`Aplicar as regras da unidade "${baseUnit.name}" (Dia ${baseUnit.dayOfMonth}, às ${baseUnit.dispatchHour}) para TODAS as unidades?`)) {
+      return;
+    }
+    setUnitConfigs((prev) =>
+      prev.map((u) => ({
+        ...u,
+        dayOfMonth: baseUnit.dayOfMonth,
+        businessDayOnly: baseUnit.businessDayOnly,
+        dispatchHour: baseUnit.dispatchHour,
+        enabled: baseUnit.enabled,
+      }))
+    );
+    toast.info('Regra aplicada a todas as unidades. Clique em "Salvar Configurações".');
+  };
+
+  // Salva no banco (tabela units) e no localStorage
+  const handleSaveAllSettings = async () => {
     setSavingSettings(true);
     try {
-      localStorage.setItem('grupoib_pj_dispatch_settings', JSON.stringify(settings));
-      toast.success('Configuração de disparo automatizado salva com sucesso!');
+      // 1. Atualiza no Supabase (tabela units)
+      const updates = unitConfigs.map((u) =>
+        supabase
+          .from('units')
+          .update({
+            pj_fechamento_dia: u.dayOfMonth,
+            pj_fechamento_dia_util: u.businessDayOnly,
+            pj_fechamento_hora: u.dispatchHour,
+            pj_fechamento_ativo: u.enabled,
+          })
+          .eq('id', u.id)
+      );
+
+      await Promise.allSettled(updates);
+
+      // 2. Salva no localStorage como cache
+      const cacheObj = {};
+      unitConfigs.forEach((u) => {
+        cacheObj[u.id] = {
+          dayOfMonth: u.dayOfMonth,
+          businessDayOnly: u.businessDayOnly,
+          dispatchHour: u.dispatchHour,
+          enabled: u.enabled,
+        };
+      });
+      localStorage.setItem('grupoib_pj_unit_dispatch_settings', JSON.stringify(cacheObj));
+
+      toast.success('Regras de apuração e disparo por unidade salvas com sucesso!');
       setActiveTab('disparo_imediato');
     } catch (e) {
-      console.error('Erro ao salvar settings:', e);
-      toast.error('Erro ao salvar configurações.');
+      console.error('Erro ao salvar regras por unidade:', e);
+      toast.error('Erro ao persistir configurações.');
     } finally {
       setSavingSettings(false);
     }
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === eligibleProfessionals.filter((p) => p.hasEmail).length) {
+    const selectable = filteredProfessionals.filter((p) => p.hasEmail);
+    if (selectedIds.length === selectable.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(eligibleProfessionals.filter((p) => p.hasEmail).map((p) => p.id));
+      setSelectedIds(selectable.map((p) => p.id));
     }
   };
 
@@ -110,7 +208,7 @@ export default function PjDispatchConfigModal({
       };
     });
 
-    const confirmMsg = `Confirmar o disparo de e-mails com template FaçaAmigos e link seguro para ${items.length} prestador(es) na competência ${monthKey}?`;
+    const confirmMsg = `Confirmar o disparo de e-mails com template FaçaAmigos para ${items.length} prestador(es) na competência ${monthKey}?`;
     if (!window.confirm(confirmMsg)) return;
 
     setSendingBulk(true);
@@ -143,26 +241,26 @@ export default function PjDispatchConfigModal({
   };
 
   const selectedCount = selectedIds.length;
-  const selectedTotal = eligibleProfessionals
+  const selectedTotal = filteredProfessionals
     .filter((p) => selectedIds.includes(p.id))
     .reduce((acc, p) => acc + (p.totalPayable || 0), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
         {/* Header FaçaAmigos */}
         <div className="h-2 bg-[#FFE234] w-full" />
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center font-bold">
-              <Bell size={20} />
+              <Building2 size={20} />
             </div>
             <div>
               <h3 className="text-base font-extrabold text-slate-800">
-                Disparo Automatizado de E-mails aos PJ
+                Configuração de Apuração & Disparo PJ por Unidade
               </h3>
               <p className="text-xs text-slate-500">
-                Template FaçaAmigos • Módulo Grupo IB • Competência: <strong>{monthKey}</strong>
+                Módulo Grupo IB (FaçaAmigos) • Competência ativa: <strong>{monthKey}</strong>
               </p>
             </div>
           </div>
@@ -175,117 +273,168 @@ export default function PjDispatchConfigModal({
         </div>
 
         {/* Abas do Modal */}
-        <div className="flex border-b border-slate-200 px-6 bg-white gap-4 text-xs font-bold">
+        <div className="flex border-b border-slate-200 px-6 bg-white gap-6 text-xs font-bold">
           <button
             onClick={() => setActiveTab('agendamento')}
-            className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+            className={`py-3.5 border-b-2 flex items-center gap-1.5 transition-colors ${
               activeTab === 'agendamento'
                 ? 'border-teal-600 text-teal-700'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            <Calendar size={14} /> Regra de Disparo Mensal (Data do Mês)
+            <Calendar size={14} /> Data de Apuração por Unidade ({unitConfigs.length})
           </button>
           <button
             onClick={() => setActiveTab('disparo_imediato')}
-            className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+            className={`py-3.5 border-b-2 flex items-center gap-1.5 transition-colors ${
               activeTab === 'disparo_imediato'
                 ? 'border-[#F0196B] text-[#F0196B]'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            <Send size={14} /> Disparar Agora para Prestadores ({eligibleProfessionals.length})
+            <Send size={14} /> Disparar E-mails Agora ({filteredProfessionals.length})
           </button>
         </div>
 
         {/* Conteúdo */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-6 overflow-y-auto flex-1 space-y-5">
           {activeTab === 'agendamento' ? (
-            <div className="space-y-5">
-              <div className="p-4 bg-teal-50/70 border border-teal-200/60 rounded-2xl text-xs text-teal-900 leading-relaxed">
-                <strong>Como funciona o disparo automatizado:</strong><br />
-                Na data configurada de cada mês, o sistema consolida as presenças dos profissionais PJ, calcula a apuração de produção exata de cada prestador e envia o e-mail oficial FaçaAmigos com o valor e o link seguro para upload da NFSe.
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Dia do Mês */}
+            <div className="space-y-4">
+              <div className="p-4 bg-teal-50/70 border border-teal-200/60 rounded-2xl text-xs text-teal-900 leading-relaxed flex items-start gap-2.5">
+                <AlertCircle size={18} className="text-teal-700 shrink-0 mt-0.5" />
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Calendar size={14} className="text-teal-600" /> Dia do Mês para Disparo
-                  </label>
-                  <select
-                    value={settings.dayOfMonth}
-                    onChange={(e) => setSettings({ ...settings, dayOfMonth: Number(e.target.value) })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-teal-500 outline-none"
-                  >
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={d}>
-                        Todo dia {d} do mês {d === 20 ? '(Recomendado: Dia 20)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-slate-400 mt-1 block">
-                    Exemplo: dia 20 de cada mês.
-                  </span>
-                </div>
-
-                {/* Horário */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Clock size={14} className="text-teal-600" /> Horário de Envio
-                  </label>
-                  <input
-                    type="time"
-                    value={settings.dispatchHour}
-                    onChange={(e) => setSettings({ ...settings, dispatchHour: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-teal-500 outline-none"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-1 block">
-                    Horário de Brasília (recomendado: 08:00).
-                  </span>
+                  <strong>Configuração por Unidade:</strong><br />
+                  Cada unidade do Grupo IB pode ter um dia do mês e horário de fechamento próprios. O sistema consolida as presenças dos prestadores daquela unidade e envia o e-mail FaçaAmigos na data estipulada.
                 </div>
               </div>
 
-              {/* Ajuste para Dias Úteis */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.businessDayOnly}
-                    onChange={(e) => setSettings({ ...settings, businessDayOnly: e.target.checked })}
-                    className="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-800">
-                      Garantir Envio em Dia Útil (Segunda a Sexta)
-                    </span>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Se o dia {settings.dayOfMonth} cair em um sábado ou domingo, antecipa o envio para a sexta-feira anterior, garantindo que o prestador receba em horário comercial.
-                    </p>
-                  </div>
-                </label>
-              </div>
+              {loadingUnits ? (
+                <div className="py-12 flex justify-center items-center">
+                  <Loader2 size={24} className="animate-spin text-teal-600" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {unitConfigs.map((u) => (
+                    <div
+                      key={u.id}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        u.enabled ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50/60 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 size={16} className="text-teal-700" />
+                          <span className="font-extrabold text-sm text-slate-800">{u.name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">({u.id})</span>
+                        </div>
 
-              {/* Resumo da Regra Ativa */}
-              <div className="flex items-center gap-2 text-xs text-slate-600 bg-amber-50 p-3 rounded-xl border border-amber-200">
-                <AlertCircle size={16} className="text-amber-600 shrink-0" />
-                <span>
-                  Próxima execução prevista: <strong>Dia {settings.dayOfMonth} (útil) às {settings.dispatchHour}</strong>.
-                </span>
-              </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyToAll(u)}
+                            className="text-[10px] text-teal-700 hover:text-teal-900 font-semibold underline"
+                            title="Replicar este dia/horário para todas as outras unidades"
+                          >
+                            Replicar para todas
+                          </button>
+
+                          <label className="flex items-center gap-1.5 cursor-pointer ml-2">
+                            <input
+                              type="checkbox"
+                              checked={u.enabled}
+                              onChange={(e) => handleUpdateUnitConfig(u.id, 'enabled', e.target.checked)}
+                              className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span className="text-[11px] font-bold text-slate-700">
+                              {u.enabled ? 'Disparo Ativo' : 'Pausado'}
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {/* Dia do Mês */}
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            Dia do Mês
+                          </label>
+                          <select
+                            value={u.dayOfMonth}
+                            disabled={!u.enabled}
+                            onChange={(e) => handleUpdateUnitConfig(u.id, 'dayOfMonth', Number(e.target.value))}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-teal-500 outline-none disabled:opacity-50"
+                          >
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                              <option key={d} value={d}>
+                                Todo dia {d} {d === 20 ? '(Padrão: 20)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Horário */}
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            Horário
+                          </label>
+                          <input
+                            type="time"
+                            value={u.dispatchHour}
+                            disabled={!u.enabled}
+                            onChange={(e) => handleUpdateUnitConfig(u.id, 'dispatchHour', e.target.value)}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-teal-500 outline-none disabled:opacity-50"
+                          />
+                        </div>
+
+                        {/* Dia Útil */}
+                        <div className="flex items-end pb-2">
+                          <label className="flex items-center gap-2 cursor-pointer text-[11px] text-slate-700 font-medium">
+                            <input
+                              type="checkbox"
+                              checked={u.businessDayOnly}
+                              disabled={!u.enabled}
+                              onChange={(e) => handleUpdateUnitConfig(u.id, 'businessDayOnly', e.target.checked)}
+                              className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 disabled:opacity-50"
+                            />
+                            <span>Antecipar se fim de semana (Dia útil)</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">
-                  {selectedCount} de {eligibleProfessionals.length} prestador(es) selecionados
-                </span>
+              {/* Filtro por Unidade */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-2 text-xs">
+                  <Filter size={14} className="text-teal-700" />
+                  <span className="font-semibold text-slate-700">Filtrar Unidade:</span>
+                  <select
+                    value={filterUnitId}
+                    onChange={(e) => setFilterUnitId(e.target.value)}
+                    className="p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-none"
+                  >
+                    <option value="all">Todas as Unidades ({eligibleProfessionals.length})</option>
+                    {unitConfigs.map((u) => {
+                      const count = eligibleProfessionals.filter((p) => p.unitId === u.id).length;
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({count} prestadores) • Fechamento: dia {u.dayOfMonth}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
                 <button
                   type="button"
                   onClick={toggleSelectAll}
-                  className="text-teal-700 hover:text-teal-900 font-bold underline"
+                  className="text-xs text-teal-700 hover:text-teal-900 font-bold underline text-right"
                 >
-                  {selectedCount === eligibleProfessionals.filter((p) => p.hasEmail).length
+                  {selectedIds.length === filteredProfessionals.filter((p) => p.hasEmail).length
                     ? 'Desmarcar Todos'
                     : 'Selecionar Todos com E-mail'}
                 </button>
@@ -298,20 +447,21 @@ export default function PjDispatchConfigModal({
                     <tr>
                       <th className="p-2.5 w-10 text-center"></th>
                       <th className="p-2.5 font-semibold">Prestador</th>
+                      <th className="p-2.5 font-semibold">Unidade</th>
                       <th className="p-2.5 font-semibold">E-mail de Destino</th>
                       <th className="p-2.5 font-semibold text-right">Valor Apurado</th>
                       <th className="p-2.5 font-semibold text-center">Status NF</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {eligibleProfessionals.length === 0 ? (
+                    {filteredProfessionals.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="p-6 text-center text-slate-400">
-                          Nenhum prestador encontrado para esta competência.
+                        <td colSpan={6} className="p-6 text-center text-slate-400">
+                          Nenhum prestador encontrado para esta unidade na competência {monthKey}.
                         </td>
                       </tr>
                     ) : (
-                      eligibleProfessionals.map((p) => {
+                      filteredProfessionals.map((p) => {
                         const isSelected = selectedIds.includes(p.id);
                         return (
                           <tr
@@ -329,10 +479,8 @@ export default function PjDispatchConfigModal({
                                 className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                               />
                             </td>
-                            <td className="p-2.5 font-semibold text-slate-800">
-                              <div>{p.name}</div>
-                              <div className="text-[10px] text-slate-400">{p.unitName}</div>
-                            </td>
+                            <td className="p-2.5 font-semibold text-slate-800">{p.name}</td>
+                            <td className="p-2.5 text-slate-600 font-medium">{p.unitName}</td>
                             <td className="p-2.5 text-slate-600">
                               {p.email ? (
                                 <span className="font-mono text-[11px]">{p.email}</span>
@@ -362,14 +510,14 @@ export default function PjDispatchConfigModal({
                 </table>
               </div>
 
-              {/* Box de Resumo da Carga */}
+              {/* Resumo da Carga Selecionada */}
               <div className="bg-slate-50 p-3.5 rounded-2xl flex items-center justify-between text-xs border border-slate-200">
                 <div>
-                  <span className="text-slate-500">Total a faturar selecionado: </span>
+                  <span className="text-slate-500">Total apurado selecionado: </span>
                   <strong className="text-teal-800 text-sm font-extrabold">{fmtBRL(selectedTotal)}</strong>
                 </div>
-                <div className="text-[11px] text-slate-500">
-                  {selectedCount} destinatário(s)
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {selectedCount} destinatário(s) selecionado(s)
                 </div>
               </div>
             </div>
@@ -389,11 +537,12 @@ export default function PjDispatchConfigModal({
           {activeTab === 'agendamento' ? (
             <button
               type="button"
-              onClick={handleSaveSettings}
+              onClick={handleSaveAllSettings}
               disabled={savingSettings}
-              className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5"
+              className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
             >
-              <CheckCircle2 size={14} /> Salvar Regra de Disparo
+              {savingSettings ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              <span>Salvar Regras de Todas as Unidades</span>
             </button>
           ) : (
             <button

@@ -236,6 +236,10 @@ export const mapUnitFromDb = (u) => {
     cltGeofenceRequired: u.clt_geofence_required !== false,
     cltCustomContractText: u.clt_custom_contract_text || '',
     cltSelfRegistrationEnabled: u.clt_self_registration_enabled || false,
+    pjFechamentoDia: safeNum(u.pj_fechamento_dia, 20),
+    pjFechamentoDiaUtil: u.pj_fechamento_dia_util !== false,
+    pjFechamentoHora: u.pj_fechamento_hora || '08:00',
+    pjFechamentoAtivo: u.pj_fechamento_ativo !== false,
   };
 };
 
@@ -273,6 +277,10 @@ export const mapUnitToDb = (u) => {
     clt_geofence_required: (u.cltGeofenceRequired ?? u.clt_geofence_required) !== false,
     clt_custom_contract_text: u.cltCustomContractText || u.clt_custom_contract_text || null,
     clt_self_registration_enabled: u.cltSelfRegistrationEnabled !== undefined ? Boolean(u.cltSelfRegistrationEnabled) : (u.clt_self_registration_enabled !== undefined ? Boolean(u.clt_self_registration_enabled) : false),
+    pj_fechamento_dia: safeNum(u.pjFechamentoDia ?? u.pj_fechamento_dia, 20),
+    pj_fechamento_dia_util: u.pjFechamentoDiaUtil !== undefined ? Boolean(u.pjFechamentoDiaUtil) : (u.pj_fechamento_dia_util !== undefined ? Boolean(u.pj_fechamento_dia_util) : true),
+    pj_fechamento_hora: u.pjFechamentoHora || u.pj_fechamento_hora || '08:00',
+    pj_fechamento_ativo: u.pjFechamentoAtivo !== undefined ? Boolean(u.pjFechamentoAtivo) : (u.pj_fechamento_ativo !== undefined ? Boolean(u.pj_fechamento_ativo) : true),
   };
 };
 

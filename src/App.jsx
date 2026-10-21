@@ -8694,7 +8694,7 @@ export default function App() {
                     <PresencaProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
                   <div style={{ display: activeAdminTab === 'pj_producao' ? 'block' : 'none' }}>
-                    <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                    <ProducaoProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={visibleUnits} />
                   </div>
                   <div style={{ display: activeAdminTab === 'pj_documentos' ? 'block' : 'none' }}>
                     <DocumentosProfissionaisTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} units={units} branding={BRANDING} />
