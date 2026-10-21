@@ -124,6 +124,7 @@ export default function UnitBasketBoard({
   const [activeUnitId, setActiveUnitId] = useState(SIMULATION_UNITS[0]?.id);
   const [hideAssigned, setHideAssigned] = useState(false);
   const [tabHoverId, setTabHoverId] = useState(null);
+  const [sortRoleId, setSortRoleId] = useState(''); // '' = ordem original
   const tabHoverTimer = useRef(null);
 
   const { allStaff, loading: staffLoading } = useHiredTeam();
@@ -178,6 +179,13 @@ export default function UnitBasketBoard({
         .some((v) => String(v).toLowerCase().includes(q));
     });
   }, [candidates, search, hideAssigned, assignmentsById]);
+
+  const sortedCandidates = useMemo(() => {
+    const role = ROLE_BY_ID[sortRoleId];
+    if (!role) return poolCandidates;
+    const score = (c) => computeRoleFit(c.discAssessment, role)?.score ?? -1;
+    return [...poolCandidates].sort((a, b) => score(b) - score(a));
+  }, [poolCandidates, sortRoleId]);
 
   // Colaboradores filtrados
   const poolStaff = useMemo(() => {
@@ -268,6 +276,12 @@ export default function UnitBasketBoard({
   };
 
   useEffect(() => () => clearTimeout(tabHoverTimer.current), []);
+
+  const draggedAssessment = useMemo(() => {
+    if (!draggingId) return null;
+    if (draggingId.startsWith('staff:')) return staffByKey[draggingId.slice(6)]?.assessment || null;
+    return candidatesById[draggingId.replace(/^candidate:/, '')]?.discAssessment || null;
+  }, [draggingId, staffByKey, candidatesById]);
 
   const handleDragStart = (e, type, id) => {
     const payload = `${type}:${id}`;
@@ -412,14 +426,27 @@ export default function UnitBasketBoard({
               Ocultar quem já está alocado
             </label>
 
+            {activeSideTab === 'candidatos' && (
+              <select
+                value={sortRoleId}
+                onChange={(e) => setSortRoleId(e.target.value)}
+                className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
+              >
+                <option value="">Ordem original</option>
+                {ROLE_PROFILES.map((r) => (
+                  <option key={r.id} value={r.id}>Melhor encaixe em: {r.label}</option>
+                ))}
+              </select>
+            )}
+
             <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
               {activeSideTab === 'candidatos' ? (
                 poolCandidates.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6">
-                    {candidates.length === 0 ? 'Nenhum candidato concluiu o Levantamento de Perfil ainda.' : 'Nenhum candidato corresponde à busca.'}
+                    {candidates.length === 0 ? 'Nenhum candidato no Banco de Talentos ainda.' : 'Nenhum candidato corresponde à busca.'}
                   </p>
                 ) : (
-                  poolCandidates.map((c) => (
+                  sortedCandidates.map((c) => (
                     <CandidateCard
                       key={c.id}
                       candidate={c}
@@ -527,6 +554,12 @@ export default function UnitBasketBoard({
                     ...candidatesWithDisc.map((c) => c.discAssessment),
                   ];
                   const composition = teamDiscComposition(combinedAssessments);
+                  const lowFitCount =
+                    staffWithDisc.filter((s) => computeRoleFit(s.assessment, role)?.level === 'baixa').length +
+                    candidatesWithDisc.filter((c) => computeRoleFit(c.discAssessment, role)?.level === 'baixa').length;
+                  const dragFit = draggingId && draggedAssessment ? computeRoleFit(draggedAssessment, role) : null;
+                  const dragTint = { alta: 'bg-emerald-50', media: 'bg-amber-50', baixa: 'bg-red-50' }[dragFit?.level];
+                  const dragRing = { alta: 'ring-emerald-400', media: 'ring-amber-400', baixa: 'ring-red-400' }[dragFit?.level];
 
                   return (
                     <div
@@ -536,7 +569,9 @@ export default function UnitBasketBoard({
                       onDrop={(e) => handleDrop(e, unit.id, role.id)}
                       className={`p-3 min-h-[160px] lg:min-h-0 lg:overflow-y-auto transition-all flex flex-col justify-between ${
                         isHover
-                          ? 'bg-blue-50/80 ring-2 ring-inset ring-blue-400'
+                          ? `${dragTint || 'bg-blue-50/80'} ring-4 ring-inset ${dragRing || 'ring-blue-400'}`
+                          : dragTint
+                          ? dragTint
                           : draggingId
                           ? 'bg-slate-50/60'
                           : 'bg-white'
@@ -544,7 +579,14 @@ export default function UnitBasketBoard({
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold text-slate-800">{role.label}</span>
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            {role.label}
+                            {lowFitCount > 0 && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-red-600 text-white" title="Pessoas com baixa compatibilidade nesta função">
+                                ⚠ {lowFitCount}
+                              </span>
+                            )}
+                          </span>
                           <span
                             className="px-1.5 py-0.5 text-[10px] font-bold rounded border bg-slate-100 text-slate-600 border-slate-200"
                             title={`Perfil esperado: ${role.expectedCode}`}
@@ -590,7 +632,9 @@ export default function UnitBasketBoard({
 
                           {cItems.length === 0 ? (
                             <div className="h-14 border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-center p-1">
-                              <span className="text-[10px] text-slate-400">Solte um candidato ou colaborador aqui</span>
+                              <span className="text-[10px] text-slate-400">
+                              {dragFit ? `Encaixe aqui: ${FIT_LEVELS[dragFit.level].label} (${dragFit.score})` : 'Solte um candidato ou colaborador aqui'}
+                            </span>
                             </div>
                           ) : (
                             cItems.map((c) => (
@@ -603,7 +647,7 @@ export default function UnitBasketBoard({
                                 dragging={draggingId === `candidate:${c.id}`}
                                 onDragStart={(e) => handleDragStart(e, 'candidate', c.id)}
                                 onDragEnd={handleDragEnd}
-                                onOpen={() => onOpenFit(c, role, unit, composition)}
+                                onOpen={() => c.discAssessment && onOpenFit(c, role, unit, composition)}
                                 onRemove={() => onUnassign(c)}
                               />
                             ))
@@ -790,12 +834,8 @@ function PlacedStaffCard({ member, role, targetUnit, composition, dragging, onDr
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={`border rounded-lg p-2 transition-all cursor-grab active:cursor-grabbing shadow-xs ${
-        dragging
-          ? 'opacity-40 ring-2 ring-indigo-400'
-          : isSimulated
-          ? 'bg-indigo-50/70 border-indigo-300 ring-1 ring-indigo-200'
-          : 'bg-white border-slate-200 hover:border-slate-300'
-      }`}
+        FIT_CARD[fit?.level] || 'bg-white border-slate-200 hover:border-slate-300'
+      } ${dragging ? 'opacity-40 ring-2 ring-indigo-400' : isSimulated ? 'ring-1 ring-indigo-300' : ''}`}
     >
       <div className="flex items-start justify-between gap-1.5">
         <div className="flex-1 min-w-0">
@@ -818,6 +858,7 @@ function PlacedStaffCard({ member, role, targetUnit, composition, dragging, onDr
 
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
             {fit && <FitBadge fit={fit} compact />}
+            <IncompatBadge fit={fit} />
             {isSimulated ? (
               <span className="text-[9px] text-indigo-700 font-medium truncate" title={`Origem real: ${origUnit?.label} (${origRole?.short})`}>
                 Origem: {origUnit?.label}
@@ -851,6 +892,13 @@ function PlacedStaffCard({ member, role, targetUnit, composition, dragging, onDr
   );
 }
 
+const FIT_CARD = { alta: 'border-emerald-300 bg-emerald-50/60 border-l-4 border-l-emerald-500', media: 'border-amber-300 bg-amber-50/60 border-l-4 border-l-amber-500', baixa: 'border-red-400 bg-red-50 border-l-4 border-l-red-600' };
+
+function IncompatBadge({ fit }) {
+  if (fit?.level !== 'baixa') return null;
+  return <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-red-600 text-white uppercase tracking-wider">⚠ Incompatível</span>;
+}
+
 const SYNERGY_DOT = { empty: 'bg-slate-300', positive: 'bg-emerald-500', caution: 'bg-amber-500', neutral: 'bg-sky-500' };
 
 // Card de Candidato Alocado dentro da Quadrante da Operação
@@ -863,9 +911,9 @@ function PlacedCandidateCard({ candidate, role, composition, busy, dragging, onD
       draggable={!busy}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`border border-slate-200 rounded-lg bg-white px-2 py-1.5 flex items-center gap-1.5 shadow-xs cursor-grab active:cursor-grabbing ${
-        dragging ? 'opacity-40 ring-2 ring-blue-400' : ''
-      }`}
+      className={`border rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-xs cursor-grab active:cursor-grabbing ${
+        FIT_CARD[fit?.level] || 'border-slate-200 bg-white'
+      } ${dragging ? 'opacity-40 ring-2 ring-blue-400' : ''}`}
     >
       <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left" title="Ver detalhe do encaixe e da sinergia com a equipe">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -873,7 +921,8 @@ function PlacedCandidateCard({ candidate, role, composition, busy, dragging, onD
           <ProfileBadge assessment={candidate.discAssessment} />
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-          <FitBadge fit={fit} />
+          {fit ? <FitBadge fit={fit} /> : <span className="text-[9px] text-slate-400" title="Sem Levantamento DISC não há análise de encaixe">sem análise de encaixe</span>}
+          <IncompatBadge fit={fit} />
           {synergy && synergy.tone !== 'empty' && (
             <span className="inline-flex items-center gap-1 text-[9px] text-slate-500" title={synergy.note}>
               <span className={`w-1.5 h-1.5 rounded-full ${SYNERGY_DOT[synergy.tone]}`} /> equipe

@@ -197,7 +197,7 @@ export default function BancoTalentosTab({ units = [] }) {
     });
   }, [candidates, metaById, tokensById, assessmentsById]);
 
-  // Só quem concluiu o Levantamento de Perfil entra na simulação.
+  // Todos entram na simulação; quem ainda não fez o Levantamento fica sem Role Fit (selo "Sem DISC").
   const withProfile = useMemo(() => enriched.filter((c) => c.discAssessment), [enriched]);
 
   const filtered = useMemo(() => {
@@ -528,9 +528,9 @@ export default function BancoTalentosTab({ units = [] }) {
             >
               <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} />
               {t.label}
-              {t.id === 'simulacao' && withProfile.length > 0 && (
+              {t.id === 'simulacao' && enriched.length > 0 && (
                 <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                  {withProfile.length}
+                  {enriched.length}
                 </span>
               )}
             </button>
@@ -548,7 +548,7 @@ export default function BancoTalentosTab({ units = [] }) {
           </div>
         ) : (
           <UnitBasketBoard
-            candidates={withProfile}
+            candidates={enriched}
             assignmentsById={basketById}
             busyId={busyId}
             onAssign={assignToBasket}
