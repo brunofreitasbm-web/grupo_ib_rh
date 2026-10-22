@@ -17,6 +17,7 @@ import DiscResultModal from '../talent/DiscResultModal';
 import UnitBasketBoard from '../talent/UnitBasketBoard';
 import RoleFitModal from '../talent/RoleFitModal';
 import RoleProfilesPanel from '../talent/RoleProfilesPanel';
+import CandidateAiAnalysisModal from '../talent/CandidateAiAnalysisModal';
 import { mapFreelancerToDb, getFriendlyDbErrorMessage } from '../../utils/mappings';
 
 const SUB_TABS = [
@@ -61,7 +62,7 @@ const DISC_SLA_MS = 48 * 60 * 60 * 1000;
 const SAVED_FILTERS_KEY = 'talent_bank_saved_filters_v1';
 const DEFAULT_FILTERS = {
   status: 'NOVO', disc: 'todos', opp: 'todos', profile: 'todos', period: 'todos',
-  onlyResume: false, onlyDup: false, onlyExpiring: false, sort: 'date_desc',
+  onlyResume: false, onlyDup: false, onlyExpiring: false, onlyAi: false, sort: 'date_desc',
 };
 const PERIOD_DAYS = { '7d': 7, '30d': 30, '90d': 90 };
 const BATCH = 50;
@@ -110,6 +111,8 @@ export default function BancoTalentosTab({ units = [] }) {
   const [resultTarget, setResultTarget] = useState(null);
   const [fitTarget, setFitTarget] = useState(null); // { candidate, role, unit }
   const [resendConfirmTarget, setResendConfirmTarget] = useState(null);
+  const [aiTarget, setAiTarget] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
   // Entrada do módulo Freelance a partir do Banco de Talentos: converte um
   // candidato já triado em cadastro de freelancer (unitId + serviceArea
   // escolhidos aqui; o restante do cadastro — endereço, CPF, dados bancários
@@ -121,6 +124,7 @@ export default function BancoTalentosTab({ units = [] }) {
     { active: !!purgePlan, back: () => !purging && setPurgePlan(null) },
     { active: mergeOpen, back: () => !merging && setMergeOpen(false) },
     { active: !!resendConfirmTarget, back: () => setResendConfirmTarget(null) },
+    { active: !!aiTarget, back: () => !aiLoading && setAiTarget(null) },
     { active: !!convertTarget, back: () => setConvertTarget(null) },
     { active: !!fitTarget, back: () => setFitTarget(null) },
     { active: !!notesTarget, back: () => setNotesTarget(null) },
@@ -266,6 +270,7 @@ export default function BancoTalentosTab({ units = [] }) {
         notes: meta?.notes || '',
         discToken: token || null,
         discAssessment: assessment || null,
+        aiAnalysis: meta?.ai_analysis || null,
         bestFit: assessment ? bestRoleFor(assessment) : null,
         archivedAt: meta?.archived_at || null,
         inBasket: Boolean(basketById[c.id]),
@@ -314,6 +319,7 @@ export default function BancoTalentosTab({ units = [] }) {
         const left = Math.min(c.archiveLeft ?? Infinity, c.discLeft ?? Infinity);
         if (left > 2) return false;
       }
+      if (filters.onlyAi && !c.aiAnalysis) return false;
 
       if (!q) return true;
       const qDigits = q.replace(/\D/g, '');
@@ -326,6 +332,7 @@ export default function BancoTalentosTab({ units = [] }) {
       if (filters.sort === 'date_asc') return ts(a) - ts(b);
       if (filters.sort === 'name') return String(a.full_name || '').localeCompare(String(b.full_name || ''), 'pt-BR');
       if (filters.sort === 'fit') return (b.bestFit?.fit.score ?? -1) - (a.bestFit?.fit.score ?? -1);
+      if (filters.sort === 'ai') return (b.aiAnalysis?.overallFitScore ?? -1) - (a.aiAnalysis?.overallFitScore ?? -1);
       return ts(b) - ts(a);
     });
   }, [enriched, search, statusFilter, discFilter, filters, clusterById]);
@@ -403,6 +410,106 @@ export default function BancoTalentosTab({ units = [] }) {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleAnalyzeCandidate = async (candidate) => {
+    if (!candidate || !candidate.id) return;
+    setAiTarget(candidate);
+    setAiLoading(true);
+    try {
+      const { data, error: err } = await supabase.functions.invoke('analyze-talent-candidate', {
+        body: {
+          candidateId: candidate.id,
+          fullName: candidate.full_name,
+          email: candidate.email,
+          phone: candidate.phone,
+          course: candidate.course,
+          desiredArea: candidate.desired_area,
+          opportunityType: candidate.opportunity_type,
+          resumeUrl: candidate.resume_url,
+          discAssessment: candidate.discAssessment,
+          notes: candidate.notes,
+        },
+      });
+
+      if (err) {
+        let detailMsg = '';
+        try {
+          const res = err?.context;
+          const cloned = res && typeof res.clone === 'function' ? res.clone() : res;
+          const body = cloned ? await cloned.json() : null;
+          detailMsg = body?.message || '';
+        } catch (_) {}
+        throw new Error(detailMsg || err.message || 'Falha ao processar análise com IA.');
+      }
+
+      if (data?.aiAnalysis) {
+        const candidateIdStr = String(candidate.id);
+        setMetaById((prev) => ({
+          ...prev,
+          [candidate.id]: {
+            ...(prev[candidate.id] || { candidate_id: candidate.id }),
+            ai_analysis: data.aiAnalysis,
+          },
+          [candidateIdStr]: {
+            ...(prev[candidateIdStr] || { candidate_id: candidateIdStr }),
+            ai_analysis: data.aiAnalysis,
+          },
+        }));
+        setAiTarget((prev) => (prev ? { ...prev, aiAnalysis: data.aiAnalysis } : prev));
+        toast.success(`Parecer de IA gerado com sucesso para ${candidate.full_name}!`);
+      }
+    } catch (err) {
+      console.error('Erro ao analisar candidato com IA:', err);
+      toast.error(err.message || 'Não foi possível gerar a análise com IA.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const bulkAnalyzeAi = async (list) => {
+    if (list.length === 0) return;
+    setBulkProgress({ label: 'Analisando com IA', done: 0, total: list.length });
+    let ok = 0;
+    let fail = 0;
+    for (const c of list) {
+      try {
+        const { data, error: err } = await supabase.functions.invoke('analyze-talent-candidate', {
+          body: {
+            candidateId: c.id,
+            fullName: c.full_name,
+            email: c.email,
+            phone: c.phone,
+            course: c.course,
+            desiredArea: c.desired_area,
+            opportunityType: c.opportunity_type,
+            resumeUrl: c.resume_url,
+            discAssessment: c.discAssessment,
+            notes: c.notes,
+          },
+        });
+        if (err || !data?.aiAnalysis) throw err || new Error('Sem resposta');
+        setMetaById((prev) => ({
+          ...prev,
+          [c.id]: {
+            ...(prev[c.id] || { candidate_id: c.id }),
+            ai_analysis: data.aiAnalysis,
+          },
+          [String(c.id)]: {
+            ...(prev[String(c.id)] || { candidate_id: String(c.id) }),
+            ai_analysis: data.aiAnalysis,
+          },
+        }));
+        ok++;
+      } catch (err) {
+        console.error(`Falha ao analisar candidato ${c.full_name}:`, err);
+        fail++;
+      }
+      setBulkProgress({ label: 'Analisando com IA', done: ok + fail, total: list.length });
+    }
+    setBulkProgress(null);
+    toast[fail ? 'warning' : 'success'](`${ok} candidato(s) analisado(s) com IA${fail ? `, ${fail} com falha` : ''}.`);
+    setSelected(new Set());
   };
 
   const markSentManual = async (candidate) => {
@@ -971,9 +1078,11 @@ export default function BancoTalentosTab({ units = [] }) {
             <option value="date_asc">Mais antigos</option>
             <option value="name">Nome (A–Z)</option>
             <option value="fit">Maior compatibilidade</option>
+            <option value="ai">Maior score IA</option>
           </select>
           {[
             ['onlyResume', 'Com currículo'],
+            ['onlyAi', 'Com análise IA'],
             ['onlyDup', `Duplicados (${clusterById.size})`],
             ['onlyExpiring', 'Vencendo em ≤2 dias'],
           ].map(([key, label]) => (
@@ -1015,6 +1124,7 @@ export default function BancoTalentosTab({ units = [] }) {
           ) : (
             <>
               <span className="font-semibold">{selected.size} selecionado(s)</span>
+              <button type="button" onClick={() => bulkAnalyzeAi(selectedCandidates)} className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 flex items-center gap-1.5 font-medium shadow-xs"><Sparkles className="w-3.5 h-3.5" />Avaliar com IA</button>
               <button type="button" onClick={() => bulkChangeStatus(selectedCandidates, 'ARQUIVADO', 'Arquivando')} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5"><Archive className="w-3.5 h-3.5" />Arquivar</button>
               <button type="button" onClick={() => bulkChangeStatus(selectedCandidates, 'LIDO', 'Marcando como lido')} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" />Marcar lido</button>
               <button type="button" onClick={() => bulkSendDisc(selectedCandidates)} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5"><Send className="w-3.5 h-3.5" />Enviar DISC</button>
@@ -1095,6 +1205,19 @@ export default function BancoTalentosTab({ units = [] }) {
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-rose-300 bg-rose-100 text-rose-800">
                               <Trash2 className="w-3 h-3" />Vencido
                             </span>
+                          )}
+
+                          {/* Tag visual de Análise Preditiva de IA */}
+                          {c.aiAnalysis && (
+                            <button
+                              type="button"
+                              onClick={() => setAiTarget(c)}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors shadow-2xs"
+                              title="Ver Parecer de IA (Gemini)"
+                            >
+                              <Sparkles className="w-3 h-3 text-indigo-600" />
+                              IA: {c.aiAnalysis.overallFitScore}% · {c.aiAnalysis.topRecommendedRole || 'Aderente'}
+                            </button>
                           )}
 
                           {/* Tag visual direta no candidato sobre o Levantamento de Perfil */}
@@ -1203,6 +1326,22 @@ export default function BancoTalentosTab({ units = [] }) {
                           )}
                           <button
                             type="button"
+                            disabled={busyId === c.id || aiLoading}
+                            onClick={() => {
+                              if (c.aiAnalysis) setAiTarget(c);
+                              else handleAnalyzeCandidate(c);
+                            }}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              c.aiAnalysis
+                                ? 'text-indigo-600 hover:bg-white hover:text-indigo-800'
+                                : 'text-slate-400 hover:bg-white hover:text-indigo-600'
+                            }`}
+                            title={c.aiAnalysis ? 'Ver Parecer de IA' : 'Avaliar com IA (Gemini)'}
+                          >
+                            <Sparkles className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
                             disabled={busyId === c.id}
                             onClick={() => changeStatus(c, c.effectiveStatus === 'ARQUIVADO' ? 'CONTATADO' : 'ARQUIVADO')}
                             className="p-1.5 rounded-lg text-slate-500 hover:bg-white hover:text-rose-600 disabled:opacity-40"
@@ -1239,6 +1378,10 @@ export default function BancoTalentosTab({ units = [] }) {
                           onMarkSentManual={() => markSentManual(c)}
                           onOpenNotes={() => setNotesTarget(c)}
                           onConvertFreelance={() => openConvertToFreelancer(c)}
+                          onAnalyzeAi={() => {
+                            if (c.aiAnalysis) setAiTarget(c);
+                            else handleAnalyzeCandidate(c);
+                          }}
                           onDelete={() => openPurgeSelected([c])}
                         />
                         </div>
@@ -1447,6 +1590,16 @@ export default function BancoTalentosTab({ units = [] }) {
           candidate={resultTarget}
           assessment={resultTarget.discAssessment}
           onClose={() => setResultTarget(null)}
+        />
+      )}
+
+      {aiTarget && (
+        <CandidateAiAnalysisModal
+          candidate={aiTarget}
+          analysis={aiTarget.aiAnalysis || metaById[aiTarget.id]?.ai_analysis}
+          loading={aiLoading}
+          onReanalyze={handleAnalyzeCandidate}
+          onClose={() => !aiLoading && setAiTarget(null)}
         />
       )}
     </div>
