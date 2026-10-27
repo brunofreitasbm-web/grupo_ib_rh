@@ -1,3 +1,5 @@
+import { BRANDING } from '../config/branding';
+
 // Lista padrão (roda a cada evento Realtime): SEM photo/face_descriptor, que são
 // base64/vetores pesados. Busque sob demanda com src/utils/internBiometry.js.
 export const INTERN_SELECT_FIELDS = 'id, name, course, institution, internship_type, shift, daily_hours, unit_id, active, start_date, end_date, last_report_date, recess_days_taken, username, is_first_login, cpf, email, rg, phone, address, bank_name, bank_agency, bank_account, pix_key, emergency_name, emergency_relationship, emergency_phone, allowance, supervisor_name, registration_status, birthdate, role_id';
@@ -581,6 +583,7 @@ export const mapUnitToDb = (u) => {
   if (!u) return {};
   const radiusM = safeNum(u.radiusM ?? u.radius_m, safeNum(u.radiusKm ?? u.radius_km, 5) * 1000);
   const radiusKm = safeNum(u.radiusKm ?? u.radius_km, radiusM / 1000);
+  const resolvedWorkspaceId = u.workspaceId || u.workspace_id || (['antonio-barreto', 'generalissimo'].includes(u.id) ? 'porto-terapia' : (BRANDING?.id || null));
   return {
     id: u.id,
     name: u.name || u.nome || '',
@@ -590,7 +593,7 @@ export const mapUnitToDb = (u) => {
     radius_km: radiusKm,
     radius_m: radiusM,
     geofence_required: Boolean(u.geofenceRequired ?? u.geofence_required),
-    workspace_id: u.workspaceId || u.workspace_id || null,
+    workspace_id: resolvedWorkspaceId,
     kiosk_email: u.kioskEmail || u.kiosk_email || null,
     biometric_required: u.biometricRequired !== undefined ? Boolean(u.biometricRequired) : (u.biometric_required !== undefined ? Boolean(u.biometric_required) : false),
     pj_enabled: u.pjEnabled !== undefined ? Boolean(u.pjEnabled) : (u.pj_enabled !== undefined ? Boolean(u.pj_enabled) : false),
@@ -620,9 +623,18 @@ export const mapUnitToDb = (u) => {
 
 export const safeUpsertUnits = async (supabaseClient, dbUnits) => {
   if (!supabaseClient) return { error: new Error('Cliente Supabase não fornecido') };
-  const payload = Array.isArray(dbUnits)
+  const rawPayload = Array.isArray(dbUnits)
     ? dbUnits.map(u => ({ ...u }))
     : [{ ...dbUnits }];
+
+  const payload = rawPayload.map(item => {
+    if (!item.workspace_id) {
+      item.workspace_id = ['antonio-barreto', 'generalissimo'].includes(item.id)
+        ? 'porto-terapia'
+        : (BRANDING?.id || 'porto-terapia');
+    }
+    return item;
+  });
 
   let { error } = await supabaseClient.from('units').upsert(payload);
 

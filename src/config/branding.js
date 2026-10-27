@@ -101,6 +101,7 @@ export const WORKSPACES = {
       {
         id: 'antonio-barreto',
         name: 'Antônio Barreto',
+        workspaceId: 'porto-terapia',
         buttonLabel: 'Estagiários - Antônio Barreto',
         loginLabel: 'Estagiário - Unidade Antônio Barreto',
         kioskEmail: 'antoniobarreto@portoterapia.com',
@@ -113,6 +114,7 @@ export const WORKSPACES = {
       {
         id: 'generalissimo',
         name: 'Generalíssimo Deodoro',
+        workspaceId: 'porto-terapia',
         buttonLabel: 'Estagiários - Generalíssimo',
         loginLabel: 'Estagiário - Unidade Generalíssimo Deodoro',
         kioskEmail: 'generalissimo@portoterapia.com',
@@ -253,6 +255,7 @@ export const WORKSPACES = {
       {
         id: 'faca-amigos-parque-shopping',
         name: 'FaçaAmigos Parque Shopping',
+        workspaceId: 'grupoib',
         buttonLabel: 'Estagiários - FaçaAmigos Parque Shopping',
         loginLabel: 'Estagiário - FaçaAmigos Parque Shopping',
         kioskEmail: 'parqueshopping@grupoib.internal',
@@ -269,6 +272,7 @@ export const WORKSPACES = {
       {
         id: 'faca-amigos-grao-para',
         name: 'FaçaAmigos Grão Pará',
+        workspaceId: 'grupoib',
         buttonLabel: 'Estagiários - FaçaAmigos Grão Pará',
         loginLabel: 'Estagiário - FaçaAmigos Grão Pará',
         kioskEmail: 'graopara@grupoib.internal',
@@ -285,6 +289,7 @@ export const WORKSPACES = {
       {
         id: 'clinica-a',
         name: 'FaçaAmigos, Centro de Terapia Comportamental',
+        workspaceId: 'grupoib',
         buttonLabel: 'Estagiários - FaçaAmigos, Centro de Terapia Comportamental',
         loginLabel: 'Estagiário - FaçaAmigos, Centro de Terapia Comportamental',
         kioskEmail: 'clinicaa@grupoib.internal',
@@ -301,6 +306,7 @@ export const WORKSPACES = {
       {
         id: 'clinica-b',
         name: 'Clínica B',
+        workspaceId: 'grupoib',
         buttonLabel: 'Estagiários - Clínica B',
         loginLabel: 'Estagiário - Clínica B',
         kioskEmail: 'clinicab@grupoib.internal',

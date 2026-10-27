@@ -163,6 +163,7 @@ const UNITS_DEFAULT = BRANDING.kioskUnits.map((ku) => ({
   lat: 0,
   lng: 0,
   radiusKm: 5,
+  workspaceId: ku.workspaceId || BRANDING.id,
 }));
 
 // Limites da Lei do Estágio (Lei nº 11.788/2008)
@@ -229,6 +230,19 @@ export default function App() {
   const [internsLoaded, setInternsLoaded] = useState(false);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
+  const [institutionSettings, setInstitutionSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`app_configuracoes_${BRANDING.id || 'porto-terapia'}`);
+      if (saved) return JSON.parse(saved);
+    } catch { /* ignore */ }
+    return {
+      nomeEmpresa: BRANDING.displayName,
+      razaoSocial: BRANDING.legalEntityName,
+      cnpj: BRANDING.cnpj,
+      telefone: BRANDING.phone,
+      emailEmpresa: BRANDING.contactEmail,
+    };
+  });
   // Abas do painel admin já visitadas: cada aba só monta (e carrega seu chunk/dados)
   // na primeira visita e depois fica montada, preservando filtros e rascunhos.
   const [visitedAdminTabs, setVisitedAdminTabs] = useState(() => new Set(['dashboard']));
@@ -452,7 +466,10 @@ export default function App() {
       const uId = (u.id || '').toLowerCase();
       const uName = (u.name || '').toLowerCase();
       const isTargetHidden = uId.includes('antonio-barreto') || uId.includes('generalissimo') || uName.includes('antônio barreto') || uName.includes('generalíssimo');
-      if (isTargetHidden && (BRANDING.id === 'grupoib' || u.workspaceId === 'porto-terapia')) {
+      if (BRANDING.id === 'grupoib' && (isTargetHidden || u.workspaceId === 'porto-terapia')) {
+        return false;
+      }
+      if (BRANDING.id === 'porto-terapia' && u.workspaceId === 'grupoib') {
         return false;
       }
       return true;
@@ -2621,6 +2638,10 @@ export default function App() {
       console.error('Erro ao salvar unidade:', errDetail, err);
       toast.error('Erro ao salvar unidade: ' + errDetail);
     }
+  }, []);
+
+  const handleSaveSettingsFromConfig = useCallback((newSettings) => {
+    setInstitutionSettings(newSettings);
   }, []);
 
 
@@ -5833,14 +5854,30 @@ export default function App() {
     
     // Busca os dados específicos da unidade do estagiário (ou do filtro de unidade)
     const targetUnitId = intern?.unitId || filterUnit;
-    const currentUnit = units.find(u => u.id === targetUnitId) || BRANDING.kioskUnits.find(ku => ku.id === targetUnitId);
+
+    let localUnitConfig = {};
+    if (targetUnitId) {
+      try {
+        const savedU = localStorage.getItem(`unit_config_${BRANDING.id || 'porto-terapia'}_${targetUnitId}`);
+        if (savedU) localUnitConfig = JSON.parse(savedU);
+      } catch { /* ignore */ }
+    }
+
+    const currentUnit = units.find(u => u.id === targetUnitId)
+      || (localUnitConfig?.id ? localUnitConfig : null)
+      || BRANDING.kioskUnits.find(ku => ku.id === targetUnitId);
     
-    const unitRazaoSocial = currentUnit?.razaoSocial || currentUnit?.razao_social || BRANDING.legalEntityName;
-    const unitCnpj = currentUnit?.cnpj || BRANDING.cnpj;
-    const unitAddress = currentUnit?.address || currentUnit?.endereco || BRANDING.documentLocation;
-    const unitPhone = currentUnit?.phone || BRANDING.phone;
-    const unitDisplayName = currentUnit?.name || currentUnit?.nome || currentUnit?.buttonLabel || BRANDING.displayName;
-    const unitLogo = currentUnit?.logoUrl || currentUnit?.logo_url || BRANDING.logoPath;
+    const genRazaoSocial = institutionSettings?.razaoSocial || BRANDING.legalEntityName;
+    const genCnpj = institutionSettings?.cnpj || BRANDING.cnpj;
+    const genPhone = institutionSettings?.telefone || BRANDING.phone;
+    const genNome = institutionSettings?.nomeEmpresa || BRANDING.displayName;
+
+    const unitRazaoSocial = currentUnit?.razaoSocial || currentUnit?.razao_social || localUnitConfig?.razaoSocial || genRazaoSocial;
+    const unitCnpj = currentUnit?.cnpj || localUnitConfig?.cnpj || genCnpj;
+    const unitAddress = currentUnit?.address || currentUnit?.endereco || localUnitConfig?.address || BRANDING.documentLocation;
+    const unitPhone = currentUnit?.phone || localUnitConfig?.phone || genPhone;
+    const unitDisplayName = currentUnit?.name || currentUnit?.nome || currentUnit?.buttonLabel || localUnitConfig?.name || genNome;
+    const unitLogo = currentUnit?.logoUrl || currentUnit?.logo_url || localUnitConfig?.logoUrl || BRANDING.logoPath;
 
     const headerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px;">
@@ -6195,7 +6232,7 @@ export default function App() {
             <p style="margin: 2px 0 0; font-size: 9px; color: #6b7280;">Carta de Solicitação de Desligamento por Iniciativa Própria</p>
           </div>
           
-          <p style="margin-bottom: 15px;">À Direção da <strong>${BRANDING.legalEntityName.toUpperCase()}</strong>,</p>
+          <p style="margin-bottom: 15px;">À Direção da <strong>${unitRazaoSocial.toUpperCase()}</strong>,</p>
 
           <p style="text-align: justify; margin-bottom: 20px;">
             Eu, <strong>${internName}</strong>, inscrito(a) no CPF sob o nº <strong>${intern?.cpf || '_____________________'}</strong>, estudante regular do curso de <strong>${courseName}</strong> na instituição de ensino <strong>${institutionName}</strong>, venho por meio desta solicitar formalmente o desligamento do meu estágio, exercido na <strong>${unitTitle}</strong>, por motivos particulares de cunho pessoal/profissional.
@@ -6206,7 +6243,7 @@ export default function App() {
           </p>
 
           <p style="text-align: justify; margin-bottom: 30px;">
-            Agradeço a oportunidade de aprendizado e desenvolvimento profissional concedida durante o período de convivência com a equipe técnica e supervisores da ${BRANDING.displayName}.
+            Agradeço a oportunidade de aprendizado e desenvolvimento profissional concedida durante o período de convivência com a equipe técnica e supervisores da ${unitDisplayName}.
           </p>
 
           <p style="text-align: right; margin-bottom: 50px;">Belém/PA, ${new Date().toLocaleDateString('pt-BR')}.</p>
@@ -6220,7 +6257,7 @@ export default function App() {
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 30px; padding-top: 5px;">
-                  <strong>${BRANDING.displayName}</strong><br>Representante Concedente
+                  <strong>${unitDisplayName}</strong><br>Representante Concedente
                 </div>
               </td>
             </tr>
@@ -6374,7 +6411,7 @@ export default function App() {
             <tr>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
                 <div style="border-top: 1px solid #9ca3af; margin-top: 25px; padding-top: 5px; width: 80%; margin-left: auto; margin-right: auto;">
-                  <strong>Supervisor de Estágio</strong><br>${BRANDING.displayName}
+                  <strong>Supervisor de Estágio</strong><br>${unitDisplayName}
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding: 10px;">
@@ -9052,7 +9089,7 @@ export default function App() {
                   )}
                   {(visitedAdminTabs.has('configuracoes') || activeAdminTab === 'configuracoes') && (
                   <div style={{ display: activeAdminTab === 'configuracoes' ? 'block' : 'none' }}>
-                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} currentUserId={user?.id || null} />
+                    <ConfiguracoesTab userRole={user?.user_metadata?.role || 'admin'} units={visibleUnits} onSaveUnit={handleSaveUnitFromConfig} onSaveSettings={handleSaveSettingsFromConfig} currentUserId={user?.id || null} />
                   </div>
                   )}
                   {(visitedAdminTabs.has('pj_dashboard') || activeAdminTab === 'pj_dashboard') && (

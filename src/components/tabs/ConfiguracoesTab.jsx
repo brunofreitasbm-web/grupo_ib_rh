@@ -30,7 +30,7 @@ import { NATIONAL_FIXED_HOLIDAYS, movableHolidays } from '../../utils/cltCalcula
 import { toast } from 'sonner';
 import UsuariosSistema from '../config/UsuariosSistema';
 
-export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSaveUnit, currentUserId = null }) {
+export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSaveUnit, onSaveSettings, currentUserId = null }) {
   const [activeSubTab, setActiveSubTab] = useState('empresa');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [expandedUnitId, setExpandedUnitId] = useState(null);
@@ -58,14 +58,18 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     declaracaoCustomText: '',
     fichaCustomText: '',
     radiusM: 5000,
-    geofenceRequired: false
+    geofenceRequired: false,
+    workspaceId: ku.workspaceId || BRANDING.id,
   }));
 
   const availableUnits = rawAvailableUnits.filter((u) => {
     const uId = (u.id || '').toLowerCase();
     const uName = (u.name || u.nome || '').toLowerCase();
     const isTargetHidden = uId.includes('antonio-barreto') || uId.includes('generalissimo') || uName.includes('antônio barreto') || uName.includes('generalíssimo');
-    if (isTargetHidden && (BRANDING.id === 'grupoib' || u.workspaceId === 'porto-terapia')) {
+    if (BRANDING.id === 'grupoib' && (isTargetHidden || u.workspaceId === 'porto-terapia')) {
+      return false;
+    }
+    if (BRANDING.id === 'porto-terapia' && u.workspaceId === 'grupoib') {
       return false;
     }
     return true;
@@ -92,7 +96,7 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
         geofenceRequired: u.geofenceRequired !== undefined ? u.geofenceRequired : (u.geofence_required === true),
         lat: u.lat !== undefined ? u.lat : (u.latitude || 0),
         lng: u.lng !== undefined ? u.lng : (u.longitude || 0),
-        workspaceId: u.workspaceId || u.workspace_id || null,
+        workspaceId: u.workspaceId || u.workspace_id || (['antonio-barreto', 'generalissimo'].includes(u.id) ? 'porto-terapia' : (BRANDING.id || null)),
         kioskEmail: u.kioskEmail || u.kiosk_email || '',
         biometricRequired: u.biometricRequired !== undefined ? u.biometricRequired : (u.biometric_required || false),
         pjEnabled: u.pjEnabled !== undefined ? u.pjEnabled : (u.pj_enabled || false),
@@ -173,10 +177,17 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
   const handleSaveSingleUnit = (unitId) => {
     const unitData = editingUnits[unitId];
     if (unitData && onSaveUnit) {
-      onSaveUnit(unitData);
+      const unitToSave = {
+        ...unitData,
+        razaoSocial: unitData.razaoSocial || settings.razaoSocial || BRANDING.legalEntityName,
+        cnpj: unitData.cnpj || settings.cnpj || BRANDING.cnpj,
+        phone: unitData.phone || settings.telefone || BRANDING.phone,
+      };
+      onSaveUnit(unitToSave);
+      localStorage.setItem(`unit_config_${BRANDING.id}_${unitId}`, JSON.stringify(unitToSave));
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
-    } else {
+    } else if (unitData) {
       localStorage.setItem(`unit_config_${BRANDING.id}_${unitId}`, JSON.stringify(unitData));
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
@@ -212,16 +223,28 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     localStorage.setItem(storageKey, JSON.stringify(settings));
+    if (onSaveSettings) {
+      onSaveSettings(settings);
+    }
     // Salva também todas as unidades
-    Object.values(editingUnits).forEach(uData => {
-      if (onSaveUnit) {
-        onSaveUnit(uData);
-      } else {
-        localStorage.setItem(`unit_config_${BRANDING.id}_${uData.id}`, JSON.stringify(uData));
+    if (onSaveUnit) {
+      for (const uData of Object.values(editingUnits)) {
+        const unitToSave = {
+          ...uData,
+          razaoSocial: uData.razaoSocial || settings.razaoSocial || BRANDING.legalEntityName,
+          cnpj: uData.cnpj || settings.cnpj || BRANDING.cnpj,
+          phone: uData.phone || settings.telefone || BRANDING.phone,
+        };
+        await onSaveUnit(unitToSave);
+        localStorage.setItem(`unit_config_${BRANDING.id}_${uData.id}`, JSON.stringify(unitToSave));
       }
-    });
+    } else {
+      Object.values(editingUnits).forEach(uData => {
+        localStorage.setItem(`unit_config_${BRANDING.id}_${uData.id}`, JSON.stringify(uData));
+      });
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
