@@ -10,7 +10,7 @@ import {
   CalendarCheck, Receipt, Calculator, Palmtree, Stethoscope, UserMinus, Scale, Cake, UserSearch,
   Settings, ChevronRight
 } from 'lucide-react';
-import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels } from './utils/faceBiometrics';
+import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels, toCanvasOrImage } from './utils/faceBiometrics';
 import {
   getFriendlyDbErrorMessage,
   INTERN_SELECT_FIELDS,
@@ -1214,44 +1214,47 @@ export default function App() {
 
       if (targetDescriptor && targetDescriptor !== '[]') {
         try {
-          const detection = await faceapi
-            .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
-            .withFaceLandmarks()
-            .withFaceDescriptor();
+          const media = await toCanvasOrImage(videoRef.current);
+          if (media && active) {
+            const detection = await faceapi
+              .detectSingleFace(media, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
+              .withFaceLandmarks()
+              .withFaceDescriptor();
 
-          if (detection && detection.descriptor && active) {
-            const pointDescriptor = Array.from(detection.descriptor);
-            const { isMatch } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
+            if (detection && detection.descriptor && active) {
+              const pointDescriptor = Array.from(detection.descriptor);
+              const { isMatch } = compareFaces(targetDescriptor, pointDescriptor, 0.45);
 
-            if (isMatch && active) {
-              active = false; // Bloqueia novos acionamentos
+              if (isMatch && active) {
+                active = false; // Bloqueia novos acionamentos
 
-              // Emitir som de Bip
-              try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
-                gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
-                oscillator.start();
-                oscillator.stop(audioCtx.currentTime + 0.15);
-              } catch (audioErr) {
-                console.warn("Som de bip falhou:", audioErr);
-              }
-
-              toast.success("Rosto identificado! Registrando ponto automaticamente...");
-              
-              // Executa a batida de ponto simulando o envio do form
-              setTimeout(() => {
-                const pointForm = document.querySelector('form');
-                if (pointForm) {
-                  pointForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                // Emitir som de Bip
+                try {
+                  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                  const oscillator = audioCtx.createOscillator();
+                  const gainNode = audioCtx.createGain();
+                  oscillator.connect(gainNode);
+                  gainNode.connect(audioCtx.destination);
+                  oscillator.type = 'sine';
+                  oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                  gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                  oscillator.start();
+                  oscillator.stop(audioCtx.currentTime + 0.15);
+                } catch (audioErr) {
+                  console.warn("Som de bip falhou:", audioErr);
                 }
-              }, 150);
-              return;
+
+                toast.success("Rosto identificado! Registrando ponto automaticamente...");
+                
+                // Executa a batida de ponto simulando o envio do form
+                setTimeout(() => {
+                  const pointForm = document.querySelector('form');
+                  if (pointForm) {
+                    pointForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                  }
+                }, 150);
+                return;
+              }
             }
           }
         } catch (err) {
@@ -3587,7 +3590,7 @@ export default function App() {
             </button>
             {BRANDING.logoPath && <img src={BRANDING.logoPath} alt={BRANDING.logoAlt} className="h-12 w-auto mb-2 rounded-lg shadow-sm" />}
             <h1 className="text-xl font-bold mb-0.5">
-              {isUnitLogin ? `Quiosque: ${loggedInIntern.name}` : `Olá, ${loggedInIntern.name}!`}
+              {isUnitLogin ? loggedInIntern.name : `Olá, ${loggedInIntern.name}!`}
             </h1>
             <p className="text-blue-100 text-xs">
               {isUnitLogin 
@@ -3633,28 +3636,6 @@ export default function App() {
                     </select>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-2">
-                    <Building2 size={14} /> Unidade de Atendimento
-                  </label>
-                  <select
-                    required
-                    disabled={isUnitLogin}
-                    value={selectedUnit}
-                    onChange={(e) => { setSelectedUnit(e.target.value); setGeoError(''); }}
-                    className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 transition-all text-xs disabled:opacity-75 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  >
-                    {visibleUnits.map((u) => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
-                    ))}
-                  </select>
-                  {currentUnit && (
-                    <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
-                      <MapPin size={10} /> {currentUnit.address}
-                    </p>
-                  )}
-                </div>
 
 
 

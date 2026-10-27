@@ -18,71 +18,98 @@ export async function loadModels() {
   }
 }
 
-export async function getFaceDescriptor(base64Image) {
-  if (!base64Image) return null;
+export async function toCanvasOrImage(input) {
+  if (!input) return null;
+
+  // Se for elemento de vídeo HTMLVideoElement
+  if (typeof HTMLVideoElement !== 'undefined' && input instanceof HTMLVideoElement) {
+    if (input.readyState < 2 || !input.videoWidth || !input.videoHeight) {
+      return null;
+    }
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = input.videoWidth;
+      canvas.height = input.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(input, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } catch (e) {
+      console.warn('Erro ao converter frame de vídeo em canvas:', e);
+      return null;
+    }
+  }
+
+  // Se for HTMLCanvasElement
+  if (typeof HTMLCanvasElement !== 'undefined' && input instanceof HTMLCanvasElement) {
+    if (!input.width || !input.height) return null;
+    return input;
+  }
+
+  // Se for HTMLImageElement já carregado
+  if (typeof HTMLImageElement !== 'undefined' && input instanceof HTMLImageElement) {
+    if (!input.complete || !input.naturalWidth || !input.naturalHeight) return null;
+    return input;
+  }
+
+  // Se for string base64 ou URL
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed || trimmed === '[]' || trimmed === 'null' || trimmed === 'undefined') return null;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          resolve(img);
+        } else {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = trimmed;
+    });
+  }
+
+  return null;
+}
+
+export async function getFaceDescriptor(input) {
+  if (!input) return null;
   try {
     await loadModels();
   } catch (err) {
     console.error('Falha ao carregar modelos de biometria:', err);
     return null;
   }
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Image;
-    img.onload = async () => {
-      try {
-        // Tenta 1: detectSingleFace (416px, threshold 0.2)
-        let detection = await faceapi
-          .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.2 }))
-          .withFaceLandmarks()
-          .withFaceDescriptor();
-        
-        if (detection && detection.descriptor) {
-          return resolve(Array.from(detection.descriptor));
-        }
 
-        // Tenta 2: detectAllFaces (320px, threshold 0.15)
-        let allDetections = await faceapi
-          .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.15 }))
-          .withFaceLandmarks()
-          .withFaceDescriptors();
+  const media = await toCanvasOrImage(input);
+  if (!media) return null;
 
-        if (allDetections && allDetections.length > 0 && allDetections[0].descriptor) {
-          return resolve(Array.from(allDetections[0].descriptor));
-        }
+  // Tenta resoluções progressivas com detecção de rosto único (evita bug de caixa vazia do detectAllFaces)
+  const sizes = [
+    { inputSize: 416, scoreThreshold: 0.2 },
+    { inputSize: 320, scoreThreshold: 0.15 },
+    { inputSize: 224, scoreThreshold: 0.1 },
+    { inputSize: 512, scoreThreshold: 0.1 }
+  ];
 
-        // Tenta 3: detectAllFaces (224px, threshold 0.1)
-        allDetections = await faceapi
-          .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.1 }))
-          .withFaceLandmarks()
-          .withFaceDescriptors();
+  for (const opt of sizes) {
+    try {
+      const detection = await faceapi
+        .detectSingleFace(media, new faceapi.TinyFaceDetectorOptions(opt))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
 
-        if (allDetections && allDetections.length > 0 && allDetections[0].descriptor) {
-          return resolve(Array.from(allDetections[0].descriptor));
-        }
-
-        // Tenta 4: detectAllFaces (512px, threshold 0.1)
-        allDetections = await faceapi
-          .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.1 }))
-          .withFaceLandmarks()
-          .withFaceDescriptors();
-
-        if (allDetections && allDetections.length > 0 && allDetections[0].descriptor) {
-          return resolve(Array.from(allDetections[0].descriptor));
-        }
-
-        console.warn('Nenhum rosto identificado mesmo com detecção adaptativa.');
-        resolve(null);
-      } catch (err) {
-        console.error('Erro ao processar biometria na imagem:', err);
-        resolve(null);
+      if (detection && detection.descriptor && detection.descriptor.length === 128) {
+        return Array.from(detection.descriptor);
       }
-    };
-    img.onerror = (err) => {
-      console.error('Erro ao carregar objeto Image:', err);
-      resolve(null);
-    };
-  });
+    } catch (err) {
+      // Ignora falhas isoladas de escala e tenta o próximo tamanho
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -90,29 +117,31 @@ export async function getFaceDescriptor(base64Image) {
  * sido gerada espelhada (câmera) ou não (upload de arquivo); comparar as duas
  * orientações elimina esse descompasso sem afrouxar o limite de distância.
  */
-export async function getMirroredFaceDescriptor(base64Image) {
-  if (!base64Image) return null;
-  const flipped = await new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(img, 0, 0);
-        resolve(canvasToDataUrl(canvas, IMAGE_PRESETS.selfie.quality));
-      } catch (err) {
-        console.error('Erro ao espelhar imagem:', err);
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = base64Image;
-  });
-  return flipped ? getFaceDescriptor(flipped) : null;
+export async function getMirroredFaceDescriptor(input) {
+  if (!input) return null;
+  const media = await toCanvasOrImage(input);
+  if (!media) return null;
+
+  try {
+    const width = media.naturalWidth || media.videoWidth || media.width;
+    const height = media.naturalHeight || media.videoHeight || media.height;
+    if (!width || !height) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(media, 0, 0, width, height);
+
+    return await getFaceDescriptor(canvas);
+  } catch (err) {
+    console.error('Erro ao gerar descritor espelhado:', err);
+    return null;
+  }
 }
 
 export function compareFaces(descriptor1, descriptor2, threshold = 0.45) {
@@ -193,10 +222,14 @@ export function compareFacesCosine(descriptor1, descriptor2, threshold = 0.85) {
  */
 export async function detectActiveLiveness(videoElement) {
   if (!videoElement) return { isLive: false, score: 0, reason: 'Elemento de vídeo ausente' };
+  
+  const media = await toCanvasOrImage(videoElement);
+  if (!media) return { isLive: false, score: 0, reason: 'Câmera não inicializada ou quadro indisponível' };
+
   try {
     await loadModels();
     const detection = await faceapi
-      .detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+      .detectSingleFace(media, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
       .withFaceLandmarks();
 
     if (!detection) {

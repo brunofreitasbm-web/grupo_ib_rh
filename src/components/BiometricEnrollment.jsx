@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, CheckCircle2, ShieldAlert, ShieldCheck, RefreshCw, Lock, Sparkles } from 'lucide-react';
-import * as faceapi from 'face-api.js';
-import { loadModels, detectActiveLiveness, generateSecureEnrollmentPayload } from '../utils/faceBiometrics';
+import { loadModels, detectActiveLiveness, generateSecureEnrollmentPayload, getFaceDescriptor } from '../utils/faceBiometrics';
 import { toast } from 'sonner';
 
 export default function BiometricEnrollment({ internName = '', internCpf = '', onEnrollmentComplete, onCancel }) {
@@ -101,16 +100,10 @@ export default function BiometricEnrollment({ internName = '', internCpf = '', o
     try {
       if (!videoRef.current) throw new Error('Câmera indisponível');
       
-      const detection = await faceapi
-        .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.2 }))
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-
-      if (!detection || !detection.descriptor) {
+      const descriptorArray = await getFaceDescriptor(videoRef.current);
+      if (!descriptorArray || descriptorArray.length !== 128) {
         throw new Error('Não foi possível extrair os descritores faciais do quadro capturado.');
       }
-
-      const descriptorArray = Array.from(detection.descriptor);
       
       // Generate secure anti-spoofing payload token
       const payload = await generateSecureEnrollmentPayload(descriptorArray, {
