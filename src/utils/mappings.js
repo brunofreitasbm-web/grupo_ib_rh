@@ -633,6 +633,11 @@ export const safeUpsertUnits = async (supabaseClient, dbUnits) => {
         ? 'porto-terapia'
         : (BRANDING?.id || 'porto-terapia');
     }
+    delete item.workspaceId;
+    delete item.radiusKm;
+    delete item.radiusM;
+    delete item.geofenceRequired;
+    delete item.razaoSocial;
     return item;
   });
 

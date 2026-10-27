@@ -66,10 +66,11 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     const uId = (u.id || '').toLowerCase();
     const uName = (u.name || u.nome || '').toLowerCase();
     const isTargetHidden = uId.includes('antonio-barreto') || uId.includes('generalissimo') || uName.includes('antônio barreto') || uName.includes('generalíssimo');
-    if (BRANDING.id === 'grupoib' && (isTargetHidden || u.workspaceId === 'porto-terapia')) {
+    const uWs = u.workspaceId || u.workspace_id;
+    if (BRANDING.id === 'grupoib' && (isTargetHidden || uWs === 'porto-terapia')) {
       return false;
     }
-    if (BRANDING.id === 'porto-terapia' && u.workspaceId === 'grupoib') {
+    if (BRANDING.id === 'porto-terapia' && uWs === 'grupoib') {
       return false;
     }
     return true;
@@ -230,16 +231,35 @@ export default function ConfiguracoesTab({ userRole = 'admin', units = [], onSav
     }
     // Salva também todas as unidades
     if (onSaveUnit) {
+      const updatedMap = { ...editingUnits };
       for (const uData of Object.values(editingUnits)) {
+        const hasCustomRazao = uData.razaoSocial &&
+          uData.razaoSocial !== BRANDING.legalEntityName &&
+          !uData.razaoSocial.toLowerCase().includes('pendente') &&
+          uData.razaoSocial !== settings.razaoSocial;
+        const finalRazaoSocial = hasCustomRazao
+          ? uData.razaoSocial
+          : (settings.razaoSocial || BRANDING.legalEntityName);
+
+        const hasCustomCnpj = uData.cnpj &&
+          uData.cnpj !== BRANDING.cnpj &&
+          uData.cnpj !== '00.000.000/0001-00' &&
+          uData.cnpj !== settings.cnpj;
+        const finalCnpj = hasCustomCnpj
+          ? uData.cnpj
+          : (settings.cnpj || BRANDING.cnpj);
+
         const unitToSave = {
           ...uData,
-          razaoSocial: uData.razaoSocial || settings.razaoSocial || BRANDING.legalEntityName,
-          cnpj: uData.cnpj || settings.cnpj || BRANDING.cnpj,
+          razaoSocial: finalRazaoSocial,
+          cnpj: finalCnpj,
           phone: uData.phone || settings.telefone || BRANDING.phone,
         };
+        updatedMap[uData.id] = unitToSave;
         await onSaveUnit(unitToSave);
         localStorage.setItem(`unit_config_${BRANDING.id}_${uData.id}`, JSON.stringify(unitToSave));
       }
+      setEditingUnits(updatedMap);
     } else {
       Object.values(editingUnits).forEach(uData => {
         localStorage.setItem(`unit_config_${BRANDING.id}_${uData.id}`, JSON.stringify(uData));
