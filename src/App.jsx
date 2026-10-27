@@ -125,13 +125,20 @@ const ADMIN_USERS = BRANDING.adminUsers;
 // texto (ou campo vazio) cai no admin padrão deste site: "supervisor"
 // (Supervisor Geral) na Porto Terapia, ou o único admin do workspace quando
 // não existir essa chave genérica (caso do clone Grupo IB, só com "bruno").
+const normalizeLogin = (str) =>
+  (str || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
 const DEFAULT_ADMIN_KEY = ADMIN_USERS.supervisor ? 'supervisor' : Object.keys(ADMIN_USERS)[0];
 const resolveAdminKey = (typed) => {
-  const t = (typed || '').trim().toLowerCase();
+  const t = normalizeLogin(typed);
   if (!t) return DEFAULT_ADMIN_KEY;
   const match = Object.keys(ADMIN_USERS).find((key) => {
     const { label, email } = ADMIN_USERS[key];
-    return key === t || label.toLowerCase() === t || email.toLowerCase() === t;
+    return normalizeLogin(key) === t || normalizeLogin(label) === t || normalizeLogin(email) === t;
   });
   return match || DEFAULT_ADMIN_KEY;
 };
@@ -1298,7 +1305,13 @@ export default function App() {
 
     let email = '';
     if (selectedLoginOption === 'supervisor') {
-      email = ADMIN_USERS[resolveAdminKey(loginAdminName)].email;
+      const typed = (loginAdminName || '').trim();
+      if (typed.includes('@')) {
+        email = typed.toLowerCase();
+      } else {
+        const resolvedKey = resolveAdminKey(typed);
+        email = ADMIN_USERS[resolvedKey]?.email || (typed ? `${normalizeLogin(typed)}@${BRANDING.fallbackInternEmailDomain || 'portoterapia.com'}` : ADMIN_USERS[DEFAULT_ADMIN_KEY].email);
+      }
     } else {
       setLoginError('Selecione uma opção de acesso.');
       setGpsLoading(false);
@@ -3101,8 +3114,12 @@ export default function App() {
             <div className="p-6">
               {selectedLoginOption === 'supervisor' && recuperandoSenha ? (
                 <RecuperarSenha
-                  email={ADMIN_USERS[resolveAdminKey(loginAdminName)].email}
-                  nome={ADMIN_USERS[resolveAdminKey(loginAdminName)].label}
+                  email={
+                    (loginAdminName || '').trim().includes('@')
+                      ? loginAdminName.trim().toLowerCase()
+                      : ADMIN_USERS[resolveAdminKey(loginAdminName)]?.email || ADMIN_USERS[DEFAULT_ADMIN_KEY].email
+                  }
+                  nome={ADMIN_USERS[resolveAdminKey(loginAdminName)]?.label || loginAdminName || 'Administrador'}
                   onVoltar={() => { setRecuperandoSenha(false); setLoginError(''); }}
                 />
               ) : selectedLoginOption ? (
@@ -3120,7 +3137,7 @@ export default function App() {
 
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1.5">
-                      <User size={14} /> Usuário (deixe em branco se não souber)
+                      <User size={14} /> Usuário ou E-mail (deixe em branco para Supervisor Geral)
                     </label>
                     <input
                       type="text"
@@ -3129,7 +3146,7 @@ export default function App() {
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck="false"
-                      placeholder="Nome de usuário"
+                      placeholder="Ex: silvania ou silvania@portoterapia.com"
                       value={loginAdminName}
                       onChange={(e) => { setLoginAdminName(e.target.value); setLoginError(''); }}
                       className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
