@@ -90,6 +90,7 @@ import BiometricEnrollment from './components/BiometricEnrollment';
 import ProfessionalKiosk from './components/ProfessionalKiosk';
 import EmployeeKiosk from './components/EmployeeKiosk';
 import NfseUploadModal from './components/NfseUploadModal';
+import RecuperarSenha from './components/RecuperarSenha';
 import PublicPayrollUploadModal from './components/PublicPayrollUploadModal';
 import { createDebounced, isAuditRecordEvent } from './utils/debounce';
 import { classifySession, SESSION_LOST_MESSAGE, SESSION_TRANSIENT_MESSAGE } from './utils/sessionGuard';
@@ -291,6 +292,7 @@ export default function App() {
   // Identificação do administrador é DIGITADA (nunca listada/salva), para que
   // ninguém que observe o quiosque saiba quais nomes de admin existem no sistema.
   const [loginAdminName, setLoginAdminName] = useState('');
+  const [recuperandoSenha, setRecuperandoSenha] = useState(false);
 
   // Rotina de prevenção de cliques múltiplos e timeout de 15s com AbortController (P0)
   const handleSelectProfile = async (profileId) => {
@@ -674,7 +676,7 @@ export default function App() {
     },
     {
       active: !user && !!selectedLoginOption,
-      back: () => { setSelectedLoginOption(null); setLoginError(''); setLoginPassword(''); setLoginAdminName(''); },
+      back: () => { setSelectedLoginOption(null); setLoginError(''); setLoginPassword(''); setLoginAdminName(''); setRecuperandoSenha(false); },
     },
     { active: !user && !!kioskCategory, back: () => setKioskCategory(null) },
   ].filter((layer) => layer.active);
@@ -3097,7 +3099,13 @@ export default function App() {
             </div>
 
             <div className="p-6">
-              {selectedLoginOption ? (
+              {selectedLoginOption === 'supervisor' && recuperandoSenha ? (
+                <RecuperarSenha
+                  email={ADMIN_USERS[resolveAdminKey(loginAdminName)].email}
+                  nome={ADMIN_USERS[resolveAdminKey(loginAdminName)].label}
+                  onVoltar={() => { setRecuperandoSenha(false); setLoginError(''); }}
+                />
+              ) : selectedLoginOption ? (
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-2">
                     <button
@@ -3162,6 +3170,16 @@ export default function App() {
                       </>
                     )}
                   </button>
+
+                  {selectedLoginOption === 'supervisor' && (
+                    <button
+                      type="button"
+                      onClick={() => { setLoginError(''); setRecuperandoSenha(true); }}
+                      className="w-full text-center text-[11px] text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Esqueci minha senha
+                    </button>
+                  )}
                 </form>
               ) : kioskCategory === null ? (
                 <div className="space-y-4">
