@@ -245,6 +245,9 @@ export const WORKSPACES = {
       bruno: { label: 'Bruno', email: 'bruno@portoterapia.com' },
       alessandra: { label: 'Alessandra', email: 'alessandra@portoterapia.com' },
       safira: { label: 'Safira', email: 'safira@portoterapia.com' },
+      silvania: { label: 'Silvania', email: 'silvania@portoterapia.com' },
+      isabella: { label: 'Isabella', email: 'isabella@portoterapia.com' },
+      guimelly: { label: 'Guimelly', email: 'guimelly@portoterapia.com' },
     },
     kioskUnits: [
       {

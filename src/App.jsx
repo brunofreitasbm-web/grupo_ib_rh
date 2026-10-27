@@ -132,15 +132,24 @@ const normalizeLogin = (str) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
+const ADMIN_ALIASES = {
+  guimely: 'guimelly',
+};
+
 const DEFAULT_ADMIN_KEY = ADMIN_USERS.supervisor ? 'supervisor' : Object.keys(ADMIN_USERS)[0];
 const resolveAdminKey = (typed) => {
   const t = normalizeLogin(typed);
   if (!t) return DEFAULT_ADMIN_KEY;
+  const canonical = ADMIN_ALIASES[t] || t;
   const match = Object.keys(ADMIN_USERS).find((key) => {
     const { label, email } = ADMIN_USERS[key];
-    return normalizeLogin(key) === t || normalizeLogin(label) === t || normalizeLogin(email) === t;
+    return (
+      normalizeLogin(key) === canonical ||
+      normalizeLogin(label) === canonical ||
+      normalizeLogin(email) === canonical
+    );
   });
-  return match || DEFAULT_ADMIN_KEY;
+  return match || null;
 };
 
 // Placeholder de unidades usado só até fetchUnits() trazer os dados reais do
@@ -1310,7 +1319,8 @@ export default function App() {
         email = typed.toLowerCase();
       } else {
         const resolvedKey = resolveAdminKey(typed);
-        email = ADMIN_USERS[resolvedKey]?.email || (typed ? `${normalizeLogin(typed)}@${BRANDING.fallbackInternEmailDomain || 'portoterapia.com'}` : ADMIN_USERS[DEFAULT_ADMIN_KEY].email);
+        email = (resolvedKey && ADMIN_USERS[resolvedKey]?.email)
+          || (typed ? `${normalizeLogin(ADMIN_ALIASES[normalizeLogin(typed)] || typed)}@${BRANDING.fallbackInternEmailDomain || 'portoterapia.com'}` : ADMIN_USERS[DEFAULT_ADMIN_KEY]?.email);
       }
     } else {
       setLoginError('Selecione uma opção de acesso.');
@@ -3117,9 +3127,14 @@ export default function App() {
                   email={
                     (loginAdminName || '').trim().includes('@')
                       ? loginAdminName.trim().toLowerCase()
-                      : ADMIN_USERS[resolveAdminKey(loginAdminName)]?.email || ADMIN_USERS[DEFAULT_ADMIN_KEY].email
+                      : (resolveAdminKey(loginAdminName) && ADMIN_USERS[resolveAdminKey(loginAdminName)]?.email)
+                        || (loginAdminName ? `${normalizeLogin(ADMIN_ALIASES[normalizeLogin(loginAdminName)] || loginAdminName)}@${BRANDING.fallbackInternEmailDomain || 'portoterapia.com'}` : ADMIN_USERS[DEFAULT_ADMIN_KEY]?.email)
                   }
-                  nome={ADMIN_USERS[resolveAdminKey(loginAdminName)]?.label || loginAdminName || 'Administrador'}
+                  nome={
+                    (resolveAdminKey(loginAdminName) && ADMIN_USERS[resolveAdminKey(loginAdminName)]?.label)
+                    || loginAdminName
+                    || 'Administrador'
+                  }
                   onVoltar={() => { setRecuperandoSenha(false); setLoginError(''); }}
                 />
               ) : selectedLoginOption ? (
