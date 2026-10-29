@@ -36,8 +36,8 @@ export default defineConfig(({ mode }) => {
           display: 'standalone',
           icons: branding.logoPath
             ? [
-                { src: branding.logoPath, sizes: '192x192', type: 'image/jpeg' },
-                { src: branding.logoPath, sizes: '512x512', type: 'image/jpeg' },
+                { src: branding.logoPath, sizes: '192x192', type: branding.logoType },
+                { src: branding.logoPath, sizes: '512x512', type: branding.logoType },
               ]
             : []
         }
@@ -49,6 +49,10 @@ export default defineConfig(({ mode }) => {
         name: 'inject-workspace-branding-html',
         transformIndexHtml(html) {
           return html
+            .replace(
+              '<!--workspace-favicon-->',
+              `<link rel="icon" type="${branding.faviconType}" href="${branding.faviconPath}" />`
+            )
             .replace(/<title>.*<\/title>/, `<title>${branding.appTitle}</title>`)
             .replace(
               /<meta name="theme-color" content="[^"]*"\s*\/>/,

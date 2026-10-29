@@ -55,26 +55,82 @@ test.describe('Banco de Talentos - Separação por Unidade', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     });
 
+    // Mock de sessão do Supabase Auth para entrar como supervisor
+    await page.route('**/auth/v1/user*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'user-supervisor-id',
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'bruno@portoterapia.com',
+          user_metadata: { role: 'supervisor', name: 'Bruno' },
+          app_metadata: { role: 'supervisor', provider: 'email' },
+          created_at: new Date().toISOString(),
+        }),
+      });
+    });
+
+    await page.route('**/auth/v1/token*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          access_token: 'fake-jwt-token',
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: 'fake-refresh-token',
+          user: {
+            id: 'user-supervisor-id',
+            aud: 'authenticated',
+            role: 'authenticated',
+            email: 'bruno@portoterapia.com',
+            user_metadata: { role: 'supervisor', name: 'Bruno' },
+            app_metadata: { role: 'supervisor', provider: 'email' },
+          },
+        }),
+      });
+    });
+
     // Injeta sessão de supervisor no localStorage
     await page.addInitScript(() => {
+      const mockSession = {
+        access_token: 'fake-jwt-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'fake-refresh-token',
+        user: {
+          id: 'user-supervisor-id',
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'bruno@portoterapia.com',
+          user_metadata: { role: 'supervisor', name: 'Bruno' },
+          app_metadata: { role: 'supervisor', provider: 'email' },
+        },
+      };
       localStorage.setItem('adminKey', 'bruno');
       localStorage.setItem('adminLoggedIn', 'true');
-      localStorage.setItem('activeAdminTab', 'banco_talentos');
+      localStorage.setItem('admin_nav_user-supervisor-id', JSON.stringify({ module: 'interns', tab: 'banco_talentos' }));
+      // Chave de sessão do Supabase no storage
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.endsWith('-auth-token')) localStorage.setItem(k, JSON.stringify(mockSession));
+      }
+      localStorage.setItem('sb-vththexblpxwocbowhsv-auth-token', JSON.stringify(mockSession));
     });
 
     await page.goto('/');
 
-    // Se estiver na tela de login, entra como bruno
-    const loginInput = page.locator('input[placeholder*="nome ou e-mail"]');
-    if (await loginInput.isVisible()) {
-      await loginInput.fill('bruno');
-      await page.keyboard.press('Enter');
-    }
-
-    // Navega para a aba Banco de Talentos caso não esteja ativa
-    const talentTabBtn = page.getByRole('button', { name: /Banco de Talentos/i }).first();
-    if (await talentTabBtn.isVisible()) {
-      await talentTabBtn.click();
+    // Se estiver na tela de seleção inicial ("Quem está acessando?"), entra em Acesso Administrativo
+    const adminBtn = page.getByRole('button', { name: /Acesso Administrativo/i });
+    if (await adminBtn.isVisible()) {
+      await adminBtn.click();
+      const pwdInput = page.locator('input[type="password"]');
+      if (await pwdInput.isVisible()) {
+        await pwdInput.fill('estagio123');
+        await page.keyboard.press('Enter');
+      }
     }
 
     // 1. Verifica coluna 'Unidade Pretendida' no cabeçalho da tabela
@@ -91,7 +147,7 @@ test.describe('Banco de Talentos - Separação por Unidade', () => {
 
     // 4. Verifica a distribuição por unidade
     await expect(page.getByText('Distribuição de Candidaturas por Unidade')).toBeVisible();
-    await expect(page.getByText('FaçaAmigos Parque Shopping').first()).toBeVisible();
-    await expect(page.getByText('FaçaAmigos Bosque Grão-Pará').first()).toBeVisible();
+    await expect(page.locator('h4', { hasText: 'FaçaAmigos Parque Shopping' })).toBeVisible();
+    await expect(page.locator('h4', { hasText: 'FaçaAmigos Bosque Grão-Pará' })).toBeVisible();
   });
 });

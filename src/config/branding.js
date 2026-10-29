@@ -10,6 +10,9 @@ export const WORKSPACES = {
     shortName: 'Porto Terapia',
     themeColor: '#1a1a2e',
     logoPath: '/logo.jpg',
+    logoType: 'image/jpeg',
+    faviconPath: '/favicon.ico',
+    faviconType: 'image/jpeg',
     logoAlt: 'Logo Porto Terapia',
     // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx).
     subtitle: 'Gestão de Pessoas',
@@ -136,6 +139,9 @@ export const WORKSPACES = {
     // as telas do app exibem o logo em caixas pequenas/quadradas (h-10 a h-16
     // com w-auto) — a versão horizontal com texto ficava cortada nesse espaço.
     logoPath: '/brand/facaamigos-simbolo.svg',
+    logoType: 'image/svg+xml',
+    faviconPath: '/brand/facaamigos-simbolo.svg',
+    faviconType: 'image/svg+xml',
     logoAlt: 'Símbolo FaçaAmigos',
     // Subtítulo mostrado abaixo do nome na tela de login (ver App.jsx).
     subtitle: 'Gestão de Pessoas',
