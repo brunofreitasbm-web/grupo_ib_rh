@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useBackLayers } from '../../hooks/useBackHandler';
-import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle, Archive, Send, MessageCircle, Trash2, GitMerge, Eye, X, Bookmark, Clock } from 'lucide-react';
+import { Briefcase, Search, RefreshCw, FileText, AlertTriangle, Loader2, Phone, Mail, Sparkles, LayoutGrid, ListChecks, Users, CheckCircle, Archive, Send, MessageCircle, Trash2, GitMerge, Eye, X, Bookmark, Clock, MapPin, Building2, ChevronRight } from 'lucide-react';
 import { supabase } from '../../supabase';
 import { toast } from 'sonner';
-import { STATUS_OPTIONS, STATUS_BADGE, STATUS_ROW, OPPORTUNITY_LABEL, statusLabel } from '../../constants/talentBank';
+import { STATUS_OPTIONS, STATUS_BADGE, STATUS_ROW, OPPORTUNITY_LABEL, TALENT_UNIT_OPTIONS, TALENT_UNIT_LABEL, TALENT_UNIT_BADGE, normalizeCandidateUnit, statusLabel } from '../../constants/talentBank';
 import { expiryReason, archiveDaysLeft, discDaysLeft } from '../../utils/talentRetention';
 import { findDuplicateClusters } from '../../utils/talentDuplicates';
 import PurgeConfirmModal from '../talent/PurgeConfirmModal';
@@ -22,6 +22,7 @@ import { mapFreelancerToDb, getFriendlyDbErrorMessage } from '../../utils/mappin
 
 const SUB_TABS = [
   { id: 'candidatos', label: 'Candidatos', icon: Users },
+  { id: 'unidades', label: 'Candidaturas por Unidade', icon: MapPin },
   { id: 'simulacao', label: 'Simulação por Unidade', icon: LayoutGrid },
   { id: 'perfis', label: 'Perfis das Funções', icon: ListChecks },
 ];
@@ -61,7 +62,7 @@ const DISC_SLA_MS = 48 * 60 * 60 * 1000;
 
 const SAVED_FILTERS_KEY = 'talent_bank_saved_filters_v1';
 const DEFAULT_FILTERS = {
-  status: 'NOVO', disc: 'todos', opp: 'todos', profile: 'todos', period: 'todos',
+  unit: 'todos', status: 'NOVO', disc: 'todos', opp: 'todos', profile: 'todos', period: 'todos',
   onlyResume: false, onlyDup: false, onlyExpiring: false, onlyAi: false, sort: 'date_desc',
 };
 const PERIOD_DAYS = { '7d': 7, '30d': 30, '90d': 90 };
@@ -264,16 +265,20 @@ export default function BancoTalentosTab({ units = [] }) {
       const meta = metaById[c.id];
       const token = tokensById[c.id];
       const assessment = assessmentsById[c.id];
+      const basket = basketById[c.id];
+      const normalizedUnit = normalizeCandidateUnit(c, basket);
       return {
         ...c,
         effectiveStatus: meta?.status || c.status,
+        normalizedUnit,
+        unitLabel: TALENT_UNIT_LABEL[normalizedUnit] || normalizedUnit,
         notes: meta?.notes || '',
         discToken: token || null,
         discAssessment: assessment || null,
         aiAnalysis: meta?.ai_analysis || null,
         bestFit: assessment ? bestRoleFor(assessment) : null,
         archivedAt: meta?.archived_at || null,
-        inBasket: Boolean(basketById[c.id]),
+        inBasket: Boolean(basket),
         isFreelancer: freelancerIds.has(String(c.id)),
       };
     }).map((c) => ({
@@ -292,6 +297,28 @@ export default function BancoTalentosTab({ units = [] }) {
     return counts;
   }, [enriched]);
 
+  const unitCounts = useMemo(() => {
+    const counts = { todos: enriched.length };
+    enriched.forEach((c) => {
+      counts[c.normalizedUnit] = (counts[c.normalizedUnit] || 0) + 1;
+    });
+    return counts;
+  }, [enriched]);
+
+  // Candidaturas agrupadas e separadas por cada unidade correspondente
+  const candidatesByUnit = useMemo(() => {
+    const map = {};
+    TALENT_UNIT_OPTIONS.filter((u) => u.value !== 'todos').forEach((u) => {
+      map[u.value] = [];
+    });
+    enriched.forEach((c) => {
+      const uKey = c.normalizedUnit || 'SEM_UNIDADE';
+      if (!map[uKey]) map[uKey] = [];
+      map[uKey].push(c);
+    });
+    return map;
+  }, [enriched]);
+
   // Todos entram na simulação; quem ainda não fez o Levantamento fica sem Role Fit (selo "Sem DISC").
   const withProfile = useMemo(() => enriched.filter((c) => c.discAssessment), [enriched]);
 
@@ -299,6 +326,7 @@ export default function BancoTalentosTab({ units = [] }) {
     const q = search.trim().toLowerCase();
     return enriched.filter((c) => {
       if (statusFilter !== 'todos' && c.effectiveStatus !== statusFilter) return false;
+      if (filters.unit !== 'todos' && c.normalizedUnit !== filters.unit) return false;
 
       // Filtro por Levantamento de Perfil
       const hasToken = Boolean(c.discToken);
@@ -969,6 +997,211 @@ export default function BancoTalentosTab({ units = [] }) {
 
       {activeSubTab === 'perfis' && <RoleProfilesPanel />}
 
+      {activeSubTab === 'unidades' && (
+        <div className="space-y-6">
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-600" />
+                  Distribuição de Candidaturas por Unidade
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Visão consolidada das candidaturas separadas por cada unidade à qual o candidato se candidatou ou demonstrou interesse.
+                </p>
+              </div>
+              <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-blue-100 text-blue-800 self-start sm:self-auto">
+                Total: {enriched.length} candidatura(s)
+              </span>
+            </div>
+
+            {/* Cards de resumo por unidade */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
+              {TALENT_UNIT_OPTIONS.filter((u) => u.value !== 'todos').map((u) => {
+                const count = unitCounts[u.value] || 0;
+                const pct = enriched.length ? Math.round((count / enriched.length) * 100) : 0;
+                return (
+                  <button
+                    key={u.value}
+                    type="button"
+                    onClick={() => {
+                      setFilter('unit', u.value);
+                      setActiveSubTab('candidatos');
+                    }}
+                    className="p-3 bg-white border border-slate-200 rounded-xl text-left hover:border-blue-400 hover:shadow-xs transition-all group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                        TALENT_UNIT_BADGE[u.value] || 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
+                        {u.shortLabel || u.label}
+                      </span>
+                      <span className="text-xs text-slate-400 font-medium">{pct}%</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-800 mt-2">{count}</div>
+                    <div className="text-[11px] text-slate-500 flex items-center justify-between mt-1">
+                      <span>candidatos</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Seções por Unidade */}
+          <div className="space-y-6">
+            {TALENT_UNIT_OPTIONS.filter((u) => u.value !== 'todos').map((u) => {
+              const list = candidatesByUnit[u.value] || [];
+              return (
+                <div key={u.value} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                  <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-3 h-3 rounded-full shrink-0 ${
+                        u.color === 'emerald' ? 'bg-emerald-500' :
+                        u.color === 'indigo' ? 'bg-indigo-500' :
+                        u.color === 'amber' ? 'bg-amber-500' :
+                        u.color === 'purple' ? 'bg-purple-500' : 'bg-slate-400'
+                      }`} />
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                          {u.label}
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                            {list.length}
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          {u.value === 'AMBAS'
+                            ? 'Candidatos com disponibilidade para qualquer unidade ou ambas as lojas/clínica'
+                            : u.value === 'SEM_UNIDADE'
+                            ? 'Candidaturas sem unidade explícita no formulário de inscrição'
+                            : `Candidaturas direcionadas para a unidade ${u.label}`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilter('unit', u.value);
+                        setActiveSubTab('candidatos');
+                      }}
+                      className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 self-start sm:self-auto flex items-center gap-1.5 transition-colors"
+                    >
+                      Filtrar na tabela principal
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {list.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      Nenhum candidato inscrito nesta unidade até o momento.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {list.map((c) => {
+                        const profileInfo = c.discAssessment ? DISC_PROFILE_INFO[c.discAssessment.primary_profile] : null;
+                        return (
+                          <div key={c.id} className="p-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-slate-800 text-sm">{c.full_name || '—'}</span>
+                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border ${
+                                  STATUS_BADGE[c.effectiveStatus] || 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}>
+                                  {statusLabel(c.effectiveStatus)}
+                                </span>
+                                {c.opportunity_type && (
+                                  <span className="px-2 py-0.5 text-[10px] font-medium rounded border border-slate-200 bg-slate-50 text-slate-600">
+                                    {OPPORTUNITY_LABEL[c.opportunity_type] || c.opportunity_type}
+                                  </span>
+                                )}
+                                {profileInfo && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setResultTarget(c)}
+                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${profileInfo.badge}`}
+                                  >
+                                    DISC: {c.discAssessment.primary_profile}
+                                  </button>
+                                )}
+                                {c.aiAnalysis && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAiTarget(c)}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border border-indigo-200 bg-indigo-50 text-indigo-700"
+                                  >
+                                    <Sparkles className="w-3 h-3 text-indigo-600" />
+                                    IA: {c.aiAnalysis.overallFitScore}%
+                                  </button>
+                                )}
+                              </div>
+                              <div className="text-slate-500 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                                {c.email && (
+                                  <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>
+                                )}
+                                {c.phone && (
+                                  <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>
+                                )}
+                                {c.course && (
+                                  <span className="text-slate-700 font-medium">Curso: {c.course}</span>
+                                )}
+                                {c.desired_area && (
+                                  <span className="text-slate-600">Área: {c.desired_area}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+                              {c.resume_url && (
+                                <a
+                                  href={c.resume_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-blue-600 font-medium flex items-center gap-1.5 text-xs shadow-2xs"
+                                  title="Ver currículo"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  Currículo
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                disabled={busyId === c.id || !c.email}
+                                onClick={() => handleInitiateSendDisc(c)}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5 text-xs shadow-2xs disabled:opacity-40"
+                                title="Enviar Levantamento DISC"
+                              >
+                                <Send className="w-3.5 h-3.5 text-blue-600" />
+                                Enviar DISC
+                              </button>
+                              <CandidateActionsMenu
+                                candidate={{ ...c, hasDiscToken: Boolean(c.discToken || c.discAssessment) }}
+                                effectiveStatus={c.effectiveStatus}
+                                busy={busyId === c.id}
+                                onChangeStatus={(newStatus) => changeStatus(c, newStatus)}
+                                onSendDisc={() => handleInitiateSendDisc(c)}
+                                onMarkSentManual={() => markSentManual(c)}
+                                onOpenNotes={() => setNotesTarget(c)}
+                                onConvertFreelance={() => openConvertToFreelancer(c)}
+                                onAnalyzeAi={() => {
+                                  if (c.aiAnalysis) setAiTarget(c);
+                                  else handleAnalyzeCandidate(c);
+                                }}
+                                onDelete={() => openPurgeSelected([c])}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {activeSubTab === 'simulacao' && (
         loading ? (
           <div className="p-10 flex flex-col items-center justify-center text-slate-400 gap-2">
@@ -1020,6 +1253,33 @@ export default function BancoTalentosTab({ units = [] }) {
           </div>
         </div>
 
+        {/* Filtro por Unidade da Candidatura */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 text-xs">
+          <span className="font-semibold text-slate-500 mr-1 flex items-center gap-1">
+            <MapPin className="w-3.5 h-3.5 text-blue-600" />
+            Unidade:
+          </span>
+          {TALENT_UNIT_OPTIONS.map((u) => (
+            <button
+              key={u.value}
+              type="button"
+              onClick={() => setFilter('unit', u.value)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${
+                filters.unit === u.value
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm font-semibold'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {u.shortLabel || u.label}
+              <span className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] ${
+                filters.unit === u.value ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {unitCounts[u.value] || 0}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {/* Filtro rápido por Levantamento de Perfil */}
         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 text-xs">
           <span className="font-semibold text-slate-500 mr-1">Levantamento de Perfil:</span>
@@ -1059,6 +1319,13 @@ export default function BancoTalentosTab({ units = [] }) {
 
         {/* Filtros avançados */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+          <select value={filters.unit} onChange={(e) => setFilter('unit', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 bg-white font-medium">
+            {TALENT_UNIT_OPTIONS.map((u) => (
+              <option key={u.value} value={u.value}>
+                {u.value === 'todos' ? 'Unidade: todas' : u.label}
+              </option>
+            ))}
+          </select>
           <select value={filters.opp} onChange={(e) => setFilter('opp', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 bg-white">
             <option value="todos">Oportunidade: todas</option>
             {Object.entries(OPPORTUNITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -1158,6 +1425,7 @@ export default function BancoTalentosTab({ units = [] }) {
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Selecionar todos os filtrados" />
                   </th>
                   <th className="p-3">Candidato</th>
+                  <th className="p-3">Unidade Pretendida</th>
                   <th className="p-3">Curso / Área</th>
                   <th className="p-3">Status</th>
                   <th className="p-3">Perfil (DISC)</th>
@@ -1254,6 +1522,19 @@ export default function BancoTalentosTab({ units = [] }) {
                         {c.notes && (
                           <div className="text-[11px] text-slate-400 mt-1 italic truncate max-w-[220px]" title={c.notes}>
                             📝 {c.notes}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border ${
+                          TALENT_UNIT_BADGE[c.normalizedUnit] || 'bg-slate-50 text-slate-700 border-slate-200'
+                        }`}>
+                          <MapPin className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                          {c.unitLabel || 'Sem unidade'}
+                        </span>
+                        {c.preferred_unit && c.normalizedUnit !== 'SEM_UNIDADE' && (
+                          <div className="text-[10px] text-slate-400 mt-0.5 ml-1">
+                            Inscrito: {c.preferred_unit}
                           </div>
                         )}
                       </td>

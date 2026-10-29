@@ -52,5 +52,48 @@ export const OPPORTUNITY_LABEL = {
   PJ: 'PJ',
 };
 
+// Mapeamento das unidades às quais os candidatos se candidataram (preferred_unit na landing page)
+// e fallback com a simulação por unidade / alocação de quiosque
+export const TALENT_UNIT_OPTIONS = [
+  { value: 'todos', label: 'Todas as unidades' },
+  { value: 'PARQUE_SHOPPING', label: 'FaçaAmigos Parque Shopping', shortLabel: 'Parque Shopping', color: 'emerald' },
+  { value: 'BOSQUE_GRAO_PARA', label: 'FaçaAmigos Bosque Grão-Pará', shortLabel: 'Grão Pará', color: 'indigo' },
+  { value: 'CLINICA_FATIMA', label: 'FaçaAmigos Clínica (Umarizal)', shortLabel: 'Clínica Umarizal', color: 'amber' },
+  { value: 'AMBAS', label: 'Qualquer Unidade / Ambas', shortLabel: 'Qualquer unidade', color: 'purple' },
+  { value: 'SEM_UNIDADE', label: 'Não informada / Geral', shortLabel: 'Não informada', color: 'slate' },
+];
+
+export const normalizeCandidateUnit = (candidate, basketAssignment) => {
+  const pref = String(candidate?.preferred_unit || '').trim().toUpperCase();
+  if (pref.includes('PARQUE') || pref.includes('PARQUE_SHOPPING')) return 'PARQUE_SHOPPING';
+  if (pref.includes('GRAO') || pref.includes('BOSQUE') || pref.includes('GRAO_PARA') || pref.includes('BOSQUE_GRAO_PARA')) return 'BOSQUE_GRAO_PARA';
+  if (pref.includes('CLINICA') || pref.includes('FATIMA') || pref.includes('UMARIZAL')) return 'CLINICA_FATIMA';
+  if (pref.includes('AMBAS') || pref.includes('QUALQUER') || pref.includes('TODAS')) return 'AMBAS';
+
+  // Fallback para simulação prévia caso tenha sido alocado no UnitBasketBoard
+  const bUnit = basketAssignment?.unit_id;
+  if (bUnit === 'faca-amigos-parque-shopping') return 'PARQUE_SHOPPING';
+  if (bUnit === 'faca-amigos-grao-para') return 'BOSQUE_GRAO_PARA';
+  if (bUnit === 'clinica-a') return 'CLINICA_FATIMA';
+
+  return 'SEM_UNIDADE';
+};
+
+export const TALENT_UNIT_LABEL = {
+  PARQUE_SHOPPING: 'FaçaAmigos Parque Shopping',
+  BOSQUE_GRAO_PARA: 'FaçaAmigos Bosque Grão-Pará',
+  CLINICA_FATIMA: 'FaçaAmigos Clínica (Umarizal)',
+  AMBAS: 'Qualquer Unidade / Ambas',
+  SEM_UNIDADE: 'Sem unidade definida',
+};
+
+export const TALENT_UNIT_BADGE = {
+  PARQUE_SHOPPING: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  BOSQUE_GRAO_PARA: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  CLINICA_FATIMA: 'bg-amber-50 text-amber-700 border-amber-200',
+  AMBAS: 'bg-purple-50 text-purple-700 border-purple-200',
+  SEM_UNIDADE: 'bg-slate-50 text-slate-600 border-slate-200',
+};
+
 export const statusLabel = (value) =>
   STATUS_OPTIONS.find((s) => s.value === value)?.label || value || '—';

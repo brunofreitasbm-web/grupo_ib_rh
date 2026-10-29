@@ -62,7 +62,7 @@ Deno.serve(async (req: Request) => {
 
   let query = admin
     .from("fa_kiosk_job_applications")
-    .select("id, full_name, email, phone, course, desired_area, opportunity_type, resume_path, status, created_at_ms", { count: "exact" })
+    .select("id, full_name, email, phone, course, desired_area, preferred_unit, opportunity_type, resume_path, status, created_at_ms", { count: "exact" })
     .order("created_at_ms", { ascending: false })
     .order("id", { ascending: true }) // desempate estável entre páginas
     .range(offset, offset + limit - 1);

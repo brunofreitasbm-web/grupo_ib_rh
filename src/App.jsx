@@ -9188,7 +9188,15 @@ export default function App() {
                   </div>
                   )}
                 </Suspense>
-              </ErrorBoundary>
+              
+      <Omnibar
+        isOpen={isOmnibarOpen}
+        setIsOpen={setIsOmnibarOpen}
+        interns={interns}
+        units={units}
+        onSelectAction={handleOmnibarAction}
+      />
+    </ErrorBoundary>
             </div>
 
           </div>
@@ -9290,7 +9298,15 @@ export default function App() {
               onCancel={() => setCurrentView('kiosk')}
             />
           </Suspense>
-        </ErrorBoundary>
+        
+      <Omnibar
+        isOpen={isOmnibarOpen}
+        setIsOpen={setIsOmnibarOpen}
+        interns={interns}
+        units={units}
+        onSelectAction={handleOmnibarAction}
+      />
+    </ErrorBoundary>
       ) : currentView === 'clt_autocadastro' ? (
         <ErrorBoundary>
           <Suspense fallback={
@@ -9303,7 +9319,15 @@ export default function App() {
               onCancel={() => setCurrentView('kiosk')}
             />
           </Suspense>
-        </ErrorBoundary>
+        
+      <Omnibar
+        isOpen={isOmnibarOpen}
+        setIsOpen={setIsOmnibarOpen}
+        interns={interns}
+        units={units}
+        onSelectAction={handleOmnibarAction}
+      />
+    </ErrorBoundary>
       ) : currentView === 'clt_biometria_autogestao' ? (
         renderCltAutogestaoBiometria()
       ) : (
