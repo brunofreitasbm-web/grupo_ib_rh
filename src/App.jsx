@@ -6932,7 +6932,7 @@ export default function App() {
                               <div className="flex justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handleViewDocumentContent(selectedAdmissionalIntern, doc.key, null, fileInfo.name, doc.label)}
+                                  onClick={() => handleViewDocumentContent(selectedAdmissionalIntern, doc.key, fileInfo.content || null, fileInfo.name, doc.label)}
                                   className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded"
                                   title="Visualizar documento"
                                 >
