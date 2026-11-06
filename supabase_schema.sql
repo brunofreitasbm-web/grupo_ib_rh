@@ -960,7 +960,7 @@ CREATE INDEX IF NOT EXISTS idx_document_contents_intern ON public.document_conte
 
 -- =========================================================================
 -- MULTI-WORKSPACE: GRUPO IB (Faça Amigos Parque Shopping, Faça Amigos Grão
--- Pará, Faça Amigos, Centro de Terapia Comportamental, Clínica B) atendido por um segundo deploy (Vercel) que
+-- Pará, Faça Amigos, Centro de Terapia Comportamental) atendido por um segundo deploy (Vercel) que
 -- compartilha este mesmo banco com a Porto Terapia, sem misturar dados.
 -- Idempotente: pode ser rodado de novo sem duplicar/quebrar nada.
 -- =========================================================================
@@ -992,8 +992,7 @@ UPDATE public.units SET kiosk_email = 'generalissimo@portoterapia.com' WHERE id 
 INSERT INTO public.units (id, name, address, lat, lng, radius_km, radius_m, workspace_id, kiosk_email, biometric_required) VALUES
   ('faca-amigos-parque-shopping', 'FaçaAmigos Parque Shopping', 'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'parqueshopping@grupoib.internal', true),
   ('faca-amigos-grao-para',       'FaçaAmigos Grão Pará',       'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'graopara@grupoib.internal',       true),
-  ('clinica-a',                   'FaçaAmigos, Centro de Terapia Comportamental', 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true),
-  ('clinica-b',                   'Clínica B',                    'ENDEREÇO PENDENTE', 0, 0, 5, 5000, 'grupoib', 'clinicab@grupoib.internal',       true)
+  ('clinica-a',                   'FaçaAmigos, Centro de Terapia Comportamental', 'R. Boaventura da Silva, 1573 - Umarizal, Belém - PA, CEP 66.060-147', 0, 0, 5, 5000, 'grupoib', 'clinicaa@grupoib.internal',       true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Renomeacao/dados cadastrais da unidade 'clinica-a' (antiga "Clínica A") a partir
@@ -1322,8 +1321,7 @@ DECLARE
   units_data jsonb := '[
     {"email": "parqueshopping@grupoib.internal", "name": "Estagiário FaçaAmigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
     {"email": "graopara@grupoib.internal", "name": "Estagiário FaçaAmigos Grão Pará", "unit_id": "faca-amigos-grao-para"},
-    {"email": "clinicaa@grupoib.internal", "name": "Estagiário FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
-    {"email": "clinicab@grupoib.internal", "name": "Estagiário Clínica B", "unit_id": "clinica-b"}
+    {"email": "clinicaa@grupoib.internal", "name": "Estagiário FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"}
   ]'::jsonb;
   u jsonb;
   new_id uuid;
@@ -1388,7 +1386,6 @@ ALTER TABLE public.units
 UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-parqueshopping@grupoib.internal' WHERE id = 'faca-amigos-parque-shopping' AND pj_kiosk_email IS NULL;
 UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-graopara@grupoib.internal'       WHERE id = 'faca-amigos-grao-para'       AND pj_kiosk_email IS NULL;
 UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-clinicaa@grupoib.internal'       WHERE id = 'clinica-a'                   AND pj_kiosk_email IS NULL;
-UPDATE public.units SET pj_enabled = true, pj_kiosk_email = 'pj-clinicab@grupoib.internal'       WHERE id = 'clinica-b'                   AND pj_kiosk_email IS NULL;
 
 -- 16.2 Tabelas
 CREATE TABLE IF NOT EXISTS public.professionals (
@@ -1721,8 +1718,7 @@ DECLARE
   units_data jsonb := '[
     {"email": "pj-parqueshopping@grupoib.internal", "name": "Prestadores FaçaAmigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
     {"email": "pj-graopara@grupoib.internal",       "name": "Prestadores FaçaAmigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
-    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
-    {"email": "pj-clinicab@grupoib.internal",       "name": "Prestadores Clínica B",                   "unit_id": "clinica-b"}
+    {"email": "pj-clinicaa@grupoib.internal",       "name": "Prestadores FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"}
   ]'::jsonb;
   u jsonb;
   new_id uuid;
@@ -2401,8 +2397,7 @@ DECLARE
   units_data jsonb := '[
     {"email": "clt-parqueshopping@grupoib.internal", "name": "Funcionários FaçaAmigos Parque Shopping", "unit_id": "faca-amigos-parque-shopping"},
     {"email": "clt-graopara@grupoib.internal",       "name": "Funcionários FaçaAmigos Grão Pará",       "unit_id": "faca-amigos-grao-para"},
-    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"},
-    {"email": "clt-clinicab@grupoib.internal",       "name": "Funcionários Clínica B",                   "unit_id": "clinica-b"}
+    {"email": "clt-clinicaa@grupoib.internal",       "name": "Funcionários FaçaAmigos, Centro de Terapia Comportamental", "unit_id": "clinica-a"}
   ]'::jsonb;
   u jsonb;
   new_id uuid;
@@ -2439,7 +2434,6 @@ END $$;
 UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-parqueshopping@grupoib.internal' WHERE id = 'faca-amigos-parque-shopping' AND clt_kiosk_email IS NULL;
 UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-graopara@grupoib.internal'       WHERE id = 'faca-amigos-grao-para'       AND clt_kiosk_email IS NULL;
 UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-clinicaa@grupoib.internal'       WHERE id = 'clinica-a'                   AND clt_kiosk_email IS NULL;
-UPDATE public.units SET clt_enabled = true, clt_kiosk_email = 'clt-clinicab@grupoib.internal'       WHERE id = 'clinica-b'                   AND clt_kiosk_email IS NULL;
 
 -- 17.7 O quiosque CLT precisa ler a própria unidade (nome/endereço/CNPJ).
 DROP POLICY IF EXISTS "Permitir leitura de unidades para quiosque CLT" ON public.units;
