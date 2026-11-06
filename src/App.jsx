@@ -32,6 +32,7 @@ import {
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { sanitizeHtml } from './utils/sanitizeHtml';
 import { BRANDING, WORKSPACES } from './config/branding';
+import { LABOR } from './config/labor';
 import { CourseSelect, InternshipTypeField } from './components/CourseFields';
 import { normalizeCourseValue, getInternshipTypeLabel } from './config/academicCourses';
 import { calculateHoursSummary, calculateHoursAlerts } from './utils/hoursCalculations';
@@ -166,11 +167,7 @@ const UNITS_DEFAULT = BRANDING.kioskUnits.map((ku) => ({
   workspaceId: ku.workspaceId || BRANDING.id,
 }));
 
-// Limites da Lei do Estágio (Lei nº 11.788/2008)
-const LABOR = {
-  maxDailyHours: 6,   // 6h/dia (padrão ensino superior/médio)
-  maxWeeklyHours: 30, // 30h/semana
-};
+// Limites da Lei do Estágio: ver src/config/labor.js
 
 // Classes Tailwind por "accent" de unidade no botão de login do quiosque.
 // Escritas por extenso (não interpoladas) para o scanner JIT do Tailwind
