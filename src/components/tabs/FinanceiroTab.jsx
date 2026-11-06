@@ -17,6 +17,9 @@ import FolhaCltPanel from '../finance/FolhaCltPanel';
 export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   const [interns, setInterns] = useState([]);
   const [records, setRecords] = useState([]);
+  // Dias escalados no mês por estagiário: { [internId]: ['AAAA-MM-DD', ...] }.
+  // Sem escala cadastrada, vale a regra antiga (todo dia do calendário).
+  const [scheduleByIntern, setScheduleByIntern] = useState({});
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterFinanceMonth, setFilterFinanceMonth] = useState(new Date().toISOString().substring(0, 7));
@@ -121,6 +124,19 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         recordsData.push(...(page || []));
         if (!page || page.length < 1000) break;
       }
+
+      // Escala do mês (intern_schedule_entries). Falha aqui não derruba a folha:
+      // sem escala, a falta automática segue a regra antiga.
+      const { data: scheduleData, error: scheduleErr } = await supabase
+        .from('intern_schedule_entries')
+        .select('intern_id, work_date')
+        .gte('work_date', `${filterFinanceMonth}-01`)
+        .lt('work_date', `${nextMonth}-01`);
+      const schedMap = {};
+      if (!scheduleErr) {
+        for (const r of scheduleData || []) (schedMap[r.intern_id] ||= []).push(r.work_date);
+      }
+      setScheduleByIntern(schedMap);
 
       if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
       if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));
@@ -271,6 +287,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         endDate: intern.contractTermination?.date || intern.endDate,
         presenceDates,
         coveredDates,
+        scheduledDates: scheduleByIntern[intern.id] || null,
       });
       const manualDeductibleDays = deductibleDays;
       deductibleDays += autoAbsences.length;
@@ -312,7 +329,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         finalPayment
       };
     });
-  }, [filteredInterns, records, monthKey]);
+  }, [filteredInterns, records, monthKey, scheduleByIntern]);
 
   const filteredPayrolls = useMemo(() => {
     return payrolls.filter(p => {
