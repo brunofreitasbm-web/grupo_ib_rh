@@ -62,6 +62,9 @@ export function generateMonthSchedule({ monthKey, interns, fixed = {} }) {
   for (const intern of interns) {
     const hours = hoursPerDay(intern);
     const out = { ...(fixed[intern.id] || {}) };
+    // Cada estagiário começa a rotação numa semana diferente, para os dias
+    // de folga não caírem todos juntos e o turno ficar descoberto.
+    const rotation = interns.indexOf(intern);
     weekStarts.forEach((ws, weekIndex) => {
       const inBond = weeks.get(ws).filter((d) =>
         (!intern.startDate || d >= intern.startDate) &&
@@ -81,7 +84,7 @@ export function generateMonthSchedule({ monthKey, interns, fixed = {} }) {
           .filter((d) => !out[d] && VARIABLE_WEEKDAYS.includes(weekdayOf(d)))
           .map((d) => [weekdayOf(d), d]));
         const picked = pickVariableDays({
-          weekIndex, candidates: [...byWeekday.keys()], count: slots,
+          weekIndex: weekIndex + rotation, candidates: [...byWeekday.keys()], count: slots,
         });
         for (const wd of picked.slice(0, slots)) {
           if (byWeekday.has(wd)) out[byWeekday.get(wd)] = hours;

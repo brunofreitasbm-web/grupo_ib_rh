@@ -9,6 +9,9 @@ import {
   monthDates, weekStartOf, hoursPerDay, generateMonthSchedule, validateSchedule,
 } from '../../utils/escala';
 import { weekdayOf } from '../../utils/cltCalculations';
+import {
+  openingHours, formatOpeningHours, isShoppingUnit, shiftWindows, internShift, SHIFTS,
+} from '../../config/shoppingHours';
 
 const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -180,6 +183,20 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
     .filter((i) => entries[i.id]?.[date])
     .map((i) => ({ intern: i, entry: entries[i.id][date] }));
 
+  // Turnos sem ninguém, por dia (só em shopping, onde há horário de funcionamento).
+  const uncovered = useMemo(() => {
+    const out = {};
+    if (!isShoppingUnit(unitId)) return out;
+    for (const d of dates) {
+      const present = new Set(unitInterns
+        .filter((i) => entries[i.id]?.[d]).map((i) => internShift(i)));
+      const missing = SHIFTS.filter((s) => !present.has(s));
+      if (missing.length) out[d] = missing;
+    }
+    return out;
+  }, [dates, entries, unitInterns, unitId]);
+  const uncoveredCount = Object.values(uncovered).reduce((s, m) => s + m.length, 0);
+
   const problems = useMemo(() => {
     const out = [];
     for (const i of unitInterns) {
@@ -221,6 +238,7 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
 
       <p className="text-xs text-gray-500">
         Regras: {LABOR.maxWeeklyHours}h/semana, máx. {LABOR.maxDailyHours}h/dia, semana de segunda a domingo. Sexta e sábado fixos; os demais dias alternam.
+        {isShoppingUnit(unitId) && ' Funcionamento do shopping: seg a sáb 10h–22h, domingo 12h–22h.'}{' '}
         Arraste o nome para um dia (ou clique no nome e depois no dia). Clique no nome dentro do dia para remover.
       </p>
 
@@ -230,6 +248,15 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
           <div>{problems.slice(0, 5).map((p, k) => (
             <div key={k}>{p.name}: {p.type === 'day' ? `${p.hours}h em ${p.date}` : `${p.hours}h na semana de ${p.weekStart}`} (limite excedido)</div>
           ))}</div>
+        </div>
+      )}
+
+      {isShoppingUnit(unitId) && (
+        <div className={`p-2 rounded text-sm border ${uncoveredCount ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+          {uncoveredCount
+            ? `${uncoveredCount} turno(s) sem estagiário no mês (marcados em vermelho no calendário).`
+            : 'Todos os turnos do mês têm ao menos um estagiário.'}
+          <span className="ml-2 text-xs opacity-80">Turnos: Manhã 10h–16h e Tarde 16h–22h (domingo: 12h–18h e 16h–22h).</span>
         </div>
       )}
 
@@ -267,14 +294,27 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
                       onDrop={(e) => { e.preventDefault(); place(e.dataTransfer.getData(DRAG_MIME), d); }}
                       onClick={() => selectedIntern && place(selectedIntern, d)}
                       className={`min-h-[84px] border rounded p-1 text-xs ${di >= 4 ? 'bg-blue-50/50' : 'bg-white'} ${selectedIntern ? 'cursor-copy' : ''}`}>
-                      <div className="font-semibold text-gray-500 mb-1">{Number(d.slice(8))}</div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-gray-500">{Number(d.slice(8))}</span>
+                        <span className="text-[10px] text-gray-400">{formatOpeningHours(openingHours(unitId, weekdayOf(d)))}</span>
+                      </div>
+                      {uncovered[d] && (
+                        <div className="mb-1 text-[10px] font-semibold text-red-600">
+                          sem {uncovered[d].map((s) => s.toLowerCase()).join(' e ')}
+                        </div>
+                      )}
                       <div className="space-y-0.5">
                         {namesOn(d).map(({ intern, entry }) => (
                           <button key={intern.id}
                             onClick={(e) => { e.stopPropagation(); remove(intern.id, d); }}
                             title="Remover deste dia"
                             className={`group flex w-full items-center justify-between gap-1 px-1 py-0.5 rounded text-left truncate ${entry.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-emerald-100 text-emerald-900'}`}>
-                            <span className="truncate">{intern.name.split(' ')[0]}</span>
+                            <span className="truncate" title={(() => {
+                              const w = shiftWindows(unitId, weekdayOf(d))?.[internShift(intern)];
+                              return w ? `${intern.name} — ${w.start}h–${w.end}h` : intern.name;
+                            })()}>
+                              {intern.name.split(' ')[0]} <span className="opacity-70">{internShift(intern) === 'Tarde' ? 'T' : 'M'}</span>
+                            </span>
                             <X size={10} className="opacity-0 group-hover:opacity-100 shrink-0" />
                           </button>
                         ))}
