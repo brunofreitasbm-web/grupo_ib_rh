@@ -167,13 +167,13 @@ export function nightMinutes(intervals) {
   return { realMinutes: Math.round(realMinutes), reducedEquivalentMinutes: Math.round(realMinutes * (60 / 52.5)) };
 }
 
-export function computeDay({ employee, dateStr, marks, holidays = [], toleranceMinutes = 5, occurrences = [] }) {
+export function computeDay({ employee, dateStr, marks, holidays = [], toleranceMinutes = 5, occurrences = [], countAbsence = true }) {
   const expected = getExpectedSchedule(employee, dateStr, holidays);
   const { intervals, breakMinutes, workedMinutes, open, missingMarks } = computeWorkedIntervals(marks);
   const { realMinutes: nightRealMinutes, reducedEquivalentMinutes: nightReducedMinutes } = nightMinutes(intervals);
 
   const occurrence = occurrences.find((o) => dateStr >= o.startDate && dateStr <= (o.endDate || o.startDate));
-  const isAbsence = marks.length === 0 && !expected.isRestDay && !expected.isHoliday;
+  const isAbsence = countAbsence && marks.length === 0 && !expected.isRestDay && !expected.isHoliday;
   const absenceJustified = isAbsence && !!occurrence?.justified;
 
   let extra50 = 0;
@@ -184,7 +184,7 @@ export function computeDay({ employee, dateStr, marks, holidays = [], toleranceM
   if (expected.isRestDay || expected.isHoliday) {
     // Trabalho em DSR/feriado fora de escala: tudo é HE 100%.
     extra100 = workedMinutes;
-  } else if (!isAbsence) {
+  } else if (!isAbsence && (countAbsence || marks.length > 0)) {
     const diff = workedMinutes - expected.expectedMinutes;
     if (diff > toleranceMinutes) extra50 = diff;
     else if (diff < -toleranceMinutes) deficit = Math.abs(diff);
@@ -233,7 +233,7 @@ export function interjornadaViolations(daysWithIntervals) {
   return violations;
 }
 
-export function computeMonth({ employee, records = [], adjustments = [], occurrences = [], holidays = [], monthKey, toleranceMinutes = 5 }) {
+export function computeMonth({ employee, records = [], adjustments = [], occurrences = [], holidays = [], monthKey, toleranceMinutes = 5, today = dateKeyBelem(new Date().toISOString()) }) {
   const [year, month] = monthKey.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const days = [];
@@ -242,7 +242,10 @@ export function computeMonth({ employee, records = [], adjustments = [], occurre
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
     const marks = buildDayMarks({ records, adjustments, employeeId: employee.id, dateStr });
-    const day = computeDay({ employee, dateStr, marks, holidays, toleranceMinutes, occurrences });
+    // Falta só existe em dia já transcorrido (não futuro) e dentro do vínculo
+    // (após a admissão). Sem isso, dias futuros do mês corrente viram falta.
+    const countAbsence = dateStr <= today && (!employee.admissionDate || dateStr >= employee.admissionDate);
+    const day = computeDay({ employee, dateStr, marks, holidays, toleranceMinutes, occurrences, countAbsence });
     days.push(day);
     dailyIntervals.push({ date: dateStr, intervals: computeWorkedIntervals(marks).intervals });
   }

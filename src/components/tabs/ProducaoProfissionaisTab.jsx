@@ -397,7 +397,11 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
                     <td className="p-3 text-gray-600">{row.morningShifts} / {row.afternoonShifts}</td>
                     <td className="p-3 font-semibold text-gray-700">{row.shiftsPresent}</td>
                     <td className="p-3 text-gray-600">
-                      {row.shiftValue > 0 ? fmtBRL(row.shiftValue) : <span className="text-amber-600">não informado</span>}
+                      {row.missingExpected
+                        ? <span className="text-amber-600">informe módulos previstos</span>
+                        : row.shiftValue > 0
+                          ? <>{fmtBRL(row.shiftValue)}<div className="text-[9px] text-gray-400">{fmtBRL(row.contractValue)} ÷ {row.expectedModules}</div></>
+                          : <span className="text-amber-600">não informado</span>}
                     </td>
                     <td className="p-3 text-gray-600">{row.sundayShiftsPresent}</td>
                     <td className="p-3 text-right text-gray-600">{fmtBRL(row.sundayBonusTotal)}</td>

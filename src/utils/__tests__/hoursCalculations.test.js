@@ -187,8 +187,8 @@ describe('calculateProfessionalProduction', () => {
   // Gratificação PJ: valor do turno x turnos com presença na competência.
   describe('turnos e gratificação', () => {
     const comValor = [
-      { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a', shiftValue: 1000 },
-      { id: 'p2', name: 'Marcos Lima', unitId: 'clinica-b', shiftValue: 500 },
+      { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a', shiftValue: 1000, expectedModules: 1 },
+      { id: 'p2', name: 'Marcos Lima', unitId: 'clinica-b', shiftValue: 500, expectedModules: 1 },
     ];
 
     it('conta manhã e tarde separadamente e multiplica pelo valor do turno', () => {
@@ -262,7 +262,7 @@ describe('calculateProfessionalProduction', () => {
   // em domingo, somada ao valor normal desses turnos (Grupo IB).
   describe('adicional de domingo', () => {
     const comValor = [
-      { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a', shiftValue: 1000 },
+      { id: 'p1', name: 'Carla Souza', unitId: 'clinica-a', shiftValue: 1000, expectedModules: 1 },
     ];
 
     it('soma uma diária extra por turno de domingo trabalhado (2024-06-09 é domingo)', () => {
@@ -301,6 +301,27 @@ describe('calculateProfessionalProduction', () => {
       expect(carla.sundayShiftsPresent).toBe(0);
       expect(carla.sundayBonusTotal).toBe(0);
       expect(carla.totalPayable).toBe(carla.shiftTotal);
+    });
+  });
+
+  describe('valor do contrato global ÷ módulos previstos', () => {
+    const pr = (id, a, d, h1, h2) => [
+      { professionalId: id, action: 'entrada', timestamp: new Date(2024, 5, d, h1, 0).toISOString(), unitId: 'clinica-a' },
+      { professionalId: id, action: 'saida', timestamp: new Date(2024, 5, d, h2, 0).toISOString(), unitId: 'clinica-a' },
+    ];
+    it('paga módulos entregues × (global ÷ previstos), sem multa por falta', () => {
+      const profs = [{ id: 'p1', name: 'A', unitId: 'clinica-a', shiftValue: 3000, expectedModules: 10 }];
+      const presence = [...pr('p1', 0, 10, 8, 11), ...pr('p1', 0, 11, 8, 11)]; // 2 módulos matutinos
+      const [row] = calculateProfessionalProduction(presence, profs, '2024-06', 'all');
+      expect(row.shiftValue).toBe(300);
+      expect(row.totalPayable).toBe(600);
+      expect(row.modulesMissed).toBe(8);
+    });
+    it('sem módulos previstos não calcula valor e sinaliza', () => {
+      const profs = [{ id: 'p1', name: 'A', unitId: 'clinica-a', shiftValue: 3000 }];
+      const [row] = calculateProfessionalProduction(pr('p1', 0, 10, 8, 11), profs, '2024-06', 'all');
+      expect(row.missingExpected).toBe(true);
+      expect(row.totalPayable).toBe(0);
     });
   });
 });

@@ -97,11 +97,27 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         .select('*');
 
       // Fetch records for the selected month to keep queries lightweight
-      const { data: recordsData } = await supabase
-        .from('records')
-        .select('id, intern_id, intern_name, action, timestamp, justification, is_manual, geo, days_away')
-        .gte('timestamp', `${filterFinanceMonth}-01T00:00:00`)
-        .order('timestamp', { ascending: false });
+      // Intervalo fechado no mês + paginação: sem limite superior e sem
+      // paginar, o teto de 1000 linhas do Supabase cortava a folha de meses
+      // passados (registros mais novos ocupavam a página).
+      const [fy, fm] = filterFinanceMonth.split('-').map(Number);
+      const monthStart = `${filterFinanceMonth}-01T00:00:00`;
+      const nextMonth = fm === 12 ? `${fy + 1}-01` : `${fy}-${String(fm + 1).padStart(2, '0')}`;
+      const monthEnd = `${nextMonth}-01T00:00:00`;
+      const recordsData = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error: pageErr } = await supabase
+          .from('records')
+          .select('id, intern_id, intern_name, action, timestamp, justification, is_manual, geo, days_away')
+          .gte('timestamp', monthStart)
+          .lt('timestamp', monthEnd)
+          .order('timestamp', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, from + 999);
+        if (pageErr) throw pageErr;
+        recordsData.push(...(page || []));
+        if (!page || page.length < 1000) break;
+      }
 
       if (internsData) setInterns(internsData.map(mapInternFromDb).filter(i => !restrictedUnitIds.includes(i.unitId)));
       if (unitsData) setUnits(unitsData.map(mapUnitFromDb).filter(u => !restrictedUnitIds.includes(u.id)));

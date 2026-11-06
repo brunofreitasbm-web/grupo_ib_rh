@@ -684,7 +684,7 @@ export const safeUpsertUnits = async (supabaseClient, dbUnits) => {
 // mapeadores de estagiário de propósito: nada aqui deve alimentar as telas de
 // ponto/bolsa de estagiários nem vice-versa.
 // =========================================================================
-export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, birthdate, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at, role_id';
+export const PROFESSIONAL_SELECT_FIELDS = 'id, unit_id, name, profession, council_type, council_number, council_uf, council_validity, specialties, cpf, cnpj, razao_social, nome_fantasia, natureza_juridica, cnae_principal, inscricao_municipal, endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cidade, endereco_uf, email, phone, bank_name, bank_agency, bank_account, bank_account_type, pix_key, birthdate, rep_name, rep_cpf, rep_rg, rep_birthdate, rep_email, rep_phone, rep_role, service_description, remuneration_model, remuneration_value, expected_modules_per_month, payment_day, notice_days, contract_start, contract_end, contract_notes, active, registration_status, self_registered_at, autonomy_declaration_accepted_at, autonomy_declaration_version, lgpd_consent_accepted_at, terms_accepted_at, terms_version, photo, created_at, role_id';
 
 export const mapProfessionalFromDb = (p) => ({
   id: p.id,
@@ -729,6 +729,7 @@ export const mapProfessionalFromDb = (p) => ({
   remunerationModel: p.remuneration_model || '',
   remunerationValue: p.remuneration_value ?? '',
   shiftValue: p.shift_value ?? p.remuneration_value ?? '',
+  expectedModules: p.expected_modules_per_month ?? '',
   paymentDay: p.payment_day ?? '',
   noticeDays: p.notice_days ?? '',
   contractStart: p.contract_start || '',
@@ -788,6 +789,7 @@ export const mapProfessionalToDb = (p) => ({
   service_description: p.serviceDescription || null,
   remuneration_model: p.remunerationModel || null,
   remuneration_value: p.remunerationValue === '' || p.remunerationValue == null ? null : Number(p.remunerationValue),
+  expected_modules_per_month: p.expectedModules === '' || p.expectedModules == null ? null : Number(p.expectedModules),
   payment_day: p.paymentDay === '' || p.paymentDay == null ? null : Number(p.paymentDay),
   notice_days: p.noticeDays === '' || p.noticeDays == null ? null : Number(p.noticeDays),
   contract_start: p.contractStart || null,
@@ -863,7 +865,7 @@ export const professionalRpcErrorMessage = (err) => {
 export const EMPLOYEE_SELECT_FIELDS = 'id, unit_id, name, cpf, rg, rg_issuer, birthdate, sex, marital_status, education, nationality, birthplace, mother_name, father_name, phone, email, address, ctps_number, ctps_series, ctps_uf, pis, voter_title, reservist_cert, cnh, cnh_category, bank_name, bank_agency, bank_account, bank_account_type, pix_key, job_title, cbo, department, admission_date, contract_type, experience_first_end, experience_second_end, contract_end, base_salary, weekly_hours, schedule, work_regime, night_work, hours_bank, hours_bank_started_at, vt_opted, vt_daily_cost, vr_opted, health_plan, union_name, cba_reference, photo, face_descriptor, biometric_consent_at, biometric_consent_version, status, termination_date, notes, registration_status, self_registered_at, lgpd_consent_accepted_at, lgpd_consent_version, created_at, updated_at, role_id';
 
 // Versão enxuta para listas/tabelas — nunca carrega photo/face_descriptor.
-export const EMPLOYEE_LIST_FIELDS = 'id, unit_id, name, cpf, job_title, department, admission_date, contract_type, status, weekly_hours, hours_bank, birthdate, base_salary';
+export const EMPLOYEE_LIST_FIELDS = 'id, unit_id, name, cpf, job_title, department, admission_date, contract_type, status, weekly_hours, hours_bank, birthdate, base_salary, schedule';
 
 export const mapEmployeeFromDb = (e) => ({
   id: e.id,

@@ -30,7 +30,7 @@ const emptyForm = {
   email: '', phone: '',
   bankName: '', bankAgency: '', bankAccount: '', bankAccountType: 'Conta Corrente', pixKey: '',
   repName: '', repCpf: '', repRg: '', repBirthdate: '', repEmail: '', repPhone: '', repRole: '',
-  serviceDescription: '', remunerationModel: '', remunerationValue: '', shiftValue: '', paymentDay: '', noticeDays: 30,
+  serviceDescription: '', remunerationModel: '', remunerationValue: '', shiftValue: '', expectedModules: '', paymentDay: '', noticeDays: 30,
   contractStart: '', contractEnd: '', contractNotes: '', active: true,
 };
 
@@ -388,6 +388,7 @@ export default function ProfissionaisTab({ filterUnit, restrictedUnitIds = [], u
                   <Field label="Modelo de remuneração" value={form.remunerationModel} onChange={(v) => setForm({ ...form, remunerationModel: v })} />
                   <Field label="Valor de referência (R$)" type="number" value={form.remunerationValue} onChange={(v) => setForm({ ...form, remunerationValue: v })} />
                   <Field label="Preço do Módulo Assistencial (R$)" type="number" value={form.shiftValue} onChange={(v) => setForm({ ...form, shiftValue: v })} />
+                  <Field label="Módulos previstos no mês (divisor do contrato global)" type="number" value={form.expectedModules} onChange={(v) => setForm({ ...form, expectedModules: v })} />
                   <Field label="Dia de pagamento" type="number" value={form.paymentDay} onChange={(v) => setForm({ ...form, paymentDay: v })} />
                   <Field label="Aviso prévio (dias)" type="number" value={form.noticeDays} onChange={(v) => setForm({ ...form, noticeDays: v })} />
                   <Field label="Vigência início" type="date" value={form.contractStart} onChange={(v) => setForm({ ...form, contractStart: v })} />

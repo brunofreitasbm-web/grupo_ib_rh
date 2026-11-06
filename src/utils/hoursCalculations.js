@@ -216,9 +216,17 @@ export function calculateProfessionalProduction(presence, professionals, monthKe
       const morningShifts = agg.days.filter((d) => d.morning).length;
       const afternoonShifts = agg.days.filter((d) => d.afternoon).length;
       const shiftsPresent = morningShifts + afternoonShifts;
-      const shiftValue = Number(p.shiftValue) || 0;
-      // Adicional de domingo: uma diária extra (shiftValue) por turno
-      // trabalhado em domingo, somada ao valor normal desses turnos.
+      // Valor configurado = valor GLOBAL mensal do contrato do prestador. O valor
+      // de cada módulo é o global ÷ módulos previstos no mês (cadastro individual);
+      // o apurado é módulos entregues × valor do módulo. Falta não gera multa:
+      // apenas deixa de pagar o módulo não entregue. Sem previsão informada não
+      // há divisor, então o valor não é calculado (missingExpected).
+      const contractValue = Number(p.shiftValue) || 0;
+      const expectedModules = Number(p.expectedModules) || 0;
+      const missingExpected = expectedModules <= 0;
+      const shiftValue = missingExpected ? 0 : contractValue / expectedModules;
+      // Adicional de domingo: uma diária extra (valor do módulo) por módulo
+      // trabalhado em domingo, somada ao valor normal desses módulos.
       const sundayMorningShifts = agg.days.filter((d) => d.date.getDay() === 0 && d.morning).length;
       const sundayAfternoonShifts = agg.days.filter((d) => d.date.getDay() === 0 && d.afternoon).length;
       const sundayShiftsPresent = sundayMorningShifts + sundayAfternoonShifts;
@@ -232,6 +240,10 @@ export function calculateProfessionalProduction(presence, professionals, monthKe
         afternoonShifts,
         shiftsPresent,
         shiftValue,
+        contractValue,
+        expectedModules,
+        missingExpected,
+        modulesMissed: missingExpected ? 0 : Math.max(0, expectedModules - shiftsPresent),
         // Gratificação PJ = valor do turno × turnos com presença na competência.
         shiftTotal,
         sundayShiftsPresent,

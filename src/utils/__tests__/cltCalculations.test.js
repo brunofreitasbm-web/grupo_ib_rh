@@ -304,3 +304,20 @@ describe('sundayBonus — adicional de domingo trabalhado (Grupo IB)', () => {
     expect(sundayBonus(3000, -1)).toBe(0);
   });
 });
+
+describe('computeMonth — falta só em dia transcorrido, atraso não desconta', () => {
+  const emp = {
+    id: 'e1', admissionDate: '2026-01-01',
+    schedule: { preset: 'custom', days: { 1: { start: '08:00', end: '12:00', breakMinutes: 0 }, 2: { start: '08:00', end: '12:00', breakMinutes: 0 } } },
+  };
+  it('conta falta nos dias úteis sem ponto até hoje e ignora futuros', () => {
+    // set/2026: terças e segundas; hoje = 2026-09-08 (terça)
+    const r = computeMonth({ employee: emp, monthKey: '2026-09', today: '2026-09-08' });
+    // 7/9 é feriado nacional? não está na lista passada -> 1/9 (ter), 7/9 (seg), 8/9 (ter) = 3
+    expect(r.totals.absencesUnjustified).toBe(3);
+  });
+  it('sem schedule carregado nada é falta (regressão do campo ausente)', () => {
+    const r = computeMonth({ employee: { id: 'e1', schedule: {} }, monthKey: '2026-09', today: '2026-09-30' });
+    expect(r.totals.absencesUnjustified).toBe(0);
+  });
+});
