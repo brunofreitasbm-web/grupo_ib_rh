@@ -308,6 +308,39 @@ export function absenceDeduction(monthlyPay, unjustifiedDays) {
   return dailyPayRate(monthlyPay) * d;
 }
 
+// Regra do estágio: dia sem NENHUMA batida (entrada ou saída) é falta e
+// desconta 1/30 da bolsa. Escala é segunda a segunda: todo dia do calendário
+// dentro do vínculo conta, inclusive fim de semana e feriado. Hoje e dias
+// futuros ficam de fora (ainda dá tempo de bater). `coveredDates` são dias
+// já tratados por uma ocorrência (atestado abona; falta/curso/acadêmico já
+// descontam via daysAway) — não entram de novo, evitando dupla contagem.
+export function autoAbsenceDates({
+  monthKey, startDate, endDate, presenceDates = [], coveredDates = [],
+  today = dateKeyBelem(new Date().toISOString()),
+}) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const present = new Set(presenceDates);
+  const covered = new Set(coveredDates);
+  const out = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+    if (dateStr >= today) break;
+    if (startDate && dateStr < startDate) continue;
+    if (endDate && dateStr > endDate) continue;
+    if (present.has(dateStr) || covered.has(dateStr)) continue;
+    out.push(dateStr);
+  }
+  return out;
+}
+
+// Dias de calendário cobertos por uma ocorrência: `daysAway` dias a partir da
+// data dela (mínimo 1).
+export function occurrenceCoveredDates(startDateStr, daysAway) {
+  const n = Math.max(1, Number(daysAway) || 0);
+  return Array.from({ length: n }, (_, i) => addDays(startDateStr, i));
+}
+
 // Remuneração devida no mês após os descontos por falta (nunca negativa).
 export function payAfterAbsences(monthlyPay, unjustifiedDays) {
   const v = Number(monthlyPay) || 0;

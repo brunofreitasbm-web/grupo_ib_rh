@@ -5,7 +5,52 @@ import {
   vacationEntitlementDays, validateVacationFractions, noticeDays,
   experienceDates, interjornadaViolations, movableHolidays, easterDate,
   dailyPayRate, absenceDeduction, payAfterAbsences, sundayBonus, computeEmployeeAlerts,
+  autoAbsenceDates, occurrenceCoveredDates,
 } from '../cltCalculations';
+
+describe('autoAbsenceDates — estagiário sem entrada nem saída no dia é falta', () => {
+  const base = { monthKey: '2026-10', today: '2026-11-05' };
+
+  it('todo dia do calendário sem ponto vira falta (segunda a segunda)', () => {
+    const r = autoAbsenceDates({ ...base, presenceDates: [] });
+    expect(r).toHaveLength(31);
+    expect(r[0]).toBe('2026-10-01');
+  });
+
+  it('dia com qualquer batida (só entrada ou só saída) não é falta', () => {
+    const r = autoAbsenceDates({ ...base, presenceDates: ['2026-10-05', '2026-10-06'] });
+    expect(r).toHaveLength(29);
+    expect(r).not.toContain('2026-10-05');
+  });
+
+  it('hoje e dias futuros não contam', () => {
+    const r = autoAbsenceDates({ monthKey: '2026-11', today: '2026-11-05', presenceDates: [] });
+    expect(r[r.length - 1]).toBe('2026-11-04');
+    expect(r).toHaveLength(4);
+  });
+
+  it('respeita início do contrato e término/rescisão', () => {
+    const r = autoAbsenceDates({ ...base, startDate: '2026-10-10', endDate: '2026-10-12', presenceDates: [] });
+    expect(r).toEqual(['2026-10-10', '2026-10-11', '2026-10-12']);
+  });
+
+  it('dia coberto por atestado ou ocorrência já registrada não conta de novo', () => {
+    const r = autoAbsenceDates({ ...base, presenceDates: [], coveredDates: ['2026-10-02', '2026-10-03'] });
+    expect(r).toHaveLength(29);
+    expect(r).not.toContain('2026-10-02');
+  });
+
+  it('mês inteiramente fora do vínculo não gera falta', () => {
+    expect(autoAbsenceDates({ ...base, startDate: '2026-11-01', presenceDates: [] })).toEqual([]);
+  });
+});
+
+describe('occurrenceCoveredDates — dias cobertos por uma ocorrência', () => {
+  it('cobre daysAway dias a partir da data (mínimo 1)', () => {
+    expect(occurrenceCoveredDates('2026-10-02', 3)).toEqual(['2026-10-02', '2026-10-03', '2026-10-04']);
+    expect(occurrenceCoveredDates('2026-10-02', 0)).toEqual(['2026-10-02']);
+  });
+});
 
 describe('toMinutes / addDays / diffDays', () => {
   it('converte HH:MM em minutos', () => {
