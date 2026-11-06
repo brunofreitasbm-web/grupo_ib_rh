@@ -478,14 +478,6 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
     };
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
   const getTipoFolhaLabel = (tipo) => {
     switch (tipo) {
       case 'mensal': return 'Folha Mensal Regular';
@@ -522,6 +514,20 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
     });
     return list;
   }, [professionals, pjDocs, filterFinanceMonth, filterUnit]);
+
+  // IMPORTANTE: o early return de carregamento precisa vir DEPOIS de todos os
+  // hooks (useState/useBackLayers/useCallback/useEffect/useMemo). Enquanto ele
+  // ficava antes do useMemo de pjApprovedPayrolls, a transição loading
+  // true -> false passava a renderizar mais hooks do que no render anterior e
+  // o React abortava o componente com o erro #310 ("Rendered more hooks than
+  // during the previous render").
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   const handleTogglePjPaid = async (item) => {
     const isPaying = !item.pago;

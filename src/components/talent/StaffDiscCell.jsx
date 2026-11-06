@@ -17,12 +17,15 @@ import { BRANDING } from '../../config/branding';
 // Mesma ideia de CandidateActionsMenu, mas sem menu — aqui cada aba já usa
 // botões de ícone inline nas linhas/cards.
 export default function StaffDiscCell({ subjectType, subjectId, name, email, phone, token, assessment, candidateMatch, onSent }) {
+  const [busy, setBusy] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+
+  // Módulo desligado em alguns sites (BRANDING): o check fica DEPOIS dos hooks
+  // para que a quantidade/ordem de hooks seja sempre a mesma entre renders
+  // (early return antes de um hook dispara o erro #310 do React).
   if (BRANDING.showStaffDiscAssessment === false) {
     return null;
   }
-
-  const [busy, setBusy] = useState(false);
-  const [showResult, setShowResult] = useState(false);
 
   const send = async () => {
     if (!email) return;
