@@ -10,7 +10,7 @@ import {
 } from '../../utils/escala';
 import { weekdayOf } from '../../utils/cltCalculations';
 import {
-  openingHours, formatOpeningHours, isShoppingUnit, shiftWindows, internShift, SHIFTS,
+  openingHours, formatOpeningHours, isShoppingUnit, shiftWindows, shiftDuration, internShift, SHIFTS,
 } from '../../config/shoppingHours';
 
 const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -28,7 +28,9 @@ const shiftMonth = (monthKey, delta) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-// entries: { [internId]: { [data]: { hours, source } } }
+// entries: { [internId]: { [data]: { [turno]: { hours, source } } } }
+// Cada dia tem 2 alocações independentes: Manhã e Tarde.
+const dayHours = (byShift) => Object.values(byShift || {}).reduce((s, e) => s + e.hours, 0);
 export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
   const [monthKey, setMonthKey] = useState(currentMonthKey());
   const [interns, setInterns] = useState([]);
@@ -73,7 +75,7 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
     (async () => {
       const { data, error } = await supabase
         .from('intern_schedule_entries')
-        .select('intern_id, work_date, hours, source')
+        .select('intern_id, work_date, shift, hours, source')
         .eq('unit_id', unitId)
         .gte('work_date', dates[0])
         .lte('work_date', dates[dates.length - 1]);
@@ -81,7 +83,7 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
       const next = {};
       if (!error) {
         for (const r of data || []) {
-          (next[r.intern_id] ||= {})[r.work_date] = { hours: Number(r.hours), source: r.source };
+          ((next[r.intern_id] ||= {})[r.work_date] ||= {})[r.shift || 'Manhã'] = { hours: Number(r.hours), source: r.source };
         }
       }
       setEntries(next);
@@ -90,19 +92,28 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
     return () => { cancelled = true; };
   }, [unitId, dates]);
 
-  const place = (internId, date) => {
+  const place = (internId, date, shift) => {
     const intern = interns.find((i) => i.id === internId);
     if (!intern) return;
-    setEntries((prev) => ({
-      ...prev,
-      [internId]: { ...(prev[internId] || {}), [date]: { hours: hoursPerDay(intern), source: 'manual' } },
-    }));
+    const hours = Math.min(hoursPerDay(intern), shiftDuration(shift));
+    setEntries((prev) => {
+      const days = prev[internId] || {};
+      return {
+        ...prev,
+        [internId]: { ...days, [date]: { ...(days[date] || {}), [shift]: { hours, source: 'manual' } } },
+      };
+    });
     setDirty(true);
   };
-  const remove = (internId, date) => {
+  const remove = (internId, date, shift) => {
     setEntries((prev) => {
-      const { [date]: _, ...rest } = prev[internId] || {};
-      return { ...prev, [internId]: rest };
+      const days = prev[internId] || {};
+      const { [shift]: _, ...restShifts } = days[date] || {};
+      const { [date]: __, ...restDays } = days;
+      return {
+        ...prev,
+        [internId]: Object.keys(restShifts).length ? { ...restDays, [date]: restShifts } : restDays,
+      };
     });
     setDirty(true);
   };
@@ -110,16 +121,33 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
   const complete = () => {
     // Só o que foi arrastado à mão fica fixo; o resto é regerado.
     const fixed = {};
+    const fixedShifts = {};
     for (const intern of unitInterns) {
-      const manual = Object.entries(entries[intern.id] || {}).filter(([, e]) => e.source === 'manual');
-      if (manual.length) fixed[intern.id] = Object.fromEntries(manual.map(([d, e]) => [d, e.hours]));
+      const manualDays = {};
+      for (const [d, byShift] of Object.entries(entries[intern.id] || {})) {
+        const manual = Object.entries(byShift).filter(([, e]) => e.source === 'manual');
+        if (manual.length) manualDays[d] = manual;
+      }
+      if (Object.keys(manualDays).length) {
+        fixed[intern.id] = Object.fromEntries(Object.entries(manualDays)
+          .map(([d, list]) => [d, list.reduce((s, [, e]) => s + e.hours, 0)]));
+        fixedShifts[intern.id] = manualDays;
+      }
     }
     const generated = generateMonthSchedule({ monthKey, interns: unitInterns, fixed });
     const next = {};
     for (const intern of unitInterns) {
       next[intern.id] = {};
+      // Manuais mantêm turno e horas; os dias novos entram no turno padrão do cadastro.
+      for (const [d, list] of Object.entries(fixedShifts[intern.id] || {})) {
+        next[intern.id][d] = Object.fromEntries(list);
+      }
+      const defaultShift = internShift(intern);
       for (const [d, h] of Object.entries(generated[intern.id] || {})) {
-        next[intern.id][d] = { hours: h, source: fixed[intern.id]?.[d] ? 'manual' : 'auto' };
+        if (next[intern.id][d]) continue;
+        next[intern.id][d] = {
+          [defaultShift]: { hours: Math.min(h, shiftDuration(defaultShift)), source: 'auto' },
+        };
       }
     }
     setEntries(next);
@@ -131,7 +159,11 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
     setEntries((prev) => {
       const next = {};
       for (const [id, days] of Object.entries(prev)) {
-        next[id] = Object.fromEntries(Object.entries(days).filter(([, e]) => e.source === 'manual'));
+        next[id] = {};
+        for (const [d, byShift] of Object.entries(days)) {
+          const manual = Object.fromEntries(Object.entries(byShift).filter(([, e]) => e.source === 'manual'));
+          if (Object.keys(manual).length) next[id][d] = manual;
+        }
       }
       return next;
     });
@@ -147,11 +179,13 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
       if (delErr) throw delErr;
       const rows = [];
       for (const intern of unitInterns) {
-        for (const [d, e] of Object.entries(entries[intern.id] || {})) {
-          rows.push({
-            workspace_id: intern.workspaceId || BRANDING.id, unit_id: unitId,
-            intern_id: intern.id, work_date: d, hours: e.hours, source: e.source,
-          });
+        for (const [d, byShift] of Object.entries(entries[intern.id] || {})) {
+          for (const [shift, e] of Object.entries(byShift)) {
+            rows.push({
+              workspace_id: intern.workspaceId || BRANDING.id, unit_id: unitId,
+              intern_id: intern.id, work_date: d, shift, hours: e.hours, source: e.source,
+            });
+          }
         }
       }
       if (rows.length) {
@@ -179,18 +213,16 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
     return [...byWeek.values()];
   }, [dates]);
 
-  const namesOn = (date) => unitInterns
-    .filter((i) => entries[i.id]?.[date])
-    .map((i) => ({ intern: i, entry: entries[i.id][date] }));
+  const namesOn = (date, shift) => unitInterns
+    .filter((i) => entries[i.id]?.[date]?.[shift])
+    .map((i) => ({ intern: i, entry: entries[i.id][date][shift] }));
 
   // Turnos sem ninguém, por dia (só em shopping, onde há horário de funcionamento).
   const uncovered = useMemo(() => {
     const out = {};
     if (!isShoppingUnit(unitId)) return out;
     for (const d of dates) {
-      const present = new Set(unitInterns
-        .filter((i) => entries[i.id]?.[d]).map((i) => internShift(i)));
-      const missing = SHIFTS.filter((s) => !present.has(s));
+      const missing = SHIFTS.filter((s) => !unitInterns.some((i) => entries[i.id]?.[d]?.[s]));
       if (missing.length) out[d] = missing;
     }
     return out;
@@ -200,14 +232,14 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
   const problems = useMemo(() => {
     const out = [];
     for (const i of unitInterns) {
-      const flat = Object.fromEntries(Object.entries(entries[i.id] || {}).map(([d, e]) => [d, e.hours]));
+      const flat = Object.fromEntries(Object.entries(entries[i.id] || {}).map(([d, byShift]) => [d, dayHours(byShift)]));
       for (const p of validateSchedule(flat)) out.push({ name: i.name, ...p });
     }
     return out;
   }, [entries, unitInterns]);
 
   const weekHours = (internId, week) => week.reduce(
-    (s, d) => s + (d ? (entries[internId]?.[d]?.hours || 0) : 0), 0);
+    (s, d) => s + (d ? dayHours(entries[internId]?.[d]) : 0), 0);
 
   const [y, m] = monthKey.split('-').map(Number);
 
@@ -239,7 +271,7 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
       <p className="text-xs text-gray-500">
         Regras: {LABOR.maxWeeklyHours}h/semana, máx. {LABOR.maxDailyHours}h/dia, semana de segunda a domingo. Sexta e sábado fixos; os demais dias alternam.
         {isShoppingUnit(unitId) && ' Funcionamento do shopping: seg a sáb 10h–22h, domingo 12h–22h.'}{' '}
-        Arraste o nome para um dia (ou clique no nome e depois no dia). Clique no nome dentro do dia para remover.
+        Arraste o nome para o turno (Manhã ou Tarde) do dia, ou clique no nome e depois no turno. Clique no nome dentro do turno para remover.
       </p>
 
       {problems.length > 0 && (
@@ -256,7 +288,7 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
           {uncoveredCount
             ? `${uncoveredCount} turno(s) sem estagiário no mês (marcados em vermelho no calendário).`
             : 'Todos os turnos do mês têm ao menos um estagiário.'}
-          <span className="ml-2 text-xs opacity-80">Turnos: Manhã 10h–16h e Tarde 16h–22h (domingo: 12h–18h e 16h–22h).</span>
+          <span className="ml-2 text-xs opacity-80">Turnos: Manhã 12h–18h e Tarde 18h–22h.</span>
         </div>
       )}
 
@@ -290,35 +322,37 @@ export default function EscalaTab({ filterUnit, restrictedUnitIds = [] }) {
                 <div key={wi} className="grid grid-cols-7 gap-1 mb-1">
                   {week.map((d, di) => d ? (
                     <div key={d}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.preventDefault(); place(e.dataTransfer.getData(DRAG_MIME), d); }}
-                      onClick={() => selectedIntern && place(selectedIntern, d)}
-                      className={`min-h-[84px] border rounded p-1 text-xs ${di >= 4 ? 'bg-blue-50/50' : 'bg-white'} ${selectedIntern ? 'cursor-copy' : ''}`}>
+                      className={`min-h-[120px] border rounded p-1 text-xs ${di >= 4 ? 'bg-blue-50/50' : 'bg-white'}`}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-semibold text-gray-500">{Number(d.slice(8))}</span>
                         <span className="text-[10px] text-gray-400">{formatOpeningHours(openingHours(unitId, weekdayOf(d)))}</span>
                       </div>
-                      {uncovered[d] && (
-                        <div className="mb-1 text-[10px] font-semibold text-red-600">
-                          sem {uncovered[d].map((s) => s.toLowerCase()).join(' e ')}
-                        </div>
-                      )}
-                      <div className="space-y-0.5">
-                        {namesOn(d).map(({ intern, entry }) => (
-                          <button key={intern.id}
-                            onClick={(e) => { e.stopPropagation(); remove(intern.id, d); }}
-                            title="Remover deste dia"
-                            className={`group flex w-full items-center justify-between gap-1 px-1 py-0.5 rounded text-left truncate ${entry.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-emerald-100 text-emerald-900'}`}>
-                            <span className="truncate" title={(() => {
-                              const w = shiftWindows(unitId, weekdayOf(d))?.[internShift(intern)];
-                              return w ? `${intern.name} — ${w.start}h–${w.end}h` : intern.name;
-                            })()}>
-                              {intern.name.split(' ')[0]} <span className="opacity-70">{internShift(intern) === 'Tarde' ? 'T' : 'M'}</span>
-                            </span>
-                            <X size={10} className="opacity-0 group-hover:opacity-100 shrink-0" />
-                          </button>
-                        ))}
-                      </div>
+                      {SHIFTS.map((shift) => {
+                        const w = shiftWindows(unitId)?.[shift];
+                        const isMissing = uncovered[d]?.includes(shift);
+                        return (
+                          <div key={shift}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => { e.preventDefault(); place(e.dataTransfer.getData(DRAG_MIME), d, shift); }}
+                            onClick={() => selectedIntern && place(selectedIntern, d, shift)}
+                            className={`mb-1 rounded border border-dashed p-0.5 ${isMissing ? 'border-red-300 bg-red-50/60' : 'border-gray-200'} ${selectedIntern ? 'cursor-copy' : ''}`}>
+                            <div className={`text-[10px] font-semibold ${isMissing ? 'text-red-600' : 'text-gray-400'}`}>
+                              {shift}{w ? ` ${w.start}–${w.end}h` : ''}
+                            </div>
+                            <div className="space-y-0.5">
+                              {namesOn(d, shift).map(({ intern, entry }) => (
+                                <button key={intern.id}
+                                  onClick={(e) => { e.stopPropagation(); remove(intern.id, d, shift); }}
+                                  title={`${intern.name} — remover do turno ${shift}`}
+                                  className={`group flex w-full items-center justify-between gap-1 px-1 py-0.5 rounded text-left truncate ${entry.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-emerald-100 text-emerald-900'}`}>
+                                  <span className="truncate">{intern.name.split(' ')[0]}</span>
+                                  <X size={10} className="opacity-0 group-hover:opacity-100 shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : <div key={`e${di}`} />)}
                 </div>

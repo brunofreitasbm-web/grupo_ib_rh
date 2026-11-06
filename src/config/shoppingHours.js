@@ -19,17 +19,23 @@ export function formatOpeningHours(hours) {
   return hours ? `${hours.open}h–${hours.close}h` : '';
 }
 
-// Turnos de 6h dentro do funcionamento. No domingo (12h–22h) os dois turnos
-// se sobrepõem 2h (12–18 e 16–22) para cobrir a abertura e o fechamento.
+// Dois turnos de alocação, iguais todos os dias: Manhã 12h–18h e Tarde 18h–22h.
+// Cada turno é alocado separadamente na escala.
 const SHIFT_WINDOWS = {
-  week: { 'Manhã': { start: 10, end: 16 }, 'Tarde': { start: 16, end: 22 } },
-  sunday: { 'Manhã': { start: 12, end: 18 }, 'Tarde': { start: 16, end: 22 } },
+  'Manhã': { start: 12, end: 18 },
+  'Tarde': { start: 18, end: 22 },
 };
 export const SHIFTS = ['Manhã', 'Tarde'];
 
-export function shiftWindows(unitId, weekday) {
+// Horas de um turno (Manhã 6h, Tarde 4h).
+export function shiftDuration(shift) {
+  const w = SHIFT_WINDOWS[shift];
+  return w ? w.end - w.start : 0;
+}
+
+export function shiftWindows(unitId) {
   if (!isShoppingUnit(unitId)) return null;
-  return weekday === 0 ? SHIFT_WINDOWS.sunday : SHIFT_WINDOWS.week;
+  return SHIFT_WINDOWS;
 }
 
 // Turno do estagiário: campo `shift` do cadastro (padrão Manhã).

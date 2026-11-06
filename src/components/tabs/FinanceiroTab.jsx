@@ -134,7 +134,11 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
         .lt('work_date', `${nextMonth}-01`);
       const schedMap = {};
       if (!scheduleErr) {
-        for (const r of scheduleData || []) (schedMap[r.intern_id] ||= []).push(r.work_date);
+        // Um dia pode ter 2 linhas (manhã e tarde): conta o dia uma vez só.
+        for (const r of scheduleData || []) {
+          const days = (schedMap[r.intern_id] ||= []);
+          if (!days.includes(r.work_date)) days.push(r.work_date);
+        }
       }
       setScheduleByIntern(schedMap);
 
