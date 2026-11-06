@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ClipboardList, Printer, Download, AlertTriangle } from 'lucide-react';
-import { supabase } from '../../supabase';
-import {
-  mapEmployeeFromDb, EMPLOYEE_LIST_FIELDS,
-  mapTimeRecordFromDb, EMPLOYEE_TIME_RECORD_SELECT_FIELDS,
-  mapTimeAdjustmentFromDb, mapHolidayFromDb, mapOccurrenceFromDb,
-} from '../../utils/mappings';
-import { computeMonth, minutesToHHMM, dailyPayRate, absenceDeduction } from '../../utils/cltCalculations';
+import { fetchCltMonthData, buildCltRows } from '../../utils/cltPayroll';
 import { getEmployeeDocumentHtml, buildApuracaoCsv } from '../../utils/cltDocuments';
 import { openPrintWindow } from '../../utils/documentPrint';
 import { BRANDING } from '../../config/branding';
@@ -26,39 +20,12 @@ export default function ApuracaoFuncionariosTab({ filterUnit, restrictedUnitIds 
 
   const fetchAll = useCallback(async () => {
     try {
-      const [year, month] = monthKey.split('-').map(Number);
-      const first = `${monthKey}-01`;
-      const last = `${monthKey}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
-
-      // Pagina por mês: o teto padrão do Supabase (1000 linhas) truncava a
-      // apuração e gerava faltas falsas nos funcionários do fim da lista.
-      const fetchPaged = async (table, fields, dateCol) => {
-        const PAGE = 1000;
-        const all = [];
-        for (let from = 0; ; from += PAGE) {
-          const { data, error } = await supabase.from(table).select(fields)
-            .gte(dateCol, first).lte(dateCol, last)
-            .order(dateCol, { ascending: true }).order('id', { ascending: true })
-            .range(from, from + PAGE - 1);
-          if (error) throw error;
-          all.push(...(data || []));
-          if (!data || data.length < PAGE) break;
-        }
-        return all;
-      };
-
-      const [{ data: empData }, recData, adjData, { data: holData }, { data: occData }] = await Promise.all([
-        supabase.from('employees').select(EMPLOYEE_LIST_FIELDS),
-        fetchPaged('employee_time_records', EMPLOYEE_TIME_RECORD_SELECT_FIELDS, 'work_date'),
-        fetchPaged('employee_time_adjustments', '*', 'work_date'),
-        supabase.from('holidays').select('*'),
-        supabase.from('employee_occurrences').select('*').lte('start_date', last).limit(2000),
-      ]);
-      if (empData) setEmployees(empData.map(mapEmployeeFromDb).filter((e) => !restrictedUnitIds.includes(e.unitId)));
-      setRecords(recData.map(mapTimeRecordFromDb));
-      setAdjustments(adjData.map(mapTimeAdjustmentFromDb));
-      if (holData) setHolidays(holData.map(mapHolidayFromDb));
-      if (occData) setOccurrences(occData.map(mapOccurrenceFromDb));
+      const data = await fetchCltMonthData(monthKey, restrictedUnitIds);
+      setEmployees(data.employees);
+      setRecords(data.records);
+      setAdjustments(data.adjustments);
+      setHolidays(data.holidays);
+      setOccurrences(data.occurrences);
     } catch (err) {
       console.error('Erro ao carregar apuração mensal:', err);
       toast.error('Erro ao carregar dados de apuração.');
@@ -69,31 +36,10 @@ export default function ApuracaoFuncionariosTab({ filterUnit, restrictedUnitIds 
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const filteredEmployees = useMemo(
-    () => employees.filter((e) => (filterUnit === 'all' || e.unitId === filterUnit) && e.status !== 'desligado'),
-    [employees, filterUnit]
+  const rows = useMemo(
+    () => buildCltRows({ employees, records, adjustments, holidays, occurrences }, monthKey, filterUnit),
+    [employees, records, adjustments, holidays, occurrences, monthKey, filterUnit]
   );
-
-  const rows = useMemo(() => filteredEmployees.map((emp) => {
-    // Atraso e déficit de horas NÃO geram desconto: só falta (dia sem ponto)
-    // injustificada. Ocorrência justificada (atestado/abono) afasta a falta.
-    const empOccurrences = occurrences.filter((o) => o.employeeId === emp.id);
-    const { totals } = computeMonth({ employee: emp, records, adjustments, occurrences: empOccurrences, holidays, monthKey, toleranceMinutes: 5 });
-    // Desconto de faltas: 1/30 do salário-base declarado por dia de falta
-    // injustificada (mesma base usada na folha de estagiários).
-    const baseSalary = Number(emp.baseSalary) || 0;
-    return {
-      id: emp.id, name: emp.name, unitId: emp.unitId,
-      baseSalary,
-      dailyValue: dailyPayRate(baseSalary),
-      absenceDeductionValue: absenceDeduction(baseSalary, totals.absencesUnjustified),
-      absencesUnjustified: totals.absencesUnjustified, absencesJustified: totals.absencesJustified,
-      extra50: minutesToHHMM(totals.extra50), extra100: minutesToHHMM(totals.extra100),
-      extra50Minutes: totals.extra50, extra100Minutes: totals.extra100,
-      nightReduced: minutesToHHMM(totals.nightReduced), nightReducedMinutes: totals.nightReduced,
-      dsrLostDays: totals.dsrLostDays,
-    };
-  }), [filteredEmployees, records, adjustments, holidays, occurrences, monthKey]);
 
   const unitName = (id) => units.find((u) => u.id === id)?.name || '—';
 

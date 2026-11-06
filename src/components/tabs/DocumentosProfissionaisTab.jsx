@@ -6,6 +6,7 @@ import { mapProfessionalFromDb, PROFESSIONAL_SELECT_FIELDS, fileToBase64, getFri
 import { getProfessionalContractHtml, getMissingContractFields } from '../../utils/professionalContract';
 import { sanitizeHtml } from '../../utils/sanitizeHtml';
 import { toast } from 'sonner';
+import { fmtBRL, approveNf, rejectNf } from '../../utils/payrollShared';
 
 import NfseUploadModal from '../NfseUploadModal';
 
@@ -148,22 +149,11 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
 
   const handleApproveNf = async (docKey, meta) => {
     if (!selectedId) return;
-    const valorFormatted = meta?.valor ? Number(meta.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
+    const valorFormatted = meta?.valor ? fmtBRL(meta.valor) : 'R$ 0,00';
     if (!window.confirm(`Aprovar a NFSe de competência ${meta?.competencia || ''} (Valor: ${valorFormatted})? O valor será liberado para o repasse.`)) return;
 
     try {
-      const updatedMeta = {
-        ...meta,
-        status: 'aprovado',
-        validatedAt: new Date().toISOString(),
-      };
-      const { error } = await supabase
-        .from('professional_documents')
-        .update({ meta: updatedMeta })
-        .eq('professional_id', selectedId)
-        .eq('doc_key', docKey);
-
-      if (error) throw error;
+      await approveNf(selectedId, docKey, meta);
       toast.success('NFSe APROVADA com sucesso! Valor liberado para o repasse.');
       fetchDocs(selectedId);
     } catch (err) {
@@ -182,19 +172,7 @@ export default function DocumentosProfissionaisTab({ filterUnit, restrictedUnitI
     }
 
     try {
-      const updatedMeta = {
-        ...meta,
-        status: 'rejeitado',
-        rejectionReason: reason.trim(),
-        validatedAt: new Date().toISOString(),
-      };
-      const { error } = await supabase
-        .from('professional_documents')
-        .update({ meta: updatedMeta })
-        .eq('professional_id', selectedId)
-        .eq('doc_key', docKey);
-
-      if (error) throw error;
+      await rejectNf(selectedId, docKey, meta, reason.trim());
       toast.error(`NFSe REJEITADA. Motivo: ${reason}`);
       fetchDocs(selectedId);
     } catch (err) {

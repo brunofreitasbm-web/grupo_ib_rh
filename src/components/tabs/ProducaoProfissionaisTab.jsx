@@ -12,28 +12,9 @@ import {
 } from '../../utils/mappings';
 import { calculateProfessionalProduction } from '../../utils/hoursCalculations';
 import { BRANDING } from '../../config/branding';
+import { fmtBRL, nfMatchesCompetencia, openPdfBase64, approveNf, rejectNf } from '../../utils/payrollShared';
 import NfseUploadModal from '../NfseUploadModal';
 import PjDispatchConfigModal from '../PjDispatchConfigModal';
-
-const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-const openPdfInNewTab = (base64Content) => {
-  try {
-    const cleanBase64 = base64Content.replace(/^data:application\/pdf;base64,/, '');
-    const byteCharacters = atob(cleanBase64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'application/pdf' });
-    const blobUrl = URL.createObjectURL(blob);
-    window.open(blobUrl, '_blank');
-  } catch (err) {
-    console.error('Erro ao abrir PDF:', err);
-    toast.error('Não foi possível abrir o arquivo PDF da nota.');
-  }
-};
 
 export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds = [], branding, units = [] }) {
   const [professionals, setProfessionals] = useState([]);
@@ -100,7 +81,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
   const nfByProfessional = useMemo(() => {
     const map = new Map();
     nfDocs.forEach((doc) => {
-      const isCompMatch = doc.meta?.competencia === monthKey || doc.doc_key.startsWith(`nf-${monthKey}-`);
+      const isCompMatch = nfMatchesCompetencia(doc, monthKey);
       if (isCompMatch && !map.has(doc.professional_id)) {
         map.set(doc.professional_id, doc);
       }
@@ -188,7 +169,12 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
         toast.error('Conteúdo do arquivo não encontrado.');
         return;
       }
-      openPdfInNewTab(data.content);
+      try {
+        openPdfBase64(data.content);
+      } catch (pdfErr) {
+        console.error('Erro ao abrir PDF:', pdfErr);
+        toast.error('Não foi possível abrir o arquivo PDF da nota.');
+      }
     } catch (err) {
       console.error('Erro ao buscar PDF da NF:', err);
       toast.error('Não foi possível carregar o arquivo da Nota Fiscal.');
@@ -205,19 +191,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
 
     setActingDocKey(docKey);
     try {
-      const updatedMeta = {
-        ...currentMeta,
-        status: 'aprovado',
-        validatedAt: new Date().toISOString(),
-        validatedBy: 'RH',
-      };
-      const { error } = await supabase
-        .from('professional_documents')
-        .update({ meta: updatedMeta })
-        .eq('professional_id', professionalId)
-        .eq('doc_key', docKey);
-
-      if (error) throw error;
+      await approveNf(professionalId, docKey, currentMeta);
       toast.success('NFSe APROVADA pelo RH! Encaminhada para o Financeiro com sucesso.');
       await fetchData();
     } catch (err) {
@@ -238,20 +212,7 @@ export default function ProducaoProfissionaisTab({ filterUnit, restrictedUnitIds
 
     setActingDocKey(docKey);
     try {
-      const updatedMeta = {
-        ...currentMeta,
-        status: 'rejeitado',
-        rejectionReason: reason.trim(),
-        validatedAt: new Date().toISOString(),
-        validatedBy: 'RH',
-      };
-      const { error } = await supabase
-        .from('professional_documents')
-        .update({ meta: updatedMeta })
-        .eq('professional_id', professionalId)
-        .eq('doc_key', docKey);
-
-      if (error) throw error;
+      await rejectNf(professionalId, docKey, currentMeta, reason.trim());
       toast.warning(`NFSe rejeitada pelo RH. Motivo: ${reason}`);
       await fetchData();
     } catch (err) {
