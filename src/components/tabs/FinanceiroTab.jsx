@@ -594,16 +594,7 @@ export default function FinanceiroTab({ filterUnit, restrictedUnitIds = [] }) {
   return (
     <div className="bg-white rounded-xl shadow-md overflow-hidden space-y-0">
       {/* Sub-Navegação do Financeiro */}
-      <div className="p-4 border-b border-gray-200 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold flex items-center gap-2 text-white">
-            <Timer size={22} className="text-indigo-400" /> Gestão Financeira & Folhas de Pagamento
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Folhas de estagiários, CLT e PJ, repasses e upload de folhas por unidade
-          </p>
-        </div>
-
+      <div className="p-4 border-b border-gray-200 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-start gap-4">
         {/* Botoes de Sub-Aba */}
         <div className="flex items-center gap-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700 flex-wrap">
           <button
