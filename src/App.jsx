@@ -8,7 +8,7 @@ import {
   ScanFace, RefreshCw, CheckCircle2, AlertCircle, Sparkles, GraduationCap, Briefcase, UserCheck,
   PanelLeftClose, PanelLeftOpen, LayoutDashboard, ClipboardList, TrendingUp, Wallet, Bell,
   CalendarCheck, Receipt, Calculator, Palmtree, Stethoscope, UserMinus, Scale, Cake, UserSearch,
-  Settings, ChevronRight
+  Settings, ChevronRight, CalendarDays
 } from 'lucide-react';
 import { getFaceDescriptor, getMirroredFaceDescriptor, compareFaces, loadModels, toCanvasOrImage } from './utils/faceBiometrics';
 import {
@@ -50,6 +50,7 @@ import { toast } from 'sonner';
 // inicial para usuários que só usam o quiosque de ponto (ex.: estagiários).
 const DashboardTab = lazyWithRetry(() => import('./components/tabs/DashboardTab'));
 const FrequenciaTab = lazyWithRetry(() => import('./components/tabs/FrequenciaTab'));
+const EscalaTab = lazyWithRetry(() => import('./components/tabs/EscalaTab'));
 const EstagiariosTab = lazyWithRetry(() => import('./components/tabs/EstagiariosTab'));
 const AcompanhamentoTab = lazyWithRetry(() => import('./components/tabs/AcompanhamentoTab'));
 const FinanceiroTab = lazyWithRetry(() => import('./components/tabs/FinanceiroTab'));
@@ -835,7 +836,7 @@ export default function App() {
       };
       const prefix = { interns: '', professionals: 'pj_', employees: 'clt_', freelance: 'freelance_' };
       const commonTabs = ['aniversariantes', 'banco_talentos', 'financeiro', 'configuracoes'];
-      const internTabs = ['dashboard', 'estagiarios', 'documentos', 'frequencia', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'rh'];
+      const internTabs = ['dashboard', 'estagiarios', 'documentos', 'frequencia', 'escala', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'rh'];
       const mod = moduleEnabled[saved.module] ? saved.module : null;
       if (!mod) return;
       const tabOk = commonTabs.includes(saved.tab)
@@ -8515,7 +8516,8 @@ export default function App() {
       { id: 'estagiarios',     label: 'Estagiários',             icon: GraduationCap },
       { id: 'documentos',      label: 'Documentos',              icon: Printer },
       { id: 'frequencia',      label: 'Frequência',              icon: ClipboardList },
-      { id: 'admissional',     label: 'Documentos Admissionais', icon: FolderOpen },
+      { id: 'escala',          label: 'Escala',                  icon: CalendarDays },
+      { id: 'admissional',    label: 'Documentos Admissionais', icon: FolderOpen },
       { id: 'acompanhamento',  label: 'Acompanhamento & Recesso', icon: TrendingUp },
       { id: 'ocorrencias',     label: 'Abonos & Ocorrências',    icon: AlertTriangle },
       { id: 'finalizacao',     label: 'Desligamento / Rescisão', icon: Lock },
@@ -8869,6 +8871,11 @@ export default function App() {
                   {(visitedAdminTabs.has('frequencia') || activeAdminTab === 'frequencia') && (
                   <div style={{ display: activeAdminTab === 'frequencia' ? 'block' : 'none' }}>
                     <FrequenciaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
+                  </div>
+                  )}
+                  {(visitedAdminTabs.has('escala') || activeAdminTab === 'escala') && (
+                  <div style={{ display: activeAdminTab === 'escala' ? 'block' : 'none' }}>
+                    <EscalaTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} />
                   </div>
                   )}
                   {(visitedAdminTabs.has('estagiarios') || activeAdminTab === 'estagiarios') && (

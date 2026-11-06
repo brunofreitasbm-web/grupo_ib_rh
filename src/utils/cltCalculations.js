@@ -316,16 +316,21 @@ export function absenceDeduction(monthlyPay, unjustifiedDays) {
 // descontam via daysAway) — não entram de novo, evitando dupla contagem.
 export function autoAbsenceDates({
   monthKey, startDate, endDate, presenceDates = [], coveredDates = [],
+  scheduledDates = null,
   today = dateKeyBelem(new Date().toISOString()),
 }) {
   const [year, month] = monthKey.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const present = new Set(presenceDates);
   const covered = new Set(coveredDates);
+  // Com escala cadastrada para o mês, só dia escalado conta como esperado.
+  // Sem escala (null ou vazia), vale a regra antiga: todo dia do calendário.
+  const scheduled = scheduledDates && scheduledDates.length ? new Set(scheduledDates) : null;
   const out = [];
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
     if (dateStr >= today) break;
+    if (scheduled && !scheduled.has(dateStr)) continue;
     if (startDate && dateStr < startDate) continue;
     if (endDate && dateStr > endDate) continue;
     if (present.has(dateStr) || covered.has(dateStr)) continue;

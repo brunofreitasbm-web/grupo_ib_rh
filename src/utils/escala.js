@@ -34,11 +34,15 @@ export function daysPerWeek(intern) {
 // candidates: weekdays (0..4) ainda livres e dentro do vínculo.
 // count: quantos dias precisam ser escolhidos.
 // Retorna uma lista de até `count` weekdays tirados de `candidates`.
-// eslint-disable-next-line no-unused-vars
+// Regra padrão: semanas pares usam Seg, Qua, Dom; ímpares usam Ter, Qui, Dom.
+// Dom entra nos dois porque sexta e sábado já ocupam o fim da semana; os
+// demais candidatos servem só de reserva quando algum dia está indisponível.
+const EVEN_WEEK_ORDER = [1, 3, 0, 2, 4];
+const ODD_WEEK_ORDER = [2, 4, 0, 1, 3];
+
 export function pickVariableDays({ weekIndex, candidates, count }) {
-  // TODO(human): regra de rotação dos dias variáveis.
-  // Hoje devolve os primeiros candidatos (dom, seg, ter), que são consecutivos.
-  return candidates.slice(0, count);
+  const order = weekIndex % 2 === 0 ? EVEN_WEEK_ORDER : ODD_WEEK_ORDER;
+  return order.filter((wd) => candidates.includes(wd)).slice(0, count);
 }
 
 // Gera a escala do mês. `fixed` = { [internId]: { [data]: horas } } com o que
