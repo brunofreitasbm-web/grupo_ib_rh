@@ -32,6 +32,7 @@ import {
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { sanitizeHtml } from './utils/sanitizeHtml';
 import { BRANDING, WORKSPACES } from './config/branding';
+import { INTERNS_DASHBOARD_ENABLED, INTERNS_HOME_TAB, guardInternsTab } from './config/features';
 import { LABOR } from './config/labor';
 import { CourseSelect, InternshipTypeField } from './components/CourseFields';
 import { normalizeCourseValue, getInternshipTypeLabel } from './config/academicCourses';
@@ -48,7 +49,10 @@ import lazyWithRetry from './utils/lazyWithRetry';
 import { toast } from 'sonner';
 // Abas administrativas carregadas sob demanda (code-splitting): reduz o bundle
 // inicial para usuários que só usam o quiosque de ponto (ex.: estagiários).
-const DashboardTab = lazyWithRetry(() => import('./components/tabs/DashboardTab'));
+// Só importa o chunk do dashboard de estagiários se a flag showInternsDashboard estiver ligada.
+const DashboardTab = INTERNS_DASHBOARD_ENABLED
+  ? lazyWithRetry(() => import('./components/tabs/DashboardTab'))
+  : null;
 const FrequenciaTab = lazyWithRetry(() => import('./components/tabs/FrequenciaTab'));
 const EscalaTab = lazyWithRetry(() => import('./components/tabs/EscalaTab'));
 const EstagiariosTab = lazyWithRetry(() => import('./components/tabs/EstagiariosTab'));
@@ -218,7 +222,7 @@ function LiveClock({ showDate = false }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('kiosk'); // 'landing' | 'kiosk' | 'admin'
-  const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
+  const [activeAdminTab, setActiveAdminTab] = useState(INTERNS_HOME_TAB);
   // Módulo do painel administrativo: estagiários (padrão) ou Profissionais PJ.
   // Mantidos em telas totalmente separadas — nenhum componente é compartilhado
   // entre os dois exceto Configurações (ver plano do módulo PJ).
@@ -226,6 +230,7 @@ export default function App() {
   const [records, setRecords] = useState([]);
   const [interns, setInterns] = useState([]);
   const [internsLoaded, setInternsLoaded] = useState(false);
+  const restrictedUnitIdsRef = useRef([]);
   const [units, setUnits] = useState(UNITS_DEFAULT);
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
   const [institutionSettings, setInstitutionSettings] = useState(() => {
@@ -243,7 +248,12 @@ export default function App() {
   });
   // Abas do painel admin já visitadas: cada aba só monta (e carrega seu chunk/dados)
   // na primeira visita e depois fica montada, preservando filtros e rascunhos.
-  const [visitedAdminTabs, setVisitedAdminTabs] = useState(() => new Set(['dashboard']));
+  const [visitedAdminTabs, setVisitedAdminTabs] = useState(() => new Set([INTERNS_HOME_TAB]));
+  // Rede de segurança: qualquer origem (estado, localStorage, rota) que tente abrir
+  // 'dashboard' com a flag desligada é redirecionada para a aba inicial.
+  useEffect(() => {
+    if (activeAdminTab !== guardInternsTab(activeAdminTab)) setActiveAdminTab(INTERNS_HOME_TAB);
+  }, [activeAdminTab]);
   useEffect(() => {
     setVisitedAdminTabs((prev) => (prev.has(activeAdminTab) ? prev : new Set(prev).add(activeAdminTab)));
   }, [activeAdminTab]);
@@ -453,10 +463,14 @@ export default function App() {
   // "all"), esconde o grupo que não está selecionado no momento no seletor de
   // workspace. Para qualquer outra sessão, o RLS já retornou só as unidades do
   // próprio workspace — não há nada a restringir aqui.
-  const restrictedUnitIds = useMemo(() => {
-    if (!canSwitchWorkspace) return [];
-    return units.filter((u) => u.workspaceId && u.workspaceId !== adminWorkspace).map((u) => u.id);
-  }, [canSwitchWorkspace, units, adminWorkspace]);
+  // Mesmo sem seletor de workspace (canSwitchWorkspace=false), uma conta com
+  // escopo "all" recebe do RLS unidades/estagiários do outro workspace (ex.: Porto
+  // Terapia no Grupo IB). adminWorkspace é fixado em BRANDING.id, então tudo que
+  // pertence a outro workspace entra aqui e é filtrado em todas as abas.
+  const restrictedUnitIds = useMemo(
+    () => units.filter((u) => u.workspaceId && u.workspaceId !== adminWorkspace).map((u) => u.id),
+    [units, adminWorkspace]
+  );
 
   const visibleUnits = useMemo(
     () => units.filter((u) => {
@@ -474,6 +488,13 @@ export default function App() {
     }),
     [units, restrictedUnitIds]
   );
+
+  // Estado global `interns` nunca guarda estagiários de unidades de outro workspace
+  // (Porto Terapia no Grupo IB): filtra a cada fetch (via ref) e quando as unidades mudam.
+  restrictedUnitIdsRef.current = restrictedUnitIds;
+  useEffect(() => {
+    if (restrictedUnitIds.length) setInterns((prev) => prev.filter((i) => !restrictedUnitIds.includes(i.unitId)));
+  }, [restrictedUnitIds]);
 
   // Fluxo Admissional (Upload de Documentos)
   const [selectedAdmissionalIntern, setSelectedAdmissionalIntern] = useState('');
@@ -681,12 +702,12 @@ export default function App() {
   // abertas a partir do quiosque → seleção do quiosque. Na raiz (quiosque sem
   // seleção / painel admin no módulo e aba iniciais) não bloqueia: sai do site.
   const ADMIN_MODULE_HOME_TAB = {
-    interns: 'dashboard',
+    interns: INTERNS_HOME_TAB,
     professionals: 'pj_dashboard',
     employees: 'clt_dashboard',
     freelance: 'freelance_freelancers',
   };
-  const adminHomeTab = ADMIN_MODULE_HOME_TAB[adminModule] || 'dashboard';
+  const adminHomeTab = ADMIN_MODULE_HOME_TAB[adminModule] || INTERNS_HOME_TAB;
   const backLayers = [
     { active: !!confirmModalState, back: () => { confirmModalState.resolve(false); setConfirmModalState(null); } },
     { active: !!(activeTemplate || viewingMinutaIntern), back: () => { setActiveTemplate(null); setViewingMinutaIntern(null); } },
@@ -699,7 +720,7 @@ export default function App() {
     { active: currentView === 'admin' && activeAdminTab !== adminHomeTab, back: () => setActiveAdminTab(adminHomeTab) },
     {
       active: currentView === 'admin' && adminModule !== 'interns',
-      back: () => { setAdminModule('interns'); setActiveAdminTab('dashboard'); },
+      back: () => { setAdminModule('interns'); setActiveAdminTab(INTERNS_HOME_TAB); },
     },
     {
       active: ['recadastro', 'autogestao_biometria', 'pj_autocadastro', 'clt_autocadastro', 'clt_biometria_autogestao'].includes(currentView),
@@ -836,7 +857,7 @@ export default function App() {
       };
       const prefix = { interns: '', professionals: 'pj_', employees: 'clt_', freelance: 'freelance_' };
       const commonTabs = ['aniversariantes', 'banco_talentos', 'financeiro', 'configuracoes'];
-      const internTabs = ['dashboard', 'estagiarios', 'documentos', 'frequencia', 'escala', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'rh'];
+      const internTabs = [...(INTERNS_DASHBOARD_ENABLED ? ['dashboard'] : []), 'estagiarios', 'documentos', 'frequencia', 'escala', 'admissional', 'acompanhamento', 'ocorrencias', 'finalizacao', 'rh'];
       const mod = moduleEnabled[saved.module] ? saved.module : null;
       if (!mod) return;
       const tabOk = commonTabs.includes(saved.tab)
@@ -1036,7 +1057,7 @@ export default function App() {
         console.error('Erro ao buscar estagiários:', error?.code, error?.message || error);
         toast.error('Erro de conexão ao carregar estagiários. Tentando novamente...');
       } else {
-        setInterns((data || []).map(mapInternFromDb));
+        setInterns((data || []).map(mapInternFromDb).filter((i) => !restrictedUnitIdsRef.current.includes(i.unitId)));
       }
     } catch (err) {
       console.error('Erro ao carregar estagiários:', err);
@@ -8512,7 +8533,7 @@ export default function App() {
   // ============================================================
   const renderAdmin = () => {
     const internNavItems = [
-      { id: 'dashboard',       label: 'Dashboard',               icon: LayoutDashboard },
+      ...(INTERNS_DASHBOARD_ENABLED ? [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }] : []),
       { id: 'estagiarios',     label: 'Estagiários',             icon: GraduationCap },
       { id: 'documentos',      label: 'Documentos',              icon: Printer },
       { id: 'frequencia',      label: 'Frequência',              icon: ClipboardList },
@@ -8605,7 +8626,7 @@ export default function App() {
       return (words.length > 1 ? words.slice(0, 2).map((w) => w[0]).join('') : words[0]?.slice(0, 2) || '?').toUpperCase();
     };
     const moduleButtons = [
-      { id: 'interns', label: 'Estagiários', firstTab: 'dashboard', activeClass: 'bg-blue-600 text-white border-blue-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-blue-400' },
+      { id: 'interns', label: 'Estagiários', firstTab: INTERNS_HOME_TAB, activeClass: 'bg-blue-600 text-white border-blue-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-blue-400' },
       ...(showProfessionalsModule ? [{ id: 'professionals', label: BRANDING.professionalLabels?.plural || 'Profissionais PJ', firstTab: 'pj_dashboard', activeClass: 'bg-teal-600 text-white border-teal-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-teal-400' }] : []),
       ...(showEmployeesModule ? [{ id: 'employees', label: BRANDING.employeeLabels?.plural || 'Funcionários CLT', firstTab: 'clt_dashboard', activeClass: 'bg-indigo-600 text-white border-indigo-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400' }] : []),
       ...(showFreelanceModule ? [{ id: 'freelance', label: BRANDING.freelanceLabels?.plural || 'Freelancers', firstTab: 'freelance_freelancers', activeClass: 'bg-violet-600 text-white border-violet-600', idleClass: 'bg-white text-slate-600 border-slate-200 hover:border-violet-400' }] : []),
@@ -8812,7 +8833,7 @@ export default function App() {
         <main className="flex-1 p-4 md:p-5 xl:p-8 overflow-y-auto min-w-0">
           <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6">
 
-            {adminModule === 'interns' && activeAdminTab === 'dashboard' && hoursAlerts.length > 0 && (
+            {INTERNS_DASHBOARD_ENABLED && adminModule === 'interns' && activeAdminTab === 'dashboard' && hoursAlerts.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm animate-fade-in">
                 <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2 text-sm">
                   <AlertTriangle size={18} /> Atenção: Limite de Carga Horária Excedido ({LABOR.maxDailyHours}h/dia)
@@ -8863,7 +8884,7 @@ export default function App() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 }>
-                  {(visitedAdminTabs.has('dashboard') || activeAdminTab === 'dashboard') && (
+                  {INTERNS_DASHBOARD_ENABLED && DashboardTab && (visitedAdminTabs.has('dashboard') || activeAdminTab === 'dashboard') && (
                   <div style={{ display: activeAdminTab === 'dashboard' ? 'block' : 'none' }}>
                     <DashboardTab filterUnit={effectiveFilterUnit} restrictedUnitIds={restrictedUnitIds} isActive={activeAdminTab === 'dashboard'} />
                   </div>

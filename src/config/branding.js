@@ -39,6 +39,9 @@ export const WORKSPACES = {
     cnpj: '00.000.000/0001-00',
     phone: '(91) 99999-0000',
     showSupervisionChat: false,
+    // Dashboard/KPIs de estagiários: DESLIGADO no Grupo IB (é o dashboard da Porto
+    // Terapia). Lido só em src/config/features.js; coberto por teste unitário.
+    showInternsDashboard: false,
     fallbackInternEmailDomain: 'grupoib.internal',
     // Módulo de Profissionais PJ (prestadores de serviço) — ver ProfessionalKiosk.jsx.
     // Vocabulário e regras deliberadamente distintos do estágio, para não sugerir
