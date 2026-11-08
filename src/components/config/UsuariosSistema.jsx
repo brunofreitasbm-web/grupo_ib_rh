@@ -120,7 +120,17 @@ export default function UsuariosSistema({ units = [], currentUserId = null }) {
     try {
       const { data, error: err } = await supabase.rpc('list_system_users');
       if (err) throw err;
-      setUsers(Array.isArray(data) ? data : []);
+      // O RPC devolve tudo a quem tem escopo 'all'; aqui restringimos ao
+      // workspace deste site: escopo do workspace atual ou 'all'. Contas sem
+      // escopo (quiosques) valem pela unidade, que precisa ser do workspace.
+      const inThisWorkspace = (u) => {
+        const scope = Array.isArray(u.workspace_scope) ? u.workspace_scope : [];
+        if (scope.includes('all') || scope.includes(BRANDING.id)) return true;
+        if (scope.length > 0) return false;
+        const unit = units.find((x) => x.id === u.unit_id);
+        return !!unit && (!unit.workspace_id || unit.workspace_id === BRANDING.id);
+      };
+      setUsers(Array.isArray(data) ? data.filter(inThisWorkspace) : []);
     } catch (err) {
       console.error('Erro ao listar usuários do sistema:', err);
       // A migração da seção 21 pode ainda não ter sido aplicada no banco.
@@ -133,7 +143,7 @@ export default function UsuariosSistema({ units = [], currentUserId = null }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [units]);
 
   const loadAudit = useCallback(async () => {
     try {
