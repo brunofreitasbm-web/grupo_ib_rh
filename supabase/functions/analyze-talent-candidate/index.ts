@@ -4,10 +4,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-// DeepSeek API (chave configurável via Supabase secrets ou fallback fornecido)
-const DEEPSEEK_API_KEY =
-  Deno.env.get("DEEPSEEK_API_KEY") ??
-  "sk-64e11dc3053b4647886f5a86b1db4a20";
+// DeepSeek API: a chave vem só do secret do Supabase (`supabase secrets set DEEPSEEK_API_KEY=...`).
+// Nunca versionar a chave no código.
+const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
 
 // Google Gemini API (fallback opcional)
 const GEMINI_API_KEY =
