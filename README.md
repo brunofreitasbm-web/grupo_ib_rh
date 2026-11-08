@@ -2,11 +2,11 @@
 
 Gestão de pessoas do Grupo IB: estagiários, profissionais PJ, funcionários CLT, banco de talentos e DISC.
 
-App React + Vite, publicado na Vercel (projeto `gestao-pessoas-grupoib`), usando o projeto Supabase compartilhado com a Porto Terapia.
+App React + Vite, publicado na Vercel (projeto `gestao-pessoas-grupoib`), usando um projeto Supabase compartilhado entre workspaces.
 
-## Relação com o repo da Porto Terapia
+## Relação com o repo do outro workspace
 - Este repo serve só o workspace `grupoib` (`VITE_WORKSPACE_ID=grupoib`).
-- O banco é compartilhado e isolado por `workspace_id` + RLS. As migrations vivem no repo `rh_grupoib_porto` (Porto), que é a fonte única do schema. Para mudar o banco, abra PR lá.
+- O banco é compartilhado e isolado por `workspace_id` + RLS. As migrations vivem no repo `rh_grupoib_porto`, que é a fonte única do schema. Para mudar o banco, abra PR lá.
 - As edge functions de `supabase/functions` são deste repo. Publique com `supabase functions deploy <nome>` no projeto compartilhado.
 
 ## Desenvolvimento

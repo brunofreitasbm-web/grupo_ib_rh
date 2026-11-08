@@ -10,7 +10,7 @@ describe('haversineKm', () => {
     expect(haversineKm(0, 0, 0, 1)).toBeCloseTo(111.1949, 3);
   });
 
-  it('calcula a distância entre as duas unidades da Porto Terapia', () => {
+  it('calcula a distância entre duas unidades de teste', () => {
     // Antônio Barreto -> Generalíssimo (Belém - PA)
     const km = haversineKm(
       -1.442473861453128, -48.469996243820276,

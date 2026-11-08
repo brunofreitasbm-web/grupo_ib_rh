@@ -153,7 +153,7 @@ o aceite da declaração.
   sem role de quiosque, porque o módulo não tem conta compartilhada de
   tablet.
 - Flag de branding: `BRANDING.showFreelanceModule` (ligado no Grupo IB,
-  desligado na Porto Terapia) — ver `src/config/branding.js`.
+  desligado em outros workspaces) — ver `src/config/branding.js`.
 - Permissões finas: grupo `freelance` em `src/config/permissions.js`
   (`freelance.ver`, `.editar`, `.os`, `.contrato`, `.conformidade`).
 

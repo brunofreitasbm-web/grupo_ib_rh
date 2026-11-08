@@ -219,7 +219,7 @@ ${analysis.suggestedNextStep || '—'}
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <BrainCircuit className="w-3.5 h-3.5 text-indigo-600" />
-                    Compatibilidade com Funções do Grupo IB / Porto Terapia
+                    Compatibilidade com Funções do Grupo IB
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {analysis.roleMatches.map((m) => (

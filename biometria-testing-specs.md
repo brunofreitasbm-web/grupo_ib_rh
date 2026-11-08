@@ -1,6 +1,6 @@
 # Especificações de Testes de Front-End — Biometria Facial
 
-Este documento define especificamente os cenários de teste, fluxos e automação para o módulo de **Biometria Facial (Controle de Reconhecimento)** do sistema **Controle de Estagiário (Porto Terapia)**.
+Este documento define especificamente os cenários de teste, fluxos e automação para o módulo de **Biometria Facial (Controle de Reconhecimento)** do sistema **Controle de Estagiário (Grupo IB)**.
 
 O objetivo deste módulo é permitir que o supervisor compare visualmente a foto inicial 3x4 anexada pelo estagiário no seu cadastro com a foto capturada em tempo real pela webcam no momento de registrar a entrada ou saída (ponto diário).
 
@@ -20,7 +20,7 @@ O objetivo deste módulo é permitir que o supervisor compare visualmente a foto
   7. Confirmar o registro do ponto.
 * **Passos (Supervisor)**:
   1. Acessar o sistema, selecionar a opção **"Supervisor Geral"**.
-  2. Logar com o e-mail `supervisor@portoterapia.com` e a senha `admin123`.
+  2. Logar com o e-mail `supervisor@exemplo.com` e a senha `admin123`.
   3. Acessar a aba **"Frequência"** no painel administrativo.
   4. Clicar sobre a foto do ponto registrado pelo estagiário para abrir a comparação.
 * **Resultado Esperado**:
@@ -64,7 +64,7 @@ test.describe('Módulo de Biometria Facial - Comparação de Fotos', () => {
     // 5. Desloga e entra como Supervisor Geral
     await page.click('button:has-text("Sair")');
     await page.click('button:has-text("Supervisor Geral")');
-    await page.fill('#username', 'supervisor@portoterapia.com');
+    await page.fill('#username', 'supervisor@exemplo.com');
     await page.fill('#password', 'admin123');
     await page.click('button:has-text("Entrar")');
 

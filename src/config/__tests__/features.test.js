@@ -3,7 +3,7 @@ import { WORKSPACES, BRANDING } from '../branding';
 import { INTERNS_DASHBOARD_ENABLED, INTERNS_HOME_TAB, guardInternsTab } from '../features';
 
 describe('showInternsDashboard', () => {
-  it('Grupo IB nunca pode exibir o dashboard de estagiários (da Porto Terapia)', () => {
+  it('Grupo IB nunca pode exibir o dashboard de estagiários (de outro workspace)', () => {
     expect(WORKSPACES.grupoib.showInternsDashboard).toBe(false);
   });
 

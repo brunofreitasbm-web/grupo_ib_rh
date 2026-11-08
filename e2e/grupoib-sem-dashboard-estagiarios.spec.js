@@ -3,22 +3,22 @@ import { test, expect } from '@playwright/test';
 // Roda com: VITE_WORKSPACE_ID=grupoib VITE_SUPABASE_URL=https://mock.supabase.co
 //           VITE_SUPABASE_ANON_KEY=x npx playwright test e2e/grupoib-sem-dashboard-estagiarios.spec.js
 // Supabase 100% mockado: usuário supervisor com escopo "all" e dados que misturam
-// unidades/estagiários da Porto Terapia com unidades do Grupo IB.
+// unidades/estagiários de outro workspace com unidades do Grupo IB.
 const SHOTS = process.env.SHOTS_DIR || 'test-results';
-const PORTO_NAMES = ['PortoEstagiaria Alfa', 'PortoEstagiario Beta', 'PortoEstagiaria Gama'];
+const EXTERNAL_NAMES = ['ExternoEstagiaria Alfa', 'ExternoEstagiario Beta', 'ExternoEstagiaria Gama'];
 
 const units = [
   { id: 'clinica-a', name: 'FaçaAmigos, Centro de Terapia Comportamental', workspace_id: 'grupoib', lat: -1.4, lng: -48.4, radius_km: 1 },
-  { id: 'antonio-barreto', name: 'Porto Terapia Antônio Barreto', workspace_id: 'porto-terapia', lat: -1.4, lng: -48.4, radius_km: 1 },
-  { id: 'generalissimo', name: 'Porto Terapia Generalíssimo', workspace_id: 'porto-terapia', lat: -1.4, lng: -48.4, radius_km: 1 },
+  { id: 'antonio-barreto', name: 'Outro Workspace Antônio Barreto', workspace_id: 'porto-terapia', lat: -1.4, lng: -48.4, radius_km: 1 },
+  { id: 'generalissimo', name: 'Outro Workspace Generalíssimo', workspace_id: 'porto-terapia', lat: -1.4, lng: -48.4, radius_km: 1 },
 ];
-const interns = PORTO_NAMES.map((name, i) => ({
+const interns = EXTERNAL_NAMES.map((name, i) => ({
   id: `porto-int-${i}`, name, course: 'Psicologia', institution: 'UFPA', unit_id: i === 2 ? 'generalissimo' : 'antonio-barreto',
   active: true, daily_hours: 6, allowance: 1000, start_date: '2026-01-01', end_date: '2026-12-31', registration_status: 'active',
 }));
 
 const supervisor = {
-  id: 'sup-id', aud: 'authenticated', role: 'authenticated', email: 'bruno@portoterapia.com',
+  id: 'sup-id', aud: 'authenticated', role: 'authenticated', email: 'supervisor@exemplo.com',
   user_metadata: { role: 'supervisor', name: 'Bruno' },
   app_metadata: { role: 'supervisor', provider: 'email', workspace_scope: ['grupoib', 'porto-terapia', 'all'] },
   created_at: new Date().toISOString(),
@@ -54,8 +54,8 @@ async function enterAdmin(page) {
 
 async function assertNoInternsDashboard(page) {
   const text = await page.locator('body').innerText();
-  for (const n of PORTO_NAMES) expect(text).not.toContain(n);
-  expect(text).not.toMatch(/Porto Terapia/i);
+  for (const n of EXTERNAL_NAMES) expect(text).not.toContain(n);
+  expect(text).not.toMatch(/Outro Workspace/i);
   await expect(page.getByRole('button', { name: /^\s*Dashboard\s*$/ })).toHaveCount(0);
 }
 
@@ -82,7 +82,7 @@ for (const c of cenarios) {
 
 const ABAS = ['Estagiários', 'Documentos', 'Frequência', 'Escala', 'Documentos Admissionais', 'Acompanhamento & Recesso', 'Abonos & Ocorrências', 'Desligamento / Rescisão', 'Alertas & Pendências'];
 
-test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios da Porto Terapia em nenhuma aba', async ({ page }) => {
+test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios de outro workspace em nenhuma aba', async ({ page }) => {
   const requests = [];
   await setup(page, null, requests);
   await page.goto('/');
@@ -90,10 +90,10 @@ test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios da Porto Terapi
   await page.waitForTimeout(2500);
   const select = page.locator('select[title="Filtrar por unidade"]').first();
   await select.selectOption('all');
-  // O seletor de unidades também não pode oferecer unidades da Porto Terapia.
+  // O seletor de unidades também não pode oferecer unidades de outro workspace.
   const opts = await select.locator('option').allInnerTexts();
   console.log('opcoes do filtro de unidade:', JSON.stringify(opts));
-  expect(opts.join('|')).not.toMatch(/Porto|Barreto|Generalíssimo/i);
+  expect(opts.join('|')).not.toMatch(/Outro Workspace|Barreto|Generalíssimo/i);
   const visitadas = [];
   for (const aba of ABAS) {
     const btn = page.getByRole('button', { name: aba, exact: true }).first();
@@ -106,9 +106,9 @@ test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios da Porto Terapi
   }
   console.log('abas visitadas:', visitadas.join(', '));
   expect(visitadas.length).toBeGreaterThan(3);
-  // Busca global (Ctrl+K) tambem nao pode achar estagiario da Porto Terapia.
+  // Busca global (Ctrl+K) tambem nao pode achar estagiario de outro workspace.
   await page.keyboard.press('Control+k');
-  await page.keyboard.type('Porto');
+  await page.keyboard.type('Externo');
   await page.waitForTimeout(800);
-  expect(await page.locator('body').innerText()).not.toContain('PortoEstagiari');
+  expect(await page.locator('body').innerText()).not.toContain('ExternoEstagiari');
 });

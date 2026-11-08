@@ -13,8 +13,8 @@ function fetchFalso(status, corpo) {
 describe('recuperarSenha', () => {
   it('pede o código para o sistema "rh" com o e-mail da conta', async () => {
     const { impl, chamadas } = fetchFalso(200, { challenge_id: 'abc', mensagem: 'enviado' });
-    const r = await pedirCodigo('  supervisor@portoterapia.com ', impl);
-    expect(chamadas[0].corpo).toEqual({ action: 'pedir', sistema: 'rh', identificador: 'supervisor@portoterapia.com' });
+    const r = await pedirCodigo('  supervisor@exemplo.com ', impl);
+    expect(chamadas[0].corpo).toEqual({ action: 'pedir', sistema: 'rh', identificador: 'supervisor@exemplo.com' });
     expect(r.ok).toBe(true);
     expect(r.challenge_id).toBe('abc');
   });

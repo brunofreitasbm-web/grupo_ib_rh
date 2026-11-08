@@ -116,7 +116,7 @@ export const WORKSPACES = {
     // Somente o Bruno é admin nomeado neste site (mesma conta Supabase de
     // sempre); Guimelly/Isabella continuam com acesso de dados ao Grupo IB
     // (workspace_scope inclui "all"), mas não aparecem como opção de login
-    // aqui — só no site da Porto Terapia.
+    // aqui — só em outros sites do mesmo banco.
     // Tela de Usuários do Sistema (ver seção 21 de supabase_schema.sql). Ligada
     // no Grupo IB: o hub tem 3 módulos e várias unidades, então as contas de
     // painel e de quiosque precisam ser geridas pela própria UI, e não por
