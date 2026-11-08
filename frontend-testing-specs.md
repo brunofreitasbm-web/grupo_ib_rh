@@ -1,6 +1,6 @@
 # Especificações de Testes de Front-End — Controle de Estagiário
 
-Este documento define as especificações, estratégias e cenários de testes recomendados para o front-end do projeto **Controle de Estagiário (Porto Terapia)**. O objetivo é assegurar o correto funcionamento das regras de negócio (Lei do Estágio), a validação por geolocalização (GPS) e a segurança de acesso à área de supervisão.
+Este documento define as especificações, estratégias e cenários de testes recomendados para o front-end do projeto **Controle de Estagiário (Grupo IB)**. O objetivo é assegurar o correto funcionamento das regras de negócio (Lei do Estágio), a validação por geolocalização (GPS) e a segurança de acesso à área de supervisão.
 
 ---
 
@@ -33,7 +33,7 @@ graph TD
 * **Ferramentas Recomendadas:** [Playwright](https://playwright.dev/) ou [Cypress](https://www.cypress.io/).
 * **Foco:**
   - Fluxo completo de batida de ponto (Entrada/Saída) com mock de geolocalização.
-  - Acesso ao painel do supervisor utilizando credenciais do Supabase (`supervisor@portoterapia.com`).
+  - Acesso ao painel do supervisor utilizando credenciais do Supabase (`supervisor@exemplo.com`).
   - Cadastro, edição e exclusão de estagiários.
   - Ajuste manual e calibração de coordenadas das unidades.
 
@@ -58,7 +58,7 @@ Abaixo estão descritos os principais casos de teste estruturados por área func
 
 | ID | Cenário | Passos | Resultado Esperado |
 | :--- | :--- | :--- | :--- |
-| **SUP-01** | Autenticação com Credenciais Corretas | 1. Selecionar "Supervisor" na tela de login.<br>2. Digitar o email `supervisor@portoterapia.com` e senha `admin123`. | Acesso concedido; exibição do painel administrativo. |
+| **SUP-01** | Autenticação com Credenciais Corretas | 1. Selecionar "Supervisor" na tela de login.<br>2. Digitar o email `supervisor@exemplo.com` e senha `admin123`. | Acesso concedido; exibição do painel administrativo. |
 | **SUP-02** | Bloqueio com Credenciais Incorretas | 1. Selecionar "Supervisor" na tela de login.<br>2. Digitar credenciais inválidas. | Mensagem de erro de autenticação; permanência na tela de login. |
 | **SUP-03** | CRUD de Estagiário | 1. Entrar no Painel.<br>2. Adicionar novo estagiário.<br>3. Editar dados do estagiário.<br>4. Excluir estagiário. | As ações devem atualizar a interface em tempo real e persistir no Supabase. |
 | **SUP-04** | Calibração de Localização da Unidade | 1. Entrar no Painel.<br>2. Clicar em "Calibrar com minha localização". | Atualização das coordenadas geográficas (Latitude/Longitude) da unidade ativa no banco. |
@@ -153,7 +153,7 @@ test('Deve permitir o autocadastro obrigatório preenchendo todos os dados e env
   // Preenche dados pessoais e acadêmicos obrigatórios
   await page.fill('input[placeholder*="Nome"]', 'Novo Estagiário de Teste');
   await page.fill('input[placeholder*="CPF"]', '05437812900'); // CPF válido para passar no validador
-  await page.fill('input[placeholder*="Email"]', 'teste.novo@portoterapia.com');
+  await page.fill('input[placeholder*="Email"]', 'teste.novo@exemplo.com');
   await page.fill('input[placeholder*="RG"]', '9876543 SSP/PA');
   await page.fill('input[placeholder*="Telefone"]', '(91) 99999-9999');
   await page.fill('input[placeholder*="Curso"]', 'Psicologia');
@@ -164,7 +164,7 @@ test('Deve permitir o autocadastro obrigatório preenchendo todos os dados e env
   await page.fill('input[placeholder*="Banco"]', 'Banco do Brasil');
   await page.fill('input[placeholder*="Agência"]', '1234');
   await page.fill('input[placeholder*="Conta"]', '56789-0');
-  await page.fill('input[placeholder*="PIX"]', 'teste.novo@portoterapia.com');
+  await page.fill('input[placeholder*="PIX"]', 'teste.novo@exemplo.com');
   await page.fill('input[placeholder*="Contato de Emergência"]', 'Maria de Sousa');
   await page.fill('input[placeholder*="Telefone de Emergência"]', '(91) 98888-8888');
   
@@ -190,7 +190,7 @@ test('Deve exibir modal de biometria comparando a foto 3x4 do cadastro com a fot
   // Login como supervisor
   await page.goto('http://localhost:5173');
   await page.click('button:has-text("Supervisor")');
-  await page.fill('#username', 'supervisor@portoterapia.com');
+  await page.fill('#username', 'supervisor@exemplo.com');
   await page.fill('#password', 'admin123');
   await page.click('button:has-text("Entrar")');
 
@@ -209,4 +209,4 @@ test('Deve exibir modal de biometria comparando a foto 3x4 do cadastro com a fot
 
 
 ---
-*Documento elaborado para fins de estruturação e garantia de qualidade do software Controle de Estagiário — Porto Terapia.*
+*Documento elaborado para fins de estruturação e garantia de qualidade do software Controle de Estagiário — Grupo IB.*

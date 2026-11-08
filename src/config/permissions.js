@@ -219,7 +219,7 @@ export const countGrantedPermissions = (map = {}) => permissionsToList(map).leng
 // (o banco recusaria criar conta com escopo maior que o do chamador — ver
 // assert_system_user_admin).
 export const WORKSPACE_SCOPE_OPTIONS = [
-  { id: 'all', label: 'Todos os workspaces', description: 'Porto Terapia + Grupo IB.' },
-  { id: 'porto-terapia', label: 'Porto Terapia', description: 'Somente as unidades da Porto Terapia.' },
+  { id: 'all', label: 'Todos os workspaces', description: 'Todos os workspaces do banco.' },
+  { id: 'porto-terapia', label: 'Outro workspace', description: 'Somente as unidades do outro workspace.' },
   { id: 'grupoib', label: 'Grupo IB', description: 'Somente as unidades do Grupo IB.' },
 ];

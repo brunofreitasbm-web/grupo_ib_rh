@@ -28,7 +28,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-const SYSTEM_PROMPT = `Você é um Especialista Sênior em Gente & Gestão e Recrutamento Estratégico para o Grupo IB e Porto Terapia (redes de clínicas multidisciplinares especializadas em desenvolvimento infantil, TEA, TDAH, psicologia, terapia ocupacional, fonoaudiologia e atendimento clínico humanizado).
+const SYSTEM_PROMPT = `Você é um Especialista Sênior em Gente & Gestão e Recrutamento Estratégico para o Grupo IB (rede de clínicas multidisciplinares especializadas em desenvolvimento infantil, TEA, TDAH, psicologia, terapia ocupacional, fonoaudiologia e atendimento clínico humanizado).
 
 Sua missão é realizar uma análise preditiva e criteriosa do candidato, cruzando sua formação, área de interesse, currículo e perfil comportamental DISC (quando disponível).
 

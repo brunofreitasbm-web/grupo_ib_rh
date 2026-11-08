@@ -1852,7 +1852,7 @@ export default function App() {
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
       const downloadAnchor = document.createElement('a');
       downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `backup_porto_terapia_${new Date().toISOString().split('T')[0]}.json`);
+      downloadAnchor.setAttribute("download", `backup_grupoib_${new Date().toISOString().split('T')[0]}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
@@ -3201,7 +3201,7 @@ export default function App() {
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck="false"
-                      placeholder="Ex: silvania ou silvania@portoterapia.com"
+                      placeholder="Ex: silvania ou silvania@empresa.com"
                       value={loginAdminName}
                       onChange={(e) => { setLoginAdminName(e.target.value); setLoginError(''); }}
                       className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
@@ -6544,7 +6544,7 @@ export default function App() {
     
     const opt = {
       margin:       15,
-      filename:     `${type === 'minuta' ? `Minuta_Contrato_${intern?.name.replace(/\s+/g, '_')}` : type.toUpperCase()}_Porto_Terapia.pdf`,
+      filename:     `${type === 'minuta' ? `Minuta_Contrato_${intern?.name.replace(/\s+/g, '_')}` : type.toUpperCase()}_Grupo_IB.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
