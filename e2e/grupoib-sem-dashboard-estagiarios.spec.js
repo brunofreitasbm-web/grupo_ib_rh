@@ -82,14 +82,15 @@ for (const c of cenarios) {
 
 const ABAS = ['Estagiários', 'Documentos', 'Frequência', 'Escala', 'Documentos Admissionais', 'Acompanhamento & Recesso', 'Abonos & Ocorrências', 'Desligamento / Rescisão', 'Alertas & Pendências'];
 
-test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios da Porto Terapia em nenhuma aba', async ({ page }) => {
+test('Grupo IB: sem opcao "Todas as unidades" e sem estagiarios estagiarios da Porto Terapia em nenhuma aba', async ({ page }) => {
   const requests = [];
   await setup(page, null, requests);
   await page.goto('/');
   await enterAdmin(page);
   await page.waitForTimeout(2500);
   const select = page.locator('select[title="Filtrar por unidade"]').first();
-  await select.selectOption('all');
+  await expect(select).not.toHaveValue('all');
+  expect(await select.locator('option').allInnerTexts()).not.toContain('Todas as unidades');
   // O seletor de unidades também não pode oferecer unidades da Porto Terapia.
   const opts = await select.locator('option').allInnerTexts();
   console.log('opcoes do filtro de unidade:', JSON.stringify(opts));
@@ -111,4 +112,18 @@ test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios da Porto Terapi
   await page.keyboard.type('Porto');
   await page.waitForTimeout(800);
   expect(await page.locator('body').innerText()).not.toContain('PortoEstagiari');
+});
+
+test('Grupo IB: listbox de unidade nao oferece "Todas as unidades" e abre numa unidade real', async ({ page }) => {
+  await setup(page, null, []);
+  await page.goto('/');
+  await enterAdmin(page);
+  await page.waitForTimeout(2500);
+  const select = page.locator('select[title="Filtrar por unidade"]').first();
+  const opts = await select.locator('option').allInnerTexts();
+  console.log('opcoes:', JSON.stringify(opts));
+  expect(opts).not.toContain('Todas as unidades');
+  expect(opts.length).toBeGreaterThan(0);
+  await expect(select).toHaveValue('clinica-a');
+  expect(await page.locator('body').innerText()).not.toContain('Todas as unidades');
 });

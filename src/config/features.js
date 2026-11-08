@@ -13,3 +13,7 @@ export const INTERNS_HOME_TAB = INTERNS_DASHBOARD_ENABLED ? 'dashboard' : 'estag
 // Troca 'dashboard' pela aba inicial quando o dashboard está desligado.
 export const guardInternsTab = (tab) =>
   (!INTERNS_DASHBOARD_ENABLED && tab === 'dashboard' ? INTERNS_HOME_TAB : tab);
+
+// Ponto ÚNICO de leitura da flag showAllUnitsOption (ver branding.js). Desligada
+// no Grupo IB: o seletor de unidade não oferece "Todas as unidades".
+export const ALL_UNITS_OPTION_ENABLED = BRANDING.showAllUnitsOption !== false;

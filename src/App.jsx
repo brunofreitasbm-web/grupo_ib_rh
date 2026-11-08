@@ -32,7 +32,7 @@ import {
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { sanitizeHtml } from './utils/sanitizeHtml';
 import { BRANDING, WORKSPACES } from './config/branding';
-import { INTERNS_DASHBOARD_ENABLED, INTERNS_HOME_TAB, guardInternsTab } from './config/features';
+import { INTERNS_DASHBOARD_ENABLED, INTERNS_HOME_TAB, guardInternsTab, ALL_UNITS_OPTION_ENABLED } from './config/features';
 import { LABOR } from './config/labor';
 import { CourseSelect, InternshipTypeField } from './components/CourseFields';
 import { normalizeCourseValue, getInternshipTypeLabel } from './config/academicCourses';
@@ -488,6 +488,14 @@ export default function App() {
     }),
     [units, restrictedUnitIds]
   );
+
+  // Sem a opção "Todas as unidades" (Grupo IB), o filtro sempre aponta para uma
+  // unidade visível: troca 'all' (estado inicial, troca de workspace) ou uma
+  // unidade que deixou de existir pela primeira da lista.
+  useEffect(() => {
+    if (ALL_UNITS_OPTION_ENABLED || visibleUnits.length === 0) return;
+    if (!visibleUnits.some((u) => u.id === filterUnit)) setFilterUnit(visibleUnits[0].id);
+  }, [visibleUnits, filterUnit]);
 
   // Estado global `interns` nunca guarda estagiários de unidades de outro workspace
   // (Porto Terapia no Grupo IB): filtra a cada fetch (via ref) e quando as unidades mudam.
@@ -8772,7 +8780,7 @@ export default function App() {
                 title="Filtrar por unidade"
                 className={`w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm ${c ? 'md:hidden' : ''}`}
               >
-                <option value="all">Todas as unidades</option>
+                {ALL_UNITS_OPTION_ENABLED && <option value="all">Todas as unidades</option>}
                 {visibleUnits.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
