@@ -31,6 +31,7 @@ import {
 } from './utils/mappings';
 import { formatDistance, startOfWeek, validateCPF, escapeHtmlForDocument } from './utils/helpers';
 import { sanitizeHtml } from './utils/sanitizeHtml';
+import { isHiddenUnitForWorkspace } from './utils/workspaceUnits';
 import { BRANDING, WORKSPACES } from './config/branding';
 import { INTERNS_DASHBOARD_ENABLED, INTERNS_HOME_TAB, guardInternsTab } from './config/features';
 import { LABOR } from './config/labor';
@@ -468,7 +469,7 @@ export default function App() {
   // Terapia no Grupo IB). adminWorkspace é fixado em BRANDING.id, então tudo que
   // pertence a outro workspace entra aqui e é filtrado em todas as abas.
   const restrictedUnitIds = useMemo(
-    () => units.filter((u) => u.workspaceId && u.workspaceId !== adminWorkspace).map((u) => u.id),
+    () => units.filter((u) => (u.workspaceId && u.workspaceId !== adminWorkspace) || isHiddenUnitForWorkspace(u.id, u.name)).map((u) => u.id),
     [units, adminWorkspace]
   );
 
@@ -493,8 +494,18 @@ export default function App() {
   // (Porto Terapia no Grupo IB): filtra a cada fetch (via ref) e quando as unidades mudam.
   restrictedUnitIdsRef.current = restrictedUnitIds;
   useEffect(() => {
-    if (restrictedUnitIds.length) setInterns((prev) => prev.filter((i) => !restrictedUnitIds.includes(i.unitId)));
-  }, [restrictedUnitIds]);
+    setInterns((prev) => {
+      const next = prev.filter((i) => !restrictedUnitIds.includes(i.unitId) && !isHiddenUnitForWorkspace(i.unitId));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [restrictedUnitIds, internsLoaded]);
+
+  // Sem a opção "Todas as unidades": o filtro sempre aponta para uma unidade
+  // visível do workspace (a primeira, se o valor atual não existir mais).
+  useEffect(() => {
+    if (!visibleUnits.length) return;
+    if (!visibleUnits.some((u) => u.id === filterUnit)) setFilterUnit(visibleUnits[0].id);
+  }, [visibleUnits, filterUnit]);
 
   // Fluxo Admissional (Upload de Documentos)
   const [selectedAdmissionalIntern, setSelectedAdmissionalIntern] = useState('');
@@ -1057,7 +1068,7 @@ export default function App() {
         console.error('Erro ao buscar estagiários:', error?.code, error?.message || error);
         toast.error('Erro de conexão ao carregar estagiários. Tentando novamente...');
       } else {
-        setInterns((data || []).map(mapInternFromDb).filter((i) => !restrictedUnitIdsRef.current.includes(i.unitId)));
+        setInterns((data || []).map(mapInternFromDb).filter((i) => !restrictedUnitIdsRef.current.includes(i.unitId) && !isHiddenUnitForWorkspace(i.unitId)));
       }
     } catch (err) {
       console.error('Erro ao carregar estagiários:', err);
@@ -8772,7 +8783,6 @@ export default function App() {
                 title="Filtrar por unidade"
                 className={`w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm ${c ? 'md:hidden' : ''}`}
               >
-                <option value="all">Todas as unidades</option>
                 {visibleUnits.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}

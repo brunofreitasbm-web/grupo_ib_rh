@@ -82,14 +82,14 @@ for (const c of cenarios) {
 
 const ABAS = ['Estagiários', 'Documentos', 'Frequência', 'Escala', 'Documentos Admissionais', 'Acompanhamento & Recesso', 'Abonos & Ocorrências', 'Desligamento / Rescisão', 'Alertas & Pendências'];
 
-test('Grupo IB: filtro "Todas as unidades" nao lista estagiarios de outro workspace em nenhuma aba', async ({ page }) => {
+test('Grupo IB: seletor sem "Todas as unidades" nao lista estagiarios de outro workspace em nenhuma aba', async ({ page }) => {
   const requests = [];
   await setup(page, null, requests);
   await page.goto('/');
   await enterAdmin(page);
   await page.waitForTimeout(2500);
   const select = page.locator('select[title="Filtrar por unidade"]').first();
-  await select.selectOption('all');
+  expect(await select.locator('option[value="all"]').count()).toBe(0);
   // O seletor de unidades também não pode oferecer unidades de outro workspace.
   const opts = await select.locator('option').allInnerTexts();
   console.log('opcoes do filtro de unidade:', JSON.stringify(opts));
