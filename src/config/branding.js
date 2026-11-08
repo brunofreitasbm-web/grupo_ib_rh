@@ -42,6 +42,8 @@ export const WORKSPACES = {
     // Dashboard/KPIs de estagiários: DESLIGADO no Grupo IB (é o dashboard da Porto
     // Terapia). Lido só em src/config/features.js; coberto por teste unitário.
     showInternsDashboard: false,
+    // Seletor de unidade sem a opção "Todas as unidades" (sempre uma unidade).
+    showAllUnitsOption: false,
     fallbackInternEmailDomain: 'grupoib.internal',
     // Módulo de Profissionais PJ (prestadores de serviço) — ver ProfessionalKiosk.jsx.
     // Vocabulário e regras deliberadamente distintos do estágio, para não sugerir
