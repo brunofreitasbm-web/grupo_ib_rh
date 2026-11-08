@@ -117,8 +117,7 @@ Deno.serve(async (req: Request) => {
         email === "bruno@portoterapia.com" ||
         email.endsWith("@portoterapia.com") ||
         email.endsWith("@grupoib.com.br") ||
-        email.endsWith("@grupoib.internal") ||
-        !!claims?.sub);
+        email.endsWith("@grupoib.internal"));
 
     if (claimsError || !claims?.sub || !isSupervisor) {
       console.warn(`[fetch-talent-bank] Acesso recusado para email: ${email}, role app: ${appRole}, role user: ${userRole}`);

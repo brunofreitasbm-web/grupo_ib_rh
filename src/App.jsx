@@ -436,10 +436,10 @@ export default function App() {
 
   // Só uma conta com workspace_scope "all" no JWT (ver supabase_schema.sql,
   // seção "MULTI-WORKSPACE") pode alternar entre os dois grupos de unidades.
-  const canSwitchWorkspace = useMemo(() => {
-    const scope = user?.user_metadata?.workspace_scope || [];
-    return scope.includes('all');
-  }, [user]);
+  // Este app serve só o Grupo IB: o seletor de workspace foi removido na
+  // separação dos repositórios. O escopo "all" continua válido no JWT/RLS, mas
+  // aqui as unidades da Porto Terapia seguem ocultas por visibleUnits.
+  const canSwitchWorkspace = false;
 
   useEffect(() => {
     if (!canSwitchWorkspace && adminWorkspace !== BRANDING.id) {

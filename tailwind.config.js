@@ -5,8 +5,8 @@ import { WORKSPACES } from './src/config/branding.js';
 // process.env (Vercel/Netlify injetam as env vars do dashboard assim) com
 // fallback pro .env local — mesmo padrão de vite.config.js.
 const fileEnv = loadEnv('production', process.cwd(), '');
-const workspaceId = process.env.VITE_WORKSPACE_ID || fileEnv.VITE_WORKSPACE_ID || 'porto-terapia';
-const branding = WORKSPACES[workspaceId] || WORKSPACES['porto-terapia'];
+const workspaceId = process.env.VITE_WORKSPACE_ID || fileEnv.VITE_WORKSPACE_ID || 'grupoib';
+const branding = WORKSPACES[workspaceId] || WORKSPACES.grupoib;
 
 /** @type {import('tailwindcss').Config} */
 export default {

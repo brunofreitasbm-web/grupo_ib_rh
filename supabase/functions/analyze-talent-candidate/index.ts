@@ -129,8 +129,7 @@ Deno.serve(async (req: Request) => {
       email === "bruno@portoterapia.com" ||
       email.endsWith("@portoterapia.com") ||
       email.endsWith("@grupoib.com.br") ||
-      email.endsWith("@grupoib.internal") ||
-      !!claims?.sub;
+      email.endsWith("@grupoib.internal");
 
     if (claimsError || !claims?.sub || !isSupervisor) {
       return jsonResponse({ error: "forbidden", message: "Acesso reservado à supervisão." }, 403);

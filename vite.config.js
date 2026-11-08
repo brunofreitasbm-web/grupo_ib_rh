@@ -7,7 +7,7 @@ import { WORKSPACES } from './src/config/branding.js';
 // loadEnv/process.env em vez de import.meta.env — ver src/config/branding.js.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const branding = WORKSPACES[env.VITE_WORKSPACE_ID] || WORKSPACES['porto-terapia'];
+  const branding = WORKSPACES[env.VITE_WORKSPACE_ID] || WORKSPACES.grupoib;
 
   return {
     plugins: [
