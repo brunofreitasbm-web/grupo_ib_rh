@@ -15,7 +15,7 @@ const hubUrl = () => import.meta.env?.VITE_GESTAO_HUB_URL || HUB_URL_PADRAO;
 const hubHost = () => String(import.meta.env?.VITE_GESTAO_HUB_HOST || HUB_HOST_PADRAO).trim().toLowerCase();
 
 // Chama uma ação do Hub; devolve o JSON ou null. O token vai só no header Authorization.
-async function chamarHub(action, accessToken, fetchImpl) {
+async function chamarHub(action, accessToken, fetchImpl, extra = {}) {
   if (!recadastroLigado() || !accessToken) return null;
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   let timer;
@@ -27,7 +27,7 @@ async function chamarHub(action, accessToken, fetchImpl) {
       const res = await fetchImpl(hubUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ action, sistema: 'rh' }),
+        body: JSON.stringify({ action, sistema: 'rh', ...extra }),
         signal: ctrl?.signal,
       });
       if (!res || res.status !== 200) return null;
@@ -53,8 +53,15 @@ export async function consultarStatusRecadastro(accessToken, fetchImpl = fetch) 
   };
 }
 
-export async function pedirTicketRecadastro(accessToken, fetchImpl = fetch) {
-  const d = await chamarHub('recadastro_ticket', accessToken, fetchImpl);
+// O mesmo app roda em mais de um endereço (Grupo IB e Porto Terapia): o Hub usa voltar_host, se estiver
+// na lista dele, para montar o botão "Voltar ao sistema" da página de recadastro.
+function hostAtual() {
+  try { return typeof window !== 'undefined' ? String(window.location?.host ?? '') : ''; } catch { return ''; }
+}
+
+export async function pedirTicketRecadastro(accessToken, fetchImpl = fetch, voltarHost = hostAtual()) {
+  const extra = voltarHost ? { voltar_host: voltarHost } : {};
+  const d = await chamarHub('recadastro_ticket', accessToken, fetchImpl, extra);
   return d && typeof d.url === 'string' && d.url ? d.url : null;
 }
 
@@ -89,7 +96,7 @@ export async function verificarRecadastro(accessToken, deps = {}) {
     const assign = deps.assign ?? ((u) => window.location.assign(u));
     const status = await consultarStatusRecadastro(accessToken, fetchImpl);
     if (decidirRecadastro(status, lerVisto(storage)) !== 'ir') return 'seguir';
-    const destino = destinoRecadastro(await pedirTicketRecadastro(accessToken, fetchImpl));
+    const destino = destinoRecadastro(await pedirTicketRecadastro(accessToken, fetchImpl, deps.host ?? hostAtual()));
     if (!destino) return 'seguir';
     marcarVisto(storage);
     assign(destino);

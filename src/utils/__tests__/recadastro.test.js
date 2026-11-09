@@ -61,7 +61,21 @@ describe('pedirTicketRecadastro', () => {
     vi.stubEnv('VITE_GESTAO_RECADASTRO', '1');
     const f = vi.fn(async () => resposta({ url: URL_OK }));
     expect(await pedirTicketRecadastro('tok', f)).toBe(URL_OK);
-    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ action: 'recadastro_ticket', sistema: 'rh' });
+    expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ action: 'recadastro_ticket', sistema: 'rh' });
+  });
+
+  it('envia o proprio host em voltar_host (padrao: window.location.host)', async () => {
+    vi.stubEnv('VITE_GESTAO_RECADASTRO', '1');
+    const f = vi.fn(async () => resposta({ url: URL_OK }));
+    await pedirTicketRecadastro('tok', f, 'porto-terapia-gestao.vercel.app');
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({
+      action: 'recadastro_ticket', sistema: 'rh', voltar_host: 'porto-terapia-gestao.vercel.app',
+    });
+    vi.stubGlobal('window', { location: { host: 'rh.institutofacaamigos.com.br' } });
+    try {
+      await pedirTicketRecadastro('tok', f);
+      expect(JSON.parse(f.mock.calls[1][1].body).voltar_host).toBe('rh.institutofacaamigos.com.br');
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('null para flag desligada, erro, status != 200, sem url ou url nao string', async () => {
@@ -123,9 +137,11 @@ describe('verificarRecadastro (orquestracao)', () => {
     const assign = vi.fn();
     const f = vi.fn(async (_u, init) =>
       JSON.parse(init.body).action === 'recadastro_status' ? resposta(STATUS) : resposta({ url: URL_OK }));
-    expect(await verificarRecadastro('tok', { fetchImpl: f, storage, assign })).toBe('ir');
+    expect(await verificarRecadastro('tok', { fetchImpl: f, storage, assign, host: 'porto-terapia-gestao.vercel.app' })).toBe('ir');
     expect(assign).toHaveBeenCalledWith(URL_OK);
     expect(storage.m[CHAVE_VISTO]).toBe('1');
+    const ticket = f.mock.calls.map((c) => JSON.parse(c[1].body)).find((b) => b.action === 'recadastro_ticket');
+    expect(ticket.voltar_host).toBe('porto-terapia-gestao.vercel.app');
   });
 
   it('pendente sem ticket (null/invalido): segue, nao redireciona nem marca', async () => {
