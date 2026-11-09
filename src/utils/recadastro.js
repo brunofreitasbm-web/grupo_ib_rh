@@ -7,12 +7,13 @@ const TIMEOUT_MS = 3000;
 const HUB_URL_PADRAO = 'https://ivjvpdzsfjdpyabbzzuj.supabase.co/functions/v1/gestao-hub';
 const HUB_HOST_PADRAO = 'gestao.institutofacaamigos.com.br';
 
-// Lidas a cada chamada (import.meta.env), padrão desligado.
+// Entram no build: o Vite só troca pelo valor quando o acesso é direto (import.meta.env.VITE_X, sem ?.).
+// Padrão desligado; ligar ou desligar exige novo build.
 export function recadastroLigado() {
-  return import.meta.env?.VITE_GESTAO_RECADASTRO === '1';
+  return import.meta.env.VITE_GESTAO_RECADASTRO === '1';
 }
-const hubUrl = () => import.meta.env?.VITE_GESTAO_HUB_URL || HUB_URL_PADRAO;
-const hubHost = () => String(import.meta.env?.VITE_GESTAO_HUB_HOST || HUB_HOST_PADRAO).trim().toLowerCase();
+const hubUrl = () => import.meta.env.VITE_GESTAO_HUB_URL || HUB_URL_PADRAO;
+const hubHost = () => String(import.meta.env.VITE_GESTAO_HUB_HOST || HUB_HOST_PADRAO).trim().toLowerCase();
 
 // Chama uma ação do Hub; devolve o JSON ou null. O token vai só no header Authorization.
 async function chamarHub(action, accessToken, fetchImpl, extra = {}) {
