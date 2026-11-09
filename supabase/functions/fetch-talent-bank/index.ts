@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isSupervisorClaims } from "../_shared/supervisor.ts";
 
 // Proxy de leitura para o Banco de Talentos do app Faça Amigos (módulo
 // gerencial, projeto Supabase separado: ivjvpdzsfjdpyabbzzuj). O front-end
@@ -109,15 +110,7 @@ Deno.serve(async (req: Request) => {
     const userRole = claims?.user_metadata?.role;
     const email = String(claims?.email ?? "").toLowerCase();
 
-    const isKiosk = userRole?.endsWith("_unit") || appRole?.endsWith("_unit");
-    const isSupervisor =
-      !isKiosk &&
-      (appRole === "supervisor" ||
-        userRole === "supervisor" ||
-        email === "bruno@portoterapia.com" ||
-        email.endsWith("@portoterapia.com") ||
-        email.endsWith("@grupoib.com.br") ||
-        email.endsWith("@grupoib.internal"));
+    const isSupervisor = isSupervisorClaims(claims);
 
     if (claimsError || !claims?.sub || !isSupervisor) {
       console.warn(`[fetch-talent-bank] Acesso recusado para email: ${email}, role app: ${appRole}, role user: ${userRole}`);

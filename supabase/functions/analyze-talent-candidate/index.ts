@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isSupervisorClaims } from "../_shared/supervisor.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -122,13 +123,7 @@ Deno.serve(async (req: Request) => {
     const userRole = claims?.user_metadata?.role;
     const email = String(claims?.email ?? "").toLowerCase();
 
-    const isSupervisor =
-      appRole === "supervisor" ||
-      userRole === "supervisor" ||
-      email === "bruno@portoterapia.com" ||
-      email.endsWith("@portoterapia.com") ||
-      email.endsWith("@grupoib.com.br") ||
-      email.endsWith("@grupoib.internal");
+    const isSupervisor = isSupervisorClaims(claims);
 
     if (claimsError || !claims?.sub || !isSupervisor) {
       return jsonResponse({ error: "forbidden", message: "Acesso reservado à supervisão." }, 403);

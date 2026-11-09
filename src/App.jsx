@@ -105,6 +105,7 @@ import { fetchInternBiometry } from './utils/internBiometry';
 import useInternPhotos from './hooks/useInternPhotos';
 import { useBackHandler } from './hooks/useBackHandler';
 import { withAppClaims } from './utils/sessionClaims';
+import { verificarRecadastro } from './utils/recadastro';
 // Autocadastro de Profissionais PJ (sem sessão) — carregado sob demanda para
 // não engordar o bundle inicial do quiosque (ver plano do módulo de autocadastro PJ).
 const ProfessionalSelfRegistration = lazyWithRetry(() => import('./components/ProfessionalSelfRegistration'));
@@ -745,6 +746,7 @@ export default function App() {
   ].filter((layer) => layer.active);
   useBackHandler(backLayers.length, () => backLayers[0]?.back());
 
+  const recadastroCheckedRef = useRef(null);
   // 1. Autenticação e Sessão do Supabase
   const handleSession = useCallback(async (session) => {
     if (session) {
@@ -755,6 +757,12 @@ export default function App() {
         setCurrentView('admin');
         setLoggedInIntern(null);
         setLoginError('');
+        // Recadastro de identidade (Hub): em segundo plano, fail-open, uma vez por usuário e sessão
+        // do navegador (handleSession roda também a cada renovação de token). Não atrasa a entrada.
+        if (recadastroCheckedRef.current !== userObj.id) {
+          recadastroCheckedRef.current = userObj.id;
+          void verificarRecadastro(session.access_token).catch(() => {});
+        }
       } else if (role === 'intern') {
         setCurrentView('kiosk');
         // Buscar os dados do estagiário
