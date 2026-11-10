@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isSupervisorClaims } from "../_shared/supervisor.ts";
 
 // Dispara o aviso de "Apuração de Produção disponível — emita sua NF" com o
 // template visual oficial FaçaAmigos (Grupo IB), contendo o valor apurado e o
@@ -239,6 +240,20 @@ Deno.serve(async (req: Request) => {
 
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
     return jsonResponse({ error: "SUPABASE_CONFIG_MISSING" }, 500);
+  }
+
+  // Só supervisor dispara: a função envia e-mail oficial com valor apurado e cria
+  // tokens de upload de NF com a service role. Sem esta checagem, bastava a chave
+  // anon (pública) para acioná-la.
+  {
+    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (!jwt) return jsonResponse({ error: "unauthorized" }, 401);
+    const authClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { data: claimsData, error: claimsError } = await authClient.auth.getClaims(jwt);
+    const claims = claimsData?.claims;
+    if (claimsError || !claims?.sub || !isSupervisorClaims(claims)) {
+      return jsonResponse({ error: "forbidden", message: "Acesso reservado a supervisores." }, 403);
+    }
   }
 
   let body: {
