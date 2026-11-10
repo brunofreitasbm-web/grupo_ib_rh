@@ -30,7 +30,6 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,4 +37,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Restam avisos que só saem com upgrade de versão maior (ver
+      # SEGURANCA-PENDENCIAS.md). Até lá fica informativo.
       - run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

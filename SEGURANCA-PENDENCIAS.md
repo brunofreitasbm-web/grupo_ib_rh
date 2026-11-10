@@ -11,6 +11,7 @@ segredo aparece aqui, só onde está e o que fazer. Apague cada item ao concluir
 
 ## Onda 2 (muda comportamento, aprovar item a item)
 
+- [ ] **Dependências com aviso que pede upgrade de versão maior** (`npm audit --omit=dev`): `node-fetch` (alto), `react-router`, `esbuild`, `glob`, `minimatch`, `deepmerge`. `npm audit fix` sem `--force` já foi aplicado; o resto exige `--force` e reteste. Depois, tirar o `continue-on-error` do audit no CI.
 - [ ] **Senha das contas de quiosque no bundle** (`src/App.jsx:1423,1459,1490`; e-mails em `src/config/branding.js`). Qualquer pessoa entra como `professional_unit` e lê CPF, RG, banco, conta e PIX dos prestadores. Substituir por pareamento de dispositivo (o padrão `vitrine_pairing_*` já existe no banco) e trocar as senhas.
 - [ ] Enquanto isso: tirar as colunas bancárias do que `professional_unit` enxerga (view com colunas mínimas).
 - [ ] Comparação biométrica no navegador (`EmployeeKiosk.jsx:204`): mover para o servidor.
