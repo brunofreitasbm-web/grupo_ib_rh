@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # 2 testes já falham na main (FinanceiroTabHooks e cltCalculations/nightMinutes).
+      # Fica informativo até serem corrigidos; depois, remover o continue-on-error.
+      - run: npm test
+        continue-on-error: true
+
+  # Informativo (não bloqueia merge): vulnerabilidades conhecidas em dependências.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Restam avisos que só saem com upgrade de versão maior (ver
+      # SEGURANCA-PENDENCIAS.md). Até lá fica informativo.
+      - run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

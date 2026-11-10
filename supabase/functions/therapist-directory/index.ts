@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { timingSafeEqual } from "../_shared/safe-equal.ts";
 
 // Ponte entre o Controle de Estagiário/PJ e o sistema externo de terapeutas.
 //
@@ -84,7 +85,7 @@ async function forward(body: unknown) {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.headers.get("X-Webhook-Secret") !== WEBHOOK_SECRET) {
+  if (!timingSafeEqual(req.headers.get("X-Webhook-Secret"), WEBHOOK_SECRET)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
   }
 

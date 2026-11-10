@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { timingSafeEqual } from "../_shared/safe-equal.ts";
 
 // Publica para o sistema externo APENAS a contagem de estagiários validados
 // por curso. Nenhum dado pessoal — só {curso: quantidade}.
@@ -37,7 +38,7 @@ async function snapshot(unitId?: string | null) {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.headers.get("X-Webhook-Secret") !== WEBHOOK_SECRET) {
+  if (!timingSafeEqual(req.headers.get("X-Webhook-Secret"), WEBHOOK_SECRET)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
   }
 
