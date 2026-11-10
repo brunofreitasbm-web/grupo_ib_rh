@@ -21,7 +21,7 @@
     "cmdk": "^1.1.1",
     "dompurify": "^3.4.15",
     "face-api.js": "^0.22.2",
-    "lucide-react": "^0.417.0",
+    "lucide-react": "^1.70.0",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
